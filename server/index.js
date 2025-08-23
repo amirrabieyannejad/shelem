@@ -1,72 +1,133 @@
-// Express wird verwendet, um den Webserver zu erstellen.
-const express = require("express");
-
-// Das integrierte http-Modul von Node.js wird verwendet, um einen HTTP-Server zu erstellen.
+// backend/server.js
+const { Server } = require("socket.io");
 const http = require("http");
 
-// Importiert die Socket.IO-Bibliothek, um Echtzeit-Kommunikation zu ermöglichen.
-const { Server } = require("socket.io");
+const server = http.createServer();
+const io = new Server(server, {
+  cors: { origin: "*" }
+});
 
-const app = express();
-const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: "*" } });
+// --- Globale Variablen ---
+let players = []; // [{id, name, team, passed}]
+let hands = {};   // id -> Karten
+let bottomCards = [];
+let bids = {};    // id -> bid
+let currentBid = 0;
+let currentPlayerIndex = 0;
+let biddingActive = false;
 
-// 54 Karten (52 + 2 Joker)
-const suits = ["♠", "♥", "♦", "♣"];
-const ranks = [
-  "2",
-  "3",
-  "4",
-  "5",
-  "6",
-  "7",
-  "8",
-  "9",
-  "10",
-  "J",
-  "Q",
-  "K",
-  "A",
-];
-const deck = suits.flatMap((s) => ranks.map((r) => r + s));
-
-let players = [];
-let hands = {};
-
-function shuffle(array) {
-  return array.sort(() => Math.random() - 0.5);
+// === Dummy Deal Funktion ===
+function deal() {
+  // TODO: hier Karten austeilen
+  // fürs Testen: nur IDs als "Karten"
+  const allCards = Array.from({ length: 52 }, (_, i) => i + 1);
+  hands = {};
+  bottomCards = allCards.slice(48);
+  players.forEach((p, idx) => {
+    hands[p.id] = allCards.slice(idx * 12, idx * 12 + 12);
+    io.to(p.id).emit("hand", hands[p.id]);
+  });
+  io.emit("bottomCards", bottomCards);
 }
 
-io.on("connection", (socket) => {
-  console.log("Neuer Spieler:", socket.id);
+// === Check ob Bietrunde vorbei ===
+function checkBiddingEnd() {
+  const teamFire = players.filter(p => p.team === "Fire");
+  const teamStorm = players.filter(p => p.team === "Storm");
 
-  // Spieler tritt Lobby bei
-  players.push(socket.id);
+  const firePassed = teamFire.every(p => p.passed);
+  const stormPassed = teamStorm.every(p => p.passed);
 
-  // Wenn 4 Spieler da → Karten austeilen
-  if (players.length === 4) {
-    let shuffled = shuffle([...deck]);
-    hands = {};
-    players.forEach((p, i) => {
-      hands[p] = shuffled.slice(i * 13, i * 13 + 13);
-      io.to(p).emit("hand", hands[p]);
-    });
-    io.emit("gameStart", { msg: "Spiel gestartet!", players });
+  if (firePassed || stormPassed) {
+    biddingActive = false;
+
+    const winnerTeam = firePassed ? "Storm" : "Fire";
+    const candidates = players.filter(p => p.team === winnerTeam);
+
+    const teamBids = Object.entries(bids).filter(([id]) =>
+      candidates.some(c => c.id === id)
+    );
+
+    if (teamBids.length === 0) {
+      io.emit("biddingResult", { winner: null, bid: 0 });
+      return true;
+    }
+
+    const [winnerId, highestBid] = teamBids.reduce((a, b) =>
+      a[1] > b[1] ? a : b
+    );
+
+    const winnerPlayer = players.find(p => p.id === winnerId);
+    io.emit("biddingResult", { winner: winnerPlayer, bid: highestBid });
+    return true;
   }
 
-  // Spieler spielt Karte
-  socket.on("playCard", (card) => {
-    console.log(socket.id, "spielt", card);
-    io.emit("cardPlayed", { player: socket.id, card });
+  return false;
+}
+
+// === Socket.io Events ===
+io.on("connection", (socket) => {
+  console.log("Player connected:", socket.id);
+
+  socket.on("register", (name) => {
+    console.log("Player gave a name: ", name);
+    if (players.length >= 4) {
+      
+      socket.emit("lobbyFull", { msg: "Lobby voll (max. 4 Spieler)" });
+      return;
+    }
+
+    const team = players.length % 2 === 0 ? "Fire" : "Storm";
+    const player = { id: socket.id, name, team, passed: false };
+    players.push(player);
+
+    io.emit("playersUpdate", players);
+
+    if (players.length === 4) {
+      deal();
+      bids = {};
+      currentBid = 0;
+      currentPlayerIndex = 0;
+      biddingActive = true;
+
+      io.to(players[currentPlayerIndex].id).emit("yourTurn", { currentBid });
+    }
   });
 
-  // Disconnect
+  socket.on("makeBid", (bid) => {
+    if (!biddingActive) return;
+    const player = players.find(p => p.id === socket.id);
+    if (!player) return;
+
+    if (bid === 0) {
+      player.passed = true;
+    } else {
+      currentBid = bid;
+      player.passed = false;
+      bids[player.id] = bid;
+    }
+
+    io.emit("playersUpdate", players);
+
+    if (checkBiddingEnd()) return;
+
+    do {
+      currentPlayerIndex = (currentPlayerIndex + 1) % 4;
+    } while (players[currentPlayerIndex].passed);
+
+    const next = players[currentPlayerIndex];
+    io.to(next.id).emit("yourTurn", { currentBid });
+  });
+
   socket.on("disconnect", () => {
-    console.log("Spieler weg:", socket.id);
-    players = players.filter((p) => p !== socket.id);
+    console.log("Player disconnected:", socket.id);
+    players = players.filter(p => p.id !== socket.id);
+    io.emit("playersUpdate", players);
   });
 });
 
-server.listen(3001, () => {
-  console.log("Server läuft auf Port 3001");
+// === Server Start ===
+const PORT = 3001;
+server.listen(PORT, () => {
+  console.log(`Server läuft auf Port ${PORT}`);
 });
