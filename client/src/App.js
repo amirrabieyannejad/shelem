@@ -9,21 +9,25 @@ function App() {
   const [me, setMe] = useState(null);
   const [isMyTurn, setIsMyTurn] = useState(false);
   const [currentBid, setCurrentBid] = useState(0);
+  const [currentPlayer, setCurrentPlayer] = useState(null);
   const [biddingWinner, setBiddingWinner] = useState(null);
-
+  const [trumpf, setTrumpf] = useState(null);
+  const [discardPhase, setDiscardPhase] = useState(false);
+  const [selectedDiscard, setSelectedDiscard] = useState([]);
+  const [chooseTrump, setChooseTrump] = useState(false);
 
   useEffect(() => {
-    socket.on('connect', () => {
-    console.log("Connected to backend!");
+    socket.on("connect", () => {
+      console.log("Connected to backend!");
 
-    const name = prompt("Bitte gib deinen Namen ein:");
-    if(name){
-      socket.emit("register", name);
-    console.log("Player gave a name: ", name);
-    }else{
-      console.log("player cancelled name input or provided an empty name.");
-    }    
-});
+      const name = prompt("Bitte gib deinen Namen ein:");
+      if (name) {
+        socket.emit("register", name);
+        console.log("Player gave a name: ", name);
+      } else {
+        console.log("player cancelled name input or provided an empty name.");
+      }
+    });
     socket.on("playersUpdate", (list) => {
       setPlayers(list);
       const myId = socket.id;
@@ -31,7 +35,32 @@ function App() {
       setMe(myself);
     });
 
-    socket.on("hand", (cards) => setHand(cards));
+// Hilfsfunktion zum Sortieren
+const sortHand = (cards, trumpf) => {
+  const suitOrder = ["♠", "♥", "♦", "♣"];
+  const rankOrder = ["2","3","4","5","6","7","8","9","10","J","Q","K","A"];
+
+  return [...cards].sort((a, b) => {
+    const [rankA, suitA] = [a.slice(0, -1), a.slice(-1)];
+    const [rankB, suitB] = [b.slice(0, -1), b.slice(-1)];
+
+    // Trumpf zuerst
+    const isTrumpA = suitA === trumpf;
+    const isTrumpB = suitB === trumpf;
+    if (isTrumpA && !isTrumpB) return -1;
+    if (!isTrumpA && isTrumpB) return 1;
+
+    // Wenn beide gleich (Trumpf oder beide kein Trumpf) -> nach suitOrder
+    if (suitOrder.indexOf(suitA) !== suitOrder.indexOf(suitB)) {
+      return suitOrder.indexOf(suitA) - suitOrder.indexOf(suitB);
+    }
+
+    // Wenn gleiche Farbe -> nach Rang
+    return rankOrder.indexOf(rankA) - rankOrder.indexOf(rankB);
+  });
+};
+
+    socket.on("hand", (cards) => setHand(sortHand(cards,trumpf)));
 
     socket.on("bottomCards", (cards) => {
       console.log("Boden:", cards);
@@ -42,9 +71,31 @@ function App() {
       setCurrentBid(data.currentBid);
     });
 
+    socket.on("turnUpdate", ({ currentPlayer }) => {
+      setCurrentPlayer(currentPlayer);
+    });
+
     socket.on("biddingResult", ({ winner, bid }) => {
       setBiddingWinner({ winner, bid });
       setIsMyTurn(false);
+    });
+
+  socket.on("discardPhase", ({ hand }) => {
+    setHand(sortHand(hand, trumpf));
+    setDiscardPhase(true);
+    setSelectedDiscard([]);
+  });
+
+    socket.on("chooseTrumpPhase", () => {
+      setDiscardPhase(false);
+      setChooseTrump(true);
+    });
+
+    socket.on("trumpChosen", ({ trumpf, winner }) => {
+      setTrumpf(trumpf);
+      setHand(h => sortHand(h, trumpf));
+      setChooseTrump(false);
+      alert(`${winner.name} hat ${trumpf} als Trumpf gewählt!`);
     });
 
     return () => {
@@ -54,6 +105,12 @@ function App() {
       socket.off("bottomCards");
       socket.off("yourTurn");
       socket.off("biddingResult");
+      socket.off("turnUpdate");
+      socket.off("chooseTeam");
+      socket.off("lobbyFull");
+      socket.off("discardPhase");
+      socket.off("chooseTrumpPhase");
+      socket.off("trumpChosen");
     };
   }, []);
 
@@ -62,10 +119,51 @@ function App() {
     setIsMyTurn(false);
   };
 
+  const toggleDiscard = (card) => {
+    if (selectedDiscard.includes(card)) {
+      setSelectedDiscard(selectedDiscard.filter((c) => c !== card));
+    } else if (selectedDiscard.length < 4) {
+      setSelectedDiscard([...selectedDiscard, card]);
+    }
+  };
+
+  const confirmDiscard = () => {
+    if (selectedDiscard.length === 4) {
+      socket.emit("discardCards", selectedDiscard);
+    } else {
+      alert("Bitte genau 4 Karten auswählen!");
+    }
+  };
+
   return (
     <div className="p-4">
       <h1 className="text-xl font-bold">Shelem – Lobby & Bieten</h1>
-
+      {/* === Team Auswahl === */}
+      {me && !me.team && (
+        <div className="mt-4">
+          <h2>Wähle dein Team:</h2>
+          <div className="flex gap-4 mt-2">
+            <button
+              onClick={() => socket.emit("chooseTeam", "Fire")}
+              className="px-4 py-2 bg-red-300 rounded"
+            >
+              Team Fire
+            </button>
+            <button
+              onClick={() => socket.emit("chooseTeam", "Storm")}
+              className="px-4 py-2 bg-blue-300 rounded"
+            >
+              Team Storm
+            </button>
+          </div>
+        </div>
+      )}
+      {/* === Team Auswahl === */}
+      {me && (
+        <div className="mt-4">
+          <h2>Du bist: {me.name}</h2>
+        </div>
+      )}
       {/* === Spieler-Übersicht === */}
       <div className="mt-4">
         <h2 className="font-semibold">Spieler:</h2>
@@ -82,9 +180,57 @@ function App() {
       {/* === Aktuelles Gebot (für alle sichtbar) === */}
       {!biddingWinner && (
         <div className="mt-4">
-          <h2 className="font-semibold">
-            Aktuelles Höchstgebot: {currentBid}
-          </h2>
+          <h2 className="font-semibold">Aktuelles Höchstgebot: {currentBid}</h2>
+        </div>
+      )}
+
+      {/* === Discard Phase === */}
+      {discardPhase && (
+        <div className="mt-4">
+          <h2>Wähle 4 Karten zum Abwerfen:</h2>
+          <div className="flex flex-wrap gap-2">
+            {hand.map((card) => (
+              <button
+                key={card}
+                onClick={() => toggleDiscard(card)}
+                className={`px-3 py-2 border rounded 
+            ${selectedDiscard.includes(card) ? "bg-red-300" : "bg-gray-100"}`}
+              >
+                {card}
+              </button>
+            ))}
+          </div>
+          <button
+            className="mt-2 px-4 py-2 bg-green-300 rounded"
+            onClick={confirmDiscard}
+          >
+            Abwerfen bestätigen
+          </button>
+        </div>
+      )}
+
+      {/* === Trumpfwahl === */}
+      {chooseTrump && (
+        <div className="mt-4">
+          <h2>Wähle Trumpf:</h2>
+          <div className="flex gap-2">
+            {["♠", "♥", "♦", "♣"].map((suit) => (
+              <button
+                key={suit}
+                className="px-4 py-2 bg-blue-200 rounded"
+                onClick={() => socket.emit("chooseTrump", suit)}
+              >
+                {suit}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* === Trumpf anzeigen === */}
+      {trumpf && (
+        <div className="mt-4 p-2 bg-purple-200 rounded">
+          Trumpf ist: <b>{trumpf}</b>
         </div>
       )}
 
@@ -140,7 +286,11 @@ function App() {
           </div>
         </div>
       ) : (
-        <p className="mt-2">Warte auf deinen Zug...</p>
+        <p className="mt-2">
+          {currentPlayer
+            ? `Aktuell am Zug: ${currentPlayer.name} (Team ${currentPlayer.team})`
+            : "Warten auf den Spielstart..."}
+        </p>
       )}
     </div>
   );

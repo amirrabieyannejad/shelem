@@ -15,18 +15,44 @@ let bids = {};    // id -> bid
 let currentBid = 0;
 let currentPlayerIndex = 0;
 let biddingActive = false;
+let trumpf = null;
+let winnerPlayerId = null;
 
-// === Dummy Deal Funktion ===
+// === Karten Deck ===
+const suits = ["♠", "♥", "♦", "♣"];
+const ranks = ["2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A"];
+
+function createDeck() {
+  const deck = [];
+  for (const suit of suits) {
+    for (const rank of ranks) {
+      deck.push(`${rank}${suit}`);
+    }
+  }
+  return deck;
+}
+
+function shuffle(array) {
+  for (let i = array.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [array[i], array[j]] = [array[j], array[i]];
+  }
+  return array;
+}
+
+// === Karten austeilen ===
 function deal() {
-  // TODO: hier Karten austeilen
-  // fürs Testen: nur IDs als "Karten"
-  const allCards = Array.from({ length: 52 }, (_, i) => i + 1);
+  let deck = createDeck();
+  deck = shuffle(deck);
+
   hands = {};
-  bottomCards = allCards.slice(48);
+  bottomCards = deck.slice(48); // letzte 4 Karten als "Bottom Cards"
+
   players.forEach((p, idx) => {
-    hands[p.id] = allCards.slice(idx * 12, idx * 12 + 12);
+    hands[p.id] = deck.slice(idx * 12, idx * 12 + 12);
     io.to(p.id).emit("hand", hands[p.id]);
   });
+
   io.emit("bottomCards", bottomCards);
 }
 
@@ -58,7 +84,16 @@ function checkBiddingEnd() {
     );
 
     const winnerPlayer = players.find(p => p.id === winnerId);
+    winnerPlayerId = winnerId;
+
     io.emit("biddingResult", { winner: winnerPlayer, bid: highestBid });
+
+    // Boden automatisch zu Hand hinzufügen
+    hands[winnerId] = [...hands[winnerId], ...bottomCards];
+    io.to(winnerId).emit("hand", hands[winnerId]);
+    io.to(winnerId).emit("discardPhase", { hand: hands[winnerId] });
+
+    bottomCards = [];
     return true;
   }
 
@@ -70,27 +105,43 @@ io.on("connection", (socket) => {
   console.log("Player connected:", socket.id);
 
   socket.on("register", (name) => {
-    console.log("Player gave a name: ", name);
+    console.log("Player gave a name:", name);
     if (players.length >= 4) {
-      
       socket.emit("lobbyFull", { msg: "Lobby voll (max. 4 Spieler)" });
       return;
     }
-
-    const team = players.length % 2 === 0 ? "Fire" : "Storm";
-    const player = { id: socket.id, name, team, passed: false };
+    const player = { id: socket.id, name, team: null, passed: false };
     players.push(player);
+    io.emit("playersUpdate", players);
+  });
 
+  // Spieler wählt Team
+  socket.on("chooseTeam", (team) => {
+    const player = players.find(p => p.id === socket.id);
+    if (!player) return;
+
+    const teamMembers = players.filter(p => p.team === team);
+    if (teamMembers.length >= 2) {
+      socket.emit("teamFull", { msg: `Team ${team} is full` });
+      return;
+    }
+    player.team = team;
     io.emit("playersUpdate", players);
 
-    if (players.length === 4) {
+    const fire = players.filter(p => p.team === "Fire");
+    const storm = players.filter(p => p.team === "Storm");
+
+    if (fire.length === 2 && storm.length === 2) {
+      players.forEach(p => { p.passed = false; });
       deal();
       bids = {};
       currentBid = 0;
       currentPlayerIndex = 0;
       biddingActive = true;
 
-      io.to(players[currentPlayerIndex].id).emit("yourTurn", { currentBid });
+      const next = players[currentPlayerIndex];
+      io.to(next.id).emit("yourTurn", { currentBid, currentPlayer: next });
+      io.emit("turnUpdate", { currentPlayer: next });
     }
   });
 
@@ -116,9 +167,30 @@ io.on("connection", (socket) => {
     } while (players[currentPlayerIndex].passed);
 
     const next = players[currentPlayerIndex];
-    io.to(next.id).emit("yourTurn", { currentBid });
+    io.to(next.id).emit("yourTurn", { currentBid, currentPlayer: next });
+    io.emit("turnUpdate", { currentPlayer: next });
   });
 
+  // Gewinner wirft 4 Karten ab
+  socket.on("discardCards", (selected) => {
+    if (socket.id !== winnerPlayerId) return;
+    if (!hands[socket.id]) return;
+    if (selected.length !== 4) return;
+
+    hands[socket.id] = hands[socket.id].filter(c => !selected.includes(c));
+    io.to(socket.id).emit("hand", hands[socket.id]);
+
+    io.to(socket.id).emit("chooseTrumpPhase");
+  });
+
+  // Gewinner wählt Trumpf
+  socket.on("chooseTrump", (suit) => {
+    if (socket.id !== winnerPlayerId) return;
+    trumpf = suit;
+    io.emit("trumpChosen", { trumpf, winner: players.find(p => p.id === socket.id) });
+  });
+
+  // Disconnect Handler (richtig platziert!)
   socket.on("disconnect", () => {
     console.log("Player disconnected:", socket.id);
     players = players.filter(p => p.id !== socket.id);
