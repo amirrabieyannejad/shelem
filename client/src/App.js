@@ -15,6 +15,9 @@ function App() {
   const [discardPhase, setDiscardPhase] = useState(false);
   const [selectedDiscard, setSelectedDiscard] = useState([]);
   const [chooseTrump, setChooseTrump] = useState(false);
+  const [randomTeams, setRandomTeams] = useState(false);
+  const [showBottom, setShowBottom] = useState(false);
+  const [bottomCards, setBottomCards] = useState([]);
 
   useEffect(() => {
     socket.on("connect", () => {
@@ -35,32 +38,50 @@ function App() {
       setMe(myself);
     });
 
-// Hilfsfunktion zum Sortieren
-const sortHand = (cards, trumpf) => {
-  const suitOrder = ["♠", "♥", "♦", "♣"];
-  const rankOrder = ["2","3","4","5","6","7","8","9","10","J","Q","K","A"];
+    socket.on("randomTeamsActivated", () => {
+      setRandomTeams(true);
+    });
 
-  return [...cards].sort((a, b) => {
-    const [rankA, suitA] = [a.slice(0, -1), a.slice(-1)];
-    const [rankB, suitB] = [b.slice(0, -1), b.slice(-1)];
+    // Hilfsfunktion zum Sortieren
+    const sortHand = (cards, trumpf) => {
+      const suitOrder = ["♠", "♥", "♦", "♣"];
+      const rankOrder = [
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9",
+        "10",
+        "J",
+        "Q",
+        "K",
+        "A",
+      ];
 
-    // Trumpf zuerst
-    const isTrumpA = suitA === trumpf;
-    const isTrumpB = suitB === trumpf;
-    if (isTrumpA && !isTrumpB) return -1;
-    if (!isTrumpA && isTrumpB) return 1;
+      return [...cards].sort((a, b) => {
+        const [rankA, suitA] = [a.slice(0, -1), a.slice(-1)];
+        const [rankB, suitB] = [b.slice(0, -1), b.slice(-1)];
 
-    // Wenn beide gleich (Trumpf oder beide kein Trumpf) -> nach suitOrder
-    if (suitOrder.indexOf(suitA) !== suitOrder.indexOf(suitB)) {
-      return suitOrder.indexOf(suitA) - suitOrder.indexOf(suitB);
-    }
+        // Trumpf zuerst
+        const isTrumpA = suitA === trumpf;
+        const isTrumpB = suitB === trumpf;
+        if (isTrumpA && !isTrumpB) return -1;
+        if (!isTrumpA && isTrumpB) return 1;
 
-    // Wenn gleiche Farbe -> nach Rang
-    return rankOrder.indexOf(rankA) - rankOrder.indexOf(rankB);
-  });
-};
+        // Wenn beide gleich (Trumpf oder beide kein Trumpf) -> nach suitOrder
+        if (suitOrder.indexOf(suitA) !== suitOrder.indexOf(suitB)) {
+          return suitOrder.indexOf(suitA) - suitOrder.indexOf(suitB);
+        }
 
-    socket.on("hand", (cards) => setHand(sortHand(cards,trumpf)));
+        // Wenn gleiche Farbe -> nach Rang
+        return rankOrder.indexOf(rankA) - rankOrder.indexOf(rankB);
+      });
+    };
+
+    socket.on("hand", (cards) => setHand(sortHand(cards, trumpf)));
 
     socket.on("bottomCards", (cards) => {
       console.log("Boden:", cards);
@@ -80,11 +101,15 @@ const sortHand = (cards, trumpf) => {
       setIsMyTurn(false);
     });
 
-  socket.on("discardPhase", ({ hand }) => {
-    setHand(sortHand(hand, trumpf));
-    setDiscardPhase(true);
-    setSelectedDiscard([]);
+    socket.on("showBottomCards", ({ bottomCards }) => {
+    setBottomCards(bottomCards);
+    setShowBottom(true);
   });
+    socket.on("discardPhase", ({ hand }) => {
+      setHand(sortHand(hand, trumpf));
+      setDiscardPhase(true);
+      setSelectedDiscard([]);
+    });
 
     socket.on("chooseTrumpPhase", () => {
       setDiscardPhase(false);
@@ -93,7 +118,7 @@ const sortHand = (cards, trumpf) => {
 
     socket.on("trumpChosen", ({ trumpf, winner }) => {
       setTrumpf(trumpf);
-      setHand(h => sortHand(h, trumpf));
+      setHand((h) => sortHand(h, trumpf));
       setChooseTrump(false);
       alert(`${winner.name} hat ${trumpf} als Trumpf gewählt!`);
     });
@@ -138,27 +163,75 @@ const sortHand = (cards, trumpf) => {
   return (
     <div className="p-4">
       <h1 className="text-xl font-bold">Shelem – Lobby & Bieten</h1>
-      {/* === Team Auswahl === */}
-      {me && !me.team && (
-        <div className="mt-4">
-          <h2>Wähle dein Team:</h2>
-          <div className="flex gap-4 mt-2">
-            <button
-              onClick={() => socket.emit("chooseTeam", "Fire")}
-              className="px-4 py-2 bg-red-300 rounded"
-            >
-              Team Fire
-            </button>
-            <button
-              onClick={() => socket.emit("chooseTeam", "Storm")}
-              className="px-4 py-2 bg-blue-300 rounded"
-            >
-              Team Storm
-            </button>
+     
+     {/* === Popup für Boden-Karten === */}
+    {showBottom && (
+      <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50">
+        <div className="bg-white p-6 rounded shadow-lg">
+          <h2 className="text-lg font-bold">Boden-Karten</h2>
+          <div className="flex gap-2 mt-2">
+            {bottomCards.map((card) => (
+              <span key={card} className="px-3 py-2 border rounded bg-yellow-200">
+                {card}
+              </span>
+            ))}
           </div>
+          <button
+            className="mt-4 px-4 py-2 bg-green-400 rounded"
+            onClick={() => {
+              socket.emit("takeBottomCards");
+              setShowBottom(false);
+            }}
+          >
+            Übernehmen
+          </button>
+        </div>
+      </div>
+    )}
+     
+     {/* === Team Auswahl === */}
+{me && !me.team && (
+  <div className="mt-4">
+    {!randomTeams ? (
+      <>
+        <h2>Wähle dein Team:</h2>
+        <div className="flex gap-4 mt-2">
+          <button
+            onClick={() => socket.emit("chooseTeam", "Fire")}
+            className="px-4 py-2 bg-red-300 rounded"
+          >
+            Team Fire
+          </button>
+          <button
+            onClick={() => socket.emit("chooseTeam", "Storm")}
+            className="px-4 py-2 bg-blue-300 rounded"
+          >
+            Team Storm
+          </button>
+          {players.length === 1 && (
+            <button
+              onClick={() => socket.emit("chooseTeam", "Random")}
+              className="px-4 py-2 bg-green-300 rounded"
+            >
+              Random Teams
+            </button>
+          )}
+        </div>
+      </>
+    ) : (
+      <h2>Teams werden automatisch zugewiesen...</h2>
+    )}
+  </div>
+)}
+
+
+      {/* Wenn Random-Modus aktiv */}
+      {me && !me.team && randomTeams && (
+        <div className="mt-4">
+          <h2>Teams werden automatisch zugewiesen...</h2>
         </div>
       )}
-      {/* === Team Auswahl === */}
+      {/* === Spiler Name === */}
       {me && (
         <div className="mt-4">
           <h2>Du bist: {me.name}</h2>
@@ -184,30 +257,40 @@ const sortHand = (cards, trumpf) => {
         </div>
       )}
 
-      {/* === Discard Phase === */}
-      {discardPhase && (
-        <div className="mt-4">
-          <h2>Wähle 4 Karten zum Abwerfen:</h2>
-          <div className="flex flex-wrap gap-2">
-            {hand.map((card) => (
-              <button
-                key={card}
-                onClick={() => toggleDiscard(card)}
-                className={`px-3 py-2 border rounded 
-            ${selectedDiscard.includes(card) ? "bg-red-300" : "bg-gray-100"}`}
-              >
-                {card}
-              </button>
-            ))}
-          </div>
+      {/* === Discard Phase (nur für Richter nach Boden-Übernahme) === */}
+{discardPhase && (
+  <div className="mt-4">
+    <h2>Wähle 4 Karten zum Abwerfen:</h2>
+    <div className="flex flex-wrap gap-2">
+      {hand.map((card) => {
+        const isSelected = selectedDiscard.includes(card);
+        return (
           <button
-            className="mt-2 px-4 py-2 bg-green-300 rounded"
-            onClick={confirmDiscard}
+            key={card}
+            onClick={() => toggleDiscard(card)}
+            disabled={
+              !isSelected && selectedDiscard.length >= 4 // blockieren wenn schon 4 ausgewählt
+            }
+            className={`px-3 py-2 border rounded transition
+              ${isSelected ? "bg-red-400 text-white" : "bg-gray-100"}
+              ${!isSelected && selectedDiscard.length >= 4 ? "opacity-50 cursor-not-allowed" : ""}
+            `}
           >
-            Abwerfen bestätigen
+            {card}
           </button>
-        </div>
-      )}
+        );
+      })}
+    </div>
+    <button
+      className="mt-2 px-4 py-2 bg-green-500 text-white rounded disabled:opacity-50"
+      onClick={confirmDiscard}
+      disabled={selectedDiscard.length !== 4}
+    >
+      Abwerfen bestätigen
+    </button>
+  </div>
+)}
+
 
       {/* === Trumpfwahl === */}
       {chooseTrump && (
@@ -234,20 +317,51 @@ const sortHand = (cards, trumpf) => {
         </div>
       )}
 
-      {/* === Deine Hand === */}
-      <div className="mt-4">
-        <h2 className="font-semibold">Deine Hand:</h2>
-        <div className="flex flex-wrap gap-2">
-          {hand.map((card) => (
-            <span
-              key={card}
-              className="px-3 py-2 border rounded bg-gray-100 shadow"
-            >
-              {card}
-            </span>
-          ))}
-        </div>
-      </div>
+{/* === Deine Hand === */}
+<div className="mt-4">
+  <h2 className="font-semibold">Deine Hand:</h2>
+  <div className="flex flex-wrap gap-2">
+    {hand.map((card) =>
+      discardPhase ? (
+        <button
+          key={card}
+          onClick={() => toggleDiscard(card)}
+          disabled={
+            !selectedDiscard.includes(card) && selectedDiscard.length >= 4
+          }
+          className={`px-3 py-2 border rounded transition
+            ${selectedDiscard.includes(card) ? "bg-red-400 text-white" : "bg-gray-100"}
+            ${
+              !selectedDiscard.includes(card) && selectedDiscard.length >= 4
+                ? "opacity-50 cursor-not-allowed"
+                : ""
+            }
+          `}
+        >
+          {card}
+        </button>
+      ) : (
+        <span
+          key={card}
+          className="px-3 py-2 border rounded bg-gray-100 shadow"
+        >
+          {card}
+        </span>
+      )
+    )}
+  </div>
+
+  {/* Discard bestätigen nur in Discard-Phase */}
+  {discardPhase && (
+    <button
+      className="mt-2 px-4 py-2 bg-green-500 text-white rounded disabled:opacity-50"
+      onClick={confirmDiscard}
+      disabled={selectedDiscard.length !== 4}
+    >
+      Abwerfen bestätigen
+    </button>
+  )}
+</div>
 
       {/* === Ergebnis nach Bietende === */}
       {biddingWinner ? (
@@ -272,7 +386,7 @@ const sortHand = (cards, trumpf) => {
               Pass
             </button>
             {[...Array(14).keys()]
-              .map((i) => (i + 1) * 5 + 100) // 105 bis 165
+              .map((i) => (i + 1) * 5 + 95) // 105 bis 165
               .filter((bid) => bid > currentBid)
               .map((bid) => (
                 <button
