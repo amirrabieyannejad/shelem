@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from "react";
 import { io } from "socket.io-client";
 
+
 const socket = io("http://localhost:3001");
+
 
 function App() {
   const [hand, setHand] = useState([]);
@@ -18,10 +20,13 @@ function App() {
   const [randomTeams, setRandomTeams] = useState(false);
   const [showBottom, setShowBottom] = useState(false);
   const [bottomCards, setBottomCards] = useState([]);
+  const [mustBid, setMustBid] = useState(false);
+
 
   useEffect(() => {
     socket.on("connect", () => {
       console.log("Connected to backend!");
+
 
       const name = prompt("Bitte gib deinen Namen ein:");
       if (name) {
@@ -31,6 +36,11 @@ function App() {
         console.log("player cancelled name input or provided an empty name.");
       }
     });
+    socket.on("invalidAction", ({ msg }) => {
+      alert(msg);
+    });
+
+
     socket.on("playersUpdate", (list) => {
       setPlayers(list);
       const myId = socket.id;
@@ -38,9 +48,11 @@ function App() {
       setMe(myself);
     });
 
+
     socket.on("randomTeamsActivated", () => {
       setRandomTeams(true);
     });
+
 
     // Hilfsfunktion zum Sortieren
     const sortHand = (cards, trumpf) => {
@@ -61,9 +73,11 @@ function App() {
         "A",
       ];
 
+
       return [...cards].sort((a, b) => {
         const [rankA, suitA] = [a.slice(0, -1), a.slice(-1)];
         const [rankB, suitB] = [b.slice(0, -1), b.slice(-1)];
+
 
         // Trumpf zuerst
         const isTrumpA = suitA === trumpf;
@@ -71,50 +85,62 @@ function App() {
         if (isTrumpA && !isTrumpB) return -1;
         if (!isTrumpA && isTrumpB) return 1;
 
+
         // Wenn beide gleich (Trumpf oder beide kein Trumpf) -> nach suitOrder
         if (suitOrder.indexOf(suitA) !== suitOrder.indexOf(suitB)) {
           return suitOrder.indexOf(suitA) - suitOrder.indexOf(suitB);
         }
+
 
         // Wenn gleiche Farbe -> nach Rang
         return rankOrder.indexOf(rankA) - rankOrder.indexOf(rankB);
       });
     };
 
+
     socket.on("hand", (cards) => setHand(sortHand(cards, trumpf)));
+
 
     socket.on("bottomCards", (cards) => {
       console.log("Boden:", cards);
     });
 
+
     socket.on("yourTurn", (data) => {
       setIsMyTurn(true);
       setCurrentBid(data.currentBid);
+      setMustBid(data.mustBid || false); // neuer State
+      setCurrentPlayer(data.currentPlayer);
     });
+
 
     socket.on("turnUpdate", ({ currentPlayer }) => {
       setCurrentPlayer(currentPlayer);
     });
+
 
     socket.on("biddingResult", ({ winner, bid }) => {
       setBiddingWinner({ winner, bid });
       setIsMyTurn(false);
     });
 
+
     socket.on("showBottomCards", ({ bottomCards }) => {
-    setBottomCards(bottomCards);
-    setShowBottom(true);
-  });
+      setBottomCards(bottomCards);
+      setShowBottom(true);
+    });
     socket.on("discardPhase", ({ hand }) => {
       setHand(sortHand(hand, trumpf));
       setDiscardPhase(true);
       setSelectedDiscard([]);
     });
 
+
     socket.on("chooseTrumpPhase", () => {
       setDiscardPhase(false);
       setChooseTrump(true);
     });
+
 
     socket.on("trumpChosen", ({ trumpf, winner }) => {
       setTrumpf(trumpf);
@@ -122,6 +148,7 @@ function App() {
       setChooseTrump(false);
       alert(`${winner.name} hat ${trumpf} als Trumpf gewählt!`);
     });
+
 
     return () => {
       socket.off("connect");
@@ -136,13 +163,16 @@ function App() {
       socket.off("discardPhase");
       socket.off("chooseTrumpPhase");
       socket.off("trumpChosen");
+      socket.off("invalidAction");
     };
   }, []);
+
 
   const makeBid = (bid) => {
     socket.emit("makeBid", bid);
     setIsMyTurn(false);
   };
+
 
   const toggleDiscard = (card) => {
     if (selectedDiscard.includes(card)) {
@@ -152,6 +182,7 @@ function App() {
     }
   };
 
+
   const confirmDiscard = () => {
     if (selectedDiscard.length === 4) {
       socket.emit("discardCards", selectedDiscard);
@@ -160,69 +191,75 @@ function App() {
     }
   };
 
+
   return (
     <div className="p-4">
       <h1 className="text-xl font-bold">Shelem – Lobby & Bieten</h1>
-     
-     {/* === Popup für Boden-Karten === */}
-    {showBottom && (
-      <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50">
-        <div className="bg-white p-6 rounded shadow-lg">
-          <h2 className="text-lg font-bold">Boden-Karten</h2>
-          <div className="flex gap-2 mt-2">
-            {bottomCards.map((card) => (
-              <span key={card} className="px-3 py-2 border rounded bg-yellow-200">
-                {card}
-              </span>
-            ))}
-          </div>
-          <button
-            className="mt-4 px-4 py-2 bg-green-400 rounded"
-            onClick={() => {
-              socket.emit("takeBottomCards");
-              setShowBottom(false);
-            }}
-          >
-            Übernehmen
-          </button>
-        </div>
-      </div>
-    )}
-     
-     {/* === Team Auswahl === */}
-{me && !me.team && (
-  <div className="mt-4">
-    {!randomTeams ? (
-      <>
-        <h2>Wähle dein Team:</h2>
-        <div className="flex gap-4 mt-2">
-          <button
-            onClick={() => socket.emit("chooseTeam", "Fire")}
-            className="px-4 py-2 bg-red-300 rounded"
-          >
-            Team Fire
-          </button>
-          <button
-            onClick={() => socket.emit("chooseTeam", "Storm")}
-            className="px-4 py-2 bg-blue-300 rounded"
-          >
-            Team Storm
-          </button>
-          {players.length === 1 && (
+
+
+      {/* === Popup für Boden-Karten === */}
+      {showBottom && (
+        <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50">
+          <div className="bg-white p-6 rounded shadow-lg">
+            <h2 className="text-lg font-bold">Boden-Karten</h2>
+            <div className="flex gap-2 mt-2">
+              {bottomCards.map((card) => (
+                <span
+                  key={card}
+                  className="px-3 py-2 border rounded bg-yellow-200"
+                >
+                  {card}
+                </span>
+              ))}
+            </div>
             <button
-              onClick={() => socket.emit("chooseTeam", "Random")}
-              className="px-4 py-2 bg-green-300 rounded"
+              className="mt-4 px-4 py-2 bg-green-400 rounded"
+              onClick={() => {
+                socket.emit("takeBottomCards");
+                setShowBottom(false);
+              }}
             >
-              Random Teams
+              Übernehmen
             </button>
+          </div>
+        </div>
+      )}
+
+
+      {/* === Team Auswahl === */}
+      {me && !me.team && (
+        <div className="mt-4">
+          {!randomTeams ? (
+            <>
+              <h2>Wähle dein Team:</h2>
+              <div className="flex gap-4 mt-2">
+                <button
+                  onClick={() => socket.emit("chooseTeam", "Fire")}
+                  className="px-4 py-2 bg-red-300 rounded"
+                >
+                  Team Fire
+                </button>
+                <button
+                  onClick={() => socket.emit("chooseTeam", "Storm")}
+                  className="px-4 py-2 bg-blue-300 rounded"
+                >
+                  Team Storm
+                </button>
+                {players.length === 1 && (
+                  <button
+                    onClick={() => socket.emit("chooseTeam", "Random")}
+                    className="px-4 py-2 bg-green-300 rounded"
+                  >
+                    Random Teams
+                  </button>
+                )}
+              </div>
+            </>
+          ) : (
+            <h2>Teams werden automatisch zugewiesen...</h2>
           )}
         </div>
-      </>
-    ) : (
-      <h2>Teams werden automatisch zugewiesen...</h2>
-    )}
-  </div>
-)}
+      )}
 
 
       {/* Wenn Random-Modus aktiv */}
@@ -250,6 +287,7 @@ function App() {
         </ul>
       </div>
 
+
       {/* === Aktuelles Gebot (für alle sichtbar) === */}
       {!biddingWinner && (
         <div className="mt-4">
@@ -257,39 +295,44 @@ function App() {
         </div>
       )}
 
+
       {/* === Discard Phase (nur für Richter nach Boden-Übernahme) === */}
-{discardPhase && (
-  <div className="mt-4">
-    <h2>Wähle 4 Karten zum Abwerfen:</h2>
-    <div className="flex flex-wrap gap-2">
-      {hand.map((card) => {
-        const isSelected = selectedDiscard.includes(card);
-        return (
-          <button
-            key={card}
-            onClick={() => toggleDiscard(card)}
-            disabled={
-              !isSelected && selectedDiscard.length >= 4 // blockieren wenn schon 4 ausgewählt
-            }
-            className={`px-3 py-2 border rounded transition
+      {discardPhase && (
+        <div className="mt-4">
+          <h2>Wähle 4 Karten zum Abwerfen:</h2>
+          <div className="flex flex-wrap gap-2">
+            {hand.map((card) => {
+              const isSelected = selectedDiscard.includes(card);
+              return (
+                <button
+                  key={card}
+                  onClick={() => toggleDiscard(card)}
+                  disabled={
+                    !isSelected && selectedDiscard.length >= 4 // blockieren wenn schon 4 ausgewählt
+                  }
+                  className={`px-3 py-2 border rounded transition
               ${isSelected ? "bg-red-400 text-white" : "bg-gray-100"}
-              ${!isSelected && selectedDiscard.length >= 4 ? "opacity-50 cursor-not-allowed" : ""}
+              ${
+                !isSelected && selectedDiscard.length >= 4
+                  ? "opacity-50 cursor-not-allowed"
+                  : ""
+              }
             `}
+                >
+                  {card}
+                </button>
+              );
+            })}
+          </div>
+          <button
+            className="mt-2 px-4 py-2 bg-green-500 text-white rounded disabled:opacity-50"
+            onClick={confirmDiscard}
+            disabled={selectedDiscard.length !== 4}
           >
-            {card}
+            Abwerfen bestätigen
           </button>
-        );
-      })}
-    </div>
-    <button
-      className="mt-2 px-4 py-2 bg-green-500 text-white rounded disabled:opacity-50"
-      onClick={confirmDiscard}
-      disabled={selectedDiscard.length !== 4}
-    >
-      Abwerfen bestätigen
-    </button>
-  </div>
-)}
+        </div>
+      )}
 
 
       {/* === Trumpfwahl === */}
@@ -310,6 +353,7 @@ function App() {
         </div>
       )}
 
+
       {/* === Trumpf anzeigen === */}
       {trumpf && (
         <div className="mt-4 p-2 bg-purple-200 rounded">
@@ -317,51 +361,58 @@ function App() {
         </div>
       )}
 
-{/* === Deine Hand === */}
-<div className="mt-4">
-  <h2 className="font-semibold">Deine Hand:</h2>
-  <div className="flex flex-wrap gap-2">
-    {hand.map((card) =>
-      discardPhase ? (
-        <button
-          key={card}
-          onClick={() => toggleDiscard(card)}
-          disabled={
-            !selectedDiscard.includes(card) && selectedDiscard.length >= 4
-          }
-          className={`px-3 py-2 border rounded transition
-            ${selectedDiscard.includes(card) ? "bg-red-400 text-white" : "bg-gray-100"}
+
+      {/* === Deine Hand === */}
+      <div className="mt-4">
+        <h2 className="font-semibold">Deine Hand:</h2>
+        <div className="flex flex-wrap gap-2">
+          {hand.map((card) =>
+            discardPhase ? (
+              <button
+                key={card}
+                onClick={() => toggleDiscard(card)}
+                disabled={
+                  !selectedDiscard.includes(card) && selectedDiscard.length >= 4
+                }
+                className={`px-3 py-2 border rounded transition
+            ${
+              selectedDiscard.includes(card)
+                ? "bg-red-400 text-white"
+                : "bg-gray-100"
+            }
             ${
               !selectedDiscard.includes(card) && selectedDiscard.length >= 4
                 ? "opacity-50 cursor-not-allowed"
                 : ""
             }
           `}
-        >
-          {card}
-        </button>
-      ) : (
-        <span
-          key={card}
-          className="px-3 py-2 border rounded bg-gray-100 shadow"
-        >
-          {card}
-        </span>
-      )
-    )}
-  </div>
+              >
+                {card}
+              </button>
+            ) : (
+              <span
+                key={card}
+                className="px-3 py-2 border rounded bg-gray-100 shadow"
+              >
+                {card}
+              </span>
+            )
+          )}
+        </div>
 
-  {/* Discard bestätigen nur in Discard-Phase */}
-  {discardPhase && (
-    <button
-      className="mt-2 px-4 py-2 bg-green-500 text-white rounded disabled:opacity-50"
-      onClick={confirmDiscard}
-      disabled={selectedDiscard.length !== 4}
-    >
-      Abwerfen bestätigen
-    </button>
-  )}
-</div>
+
+        {/* Discard bestätigen nur in Discard-Phase */}
+        {discardPhase && (
+          <button
+            className="mt-2 px-4 py-2 bg-green-500 text-white rounded disabled:opacity-50"
+            onClick={confirmDiscard}
+            disabled={selectedDiscard.length !== 4}
+          >
+            Abwerfen bestätigen
+          </button>
+        )}
+      </div>
+
 
       {/* === Ergebnis nach Bietende === */}
       {biddingWinner ? (
@@ -379,12 +430,15 @@ function App() {
         <div className="mt-4">
           <h2>Dein Zug – aktuelles Gebot: {currentBid}</h2>
           <div className="flex gap-2 flex-wrap">
-            <button
-              className="px-3 py-2 bg-gray-200 rounded"
-              onClick={() => makeBid(0)}
-            >
-              Pass
-            </button>
+            {/* Pass-Button nur anzeigen, wenn mustBid === false */}
+            {!mustBid && (
+              <button
+                className="px-3 py-2 bg-gray-200 rounded"
+                onClick={() => makeBid(0)}
+              >
+                Pass
+              </button>
+            )}
             {[...Array(14).keys()]
               .map((i) => (i + 1) * 5 + 95) // 105 bis 165
               .filter((bid) => bid > currentBid)
@@ -409,5 +463,6 @@ function App() {
     </div>
   );
 }
+
 
 export default App;
