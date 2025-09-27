@@ -341,18 +341,41 @@ io.on("connection", (socket) => {
     hands[socket.id] = hands[socket.id].filter((c) => !selected.includes(c));
     io.to(socket.id).emit("hand", hands[socket.id]);
 
-    io.to(socket.id).emit("chooseTrumpPhase");
-  });
+    // NEU: Discard-Phase ist vorbei
+    io.to(socket.id).emit("discardDone");
 
-  socket.on("chooseTrump", (suit) => {
-    if (socket.id !== winnerPlayerId) return;
-    trumpf = suit;
-    io.emit("trumpChosen", {
-      trumpf,
-      winner: players.find((p) => p.id === socket.id),
+    // Jetzt darf der Richter als erster spielen
+    currentPlayerIndex = players.findIndex((p) => p.id === winnerPlayerId);
+    const startPlayer = players[currentPlayerIndex];
+    io.to(startPlayer.id).emit("yourTurn", {
+      currentBid,
+      currentPlayer: startPlayer,
     });
+    io.emit("turnUpdate", { currentPlayer: startPlayer });
   });
 
+  // === Karte ausspielen ===
+  socket.on("playCard", (card) => {
+    const player = players.find((p) => p.id === socket.id);
+    if (!player || !hands[socket.id]) return;
+    // Prüfen ob Karte in Hand
+    if (!hands[socket.id].includes(card)) return;
+    // Trumpf automatisch bei erster ausgespielten Karte setzen
+    if (!trumpf) {
+      const suit = card.slice(-1); // letzte Stelle ist Symbol
+      trumpf = suit;
+      io.emit("trumpChosen", {
+        trumpf,
+        winner: player,
+      });
+    }
+    // Karte aus Hand entfernen
+    hands[socket.id] = hands[socket.id].filter((c) => c !== card);
+    io.to(socket.id).emit("hand", hands[socket.id]);
+
+    // TODO: hier Logik für Stichverwaltung einfügen (wer hat welche Karte gelegt, wer gewinnt usw.)
+    io.emit("cardPlayed", { playerId: socket.id, card });
+  });
   socket.on("disconnect", () => {
     console.log("Player disconnected:", socket.id);
     players = players.filter((p) => p.id !== socket.id);

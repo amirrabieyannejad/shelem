@@ -26,7 +26,6 @@ const styles = {
     borderRadius: 8,
     marginTop: 16,
   },
-  // Grid (3x3)
   gridWrap: {
     display: "grid",
     gridTemplateColumns: "140px 140px 140px",
@@ -65,8 +64,8 @@ const styles = {
   },
   fire: { background: "#fecaca", border: "2px solid #fca5a5" },
   storm: { background: "#bfdbfe", border: "2px solid #93c5fd" },
-  me: { outline: "3px solid #f59e0b" }, // gelber Rand
-  turn: { boxShadow: "0 0 0 4px rgba(251,191,36,.7) inset" }, // aktueller Zug
+  me: { outline: "3px solid #f59e0b" },
+  turn: { boxShadow: "0 0 0 4px rgba(251,191,36,.7) inset" },
   btn: {
     padding: "8px 12px",
     borderRadius: 6,
@@ -101,7 +100,6 @@ function App() {
   const [trumpf, setTrumpf] = useState(null);
   const [discardPhase, setDiscardPhase] = useState(false);
   const [selectedDiscard, setSelectedDiscard] = useState([]);
-  const [chooseTrump, setChooseTrump] = useState(false);
   const [randomTeams, setRandomTeams] = useState(false);
   const [showBottom, setShowBottom] = useState(false);
   const [bottomCards, setBottomCards] = useState([]);
@@ -124,7 +122,6 @@ function App() {
 
     socket.on("randomTeamsActivated", () => setRandomTeams(true));
 
-    // Hand sortieren (Trumpf zuerst, dann Farbe/Rang)
     const sortHand = (cards, tr) => {
       const suitOrder = ["♠", "♥", "♦", "♣"];
       const rankOrder = [
@@ -183,16 +180,16 @@ function App() {
       setSelectedDiscard([]);
     });
 
-    socket.on("chooseTrumpPhase", () => {
+    // Discard beendet
+
+    socket.on("discardDone", () => {
       setDiscardPhase(false);
-      setChooseTrump(true);
     });
 
     socket.on("trumpChosen", ({ trumpf, winner }) => {
       setTrumpf(trumpf);
       setHand((h) => sortHand(h, trumpf));
-      setChooseTrump(false);
-      alert(`${winner.name} hat ${trumpf} als Trumpf gewählt!`);
+      alert(`${winner.name} hat ${trumpf} als Trumpf gesetzt (erste Karte)!`);
     });
 
     return () => socket.off();
@@ -219,16 +216,19 @@ function App() {
     else alert("Bitte genau 4 Karten auswählen!");
   };
 
-  // Ich = unten Mitte, dann im Uhrzeigersinn (links, oben, rechts)
+  const playCard = (card) => {
+    socket.emit("playCard", card);
+  };
+
   const getSeatingOrder = () => {
     if (!me || players.length !== 4) return [null, null, null, null];
     const myIndex = players.findIndex((p) => p.id === me.id);
     if (myIndex === -1) return [null, null, null, null];
     return [
-      players[myIndex], // unten
-      players[(myIndex + 3) % 4], // rechts
-      players[(myIndex + 2) % 4], // oben
-      players[(myIndex + 1) % 4], // links
+      players[myIndex],
+      players[(myIndex + 3) % 4],
+      players[(myIndex + 2) % 4],
+      players[(myIndex + 1) % 4],
     ];
   };
 
@@ -261,7 +261,7 @@ function App() {
     <div style={styles.page}>
       <h1 style={styles.h1}>Shelem — Lobby &amp; Bieten</h1>
 
-      {/* === Popup: Boden-Karten === */}
+      {/* Popup Boden-Karten */}
       {showBottom && (
         <div style={styles.modalBackdrop}>
           <div style={styles.modal}>
@@ -274,7 +274,7 @@ function App() {
                     padding: "6px 10px",
                     border: "1px solid #f59e0b",
                     borderRadius: 6,
-                    background: "#000000ff",
+                    background: "#000",
                   }}
                 >
                   {c}
@@ -296,13 +296,13 @@ function App() {
         </div>
       )}
 
-      {/* === Team-Auswahl === */}
+      {/* Team Auswahl */}
       {me && !me.team && (
         <div style={styles.card}>
           {!randomTeams ? (
             <>
               <h3 style={{ margin: 0 }}>Wähle dein Team:</h3>
-              <div style={{ ...styles.rowWrap, marginTop: 10 }}>
+              <div style={styles.rowWrap}>
                 <button
                   style={{ ...styles.btn, ...styles.btnRed }}
                   onClick={() => socket.emit("chooseTeam", "Fire")}
@@ -326,20 +326,17 @@ function App() {
               </div>
             </>
           ) : (
-            <h3 style={{ margin: 0 }}>Teams werden automatisch zugewiesen…</h3>
+            <h3>Teams werden automatisch zugewiesen…</h3>
           )}
         </div>
       )}
 
-      {/* === Spielfeld: echtes 3×3 Grid === */}
+      {/* Spielfeld */}
       {players.length === 4 && (
         <div style={styles.gridWrap}>
-          {/* Reihe 1 */}
           <div />
           <PlayerBox p={seated[2]} />
           <div />
-
-          {/* Reihe 2 */}
           <PlayerBox p={seated[1]} />
           <div style={styles.tableCenter}>
             {!biddingWinner ? (
@@ -348,7 +345,9 @@ function App() {
               </div>
             ) : (
               <div>
-                <div style={{ fontSize: 12, opacity: 0.8 }}>Gewinner:</div>
+                <div style={{ fontSize: 12, opacity: 0.8 }}>
+                  Gebot Gewinner:
+                </div>
                 <div style={{ fontWeight: 800 }}>
                   {biddingWinner.winner ? biddingWinner.winner.name : "Keiner"}
                 </div>
@@ -370,18 +369,16 @@ function App() {
             )}
           </div>
           <PlayerBox p={seated[3]} />
-
-          {/* Reihe 3 */}
           <div />
           <PlayerBox p={seated[0]} youLabel />
           <div />
         </div>
       )}
 
-      {/* === Discard === */}
+      {/* Discard Phase */}
       {discardPhase && (
         <div style={styles.card}>
-          <h3 style={{ margin: 0 }}>Wähle 4 Karten zum Abwerfen:</h3>
+          <h3>Wähle 4 Karten zum Abwerfen:</h3>
           <div style={styles.rowWrap}>
             {hand.map((card) => {
               const selected = selectedDiscard.includes(card);
@@ -395,10 +392,6 @@ function App() {
                     background: selected ? "#f87171" : "#f3f4f6",
                     color: selected ? "white" : "black",
                     opacity: !selected && selectedDiscard.length >= 4 ? 0.5 : 1,
-                    cursor:
-                      !selected && selectedDiscard.length >= 4
-                        ? "not-allowed"
-                        : "pointer",
                   }}
                 >
                   {card}
@@ -418,50 +411,39 @@ function App() {
         </div>
       )}
 
-      {/* === Trumpfwahl === */}
-      {chooseTrump && (
-        <div style={styles.card}>
-          <h3 style={{ margin: 0 }}>Wähle Trumpf:</h3>
-          <div style={styles.rowWrap}>
-            {["♠", "♥", "♦", "♣"].map((suit) => (
-              <button
-                key={suit}
-                style={{ ...styles.btn, fontSize: 24, background: "#bfdbfe" }}
-                onClick={() => socket.emit("chooseTrump", suit)}
-              >
-                {suit}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* === Hand === */}
+      {/* Hand */}
       <div style={styles.card}>
-        <h2 style={{ margin: 0 }}>Deine Hand:</h2>
+        <h2>Deine Hand:</h2>
         <div style={styles.rowWrap}>
           {hand.map((card) => (
-            <span
+            <button
               key={card}
+              onClick={() =>
+                biddingWinner && isMyTurn && !discardPhase && playCard(card)
+              }
+              disabled={!biddingWinner || !isMyTurn || discardPhase}
               style={{
-                padding: "6px 10px",
-                border: "1px solid #e5e7eb",
-                borderRadius: 6,
-                background: "#f3f4f6",
+                ...styles.btn,
+                background:
+                  !biddingWinner || !isMyTurn || discardPhase
+                    ? "#f3f4f6"
+                    : "#e5e7eb",
+                cursor:
+                  !biddingWinner || !isMyTurn || discardPhase
+                    ? "not-allowed"
+                    : "pointer",
               }}
             >
               {card}
-            </span>
+            </button>
           ))}
         </div>
       </div>
 
-      {/* === Bieten === */}
+      {/* Bieten */}
       {isMyTurn && me && !me.passed && !biddingWinner && (
         <div style={styles.card}>
-          <h3 style={{ margin: 0 }}>
-            Dein Zug — aktuelles Gebot: {currentBid}
-          </h3>
+          <h3>Dein Zug — aktuelles Gebot: {currentBid}</h3>
           <div style={styles.rowWrap}>
             {!mustBid && (
               <button style={styles.btn} onClick={() => makeBid(0)}>
@@ -484,7 +466,7 @@ function App() {
         </div>
       )}
 
-      {/* === Status === */}
+      {/* Status */}
       {!isMyTurn && !biddingWinner && currentPlayer && (
         <div style={{ textAlign: "center", marginTop: 16 }}>
           Aktuell am Zug: {currentPlayer.name} (Team {currentPlayer.team})
