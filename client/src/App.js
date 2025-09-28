@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { io } from "socket.io-client";
 
 const socket = io("http://localhost:3001");
@@ -26,14 +26,26 @@ const styles = {
     borderRadius: 8,
     marginTop: 16,
   },
+  tableCard: {
+    background: "#111",
+    color: "white",
+    border: "2px solid #f59e0b",
+    padding: "8px 12px",
+    borderRadius: 10,
+    minWidth: 64,
+    textAlign: "center",
+    fontSize: 20,
+    fontWeight: 800,
+  },
+
   gridWrap: {
     display: "grid",
-    gridTemplateColumns: "140px 140px 140px",
-    gridTemplateRows: "120px 120px 120px",
-    gap: 12,
+    gridTemplateColumns: "160px 400px 130px", // mehr Abstand links/rechts
+    gridTemplateRows: "140px 240px 140px", // mehr Abstand oben/unten
+    gap: 16,
     background: "#047857",
     borderRadius: 12,
-    padding: 16,
+    padding: 20,
     width: "max-content",
     margin: "24px auto 0",
   },
@@ -45,25 +57,27 @@ const styles = {
     flexDirection: "column",
     alignItems: "center",
     justifyContent: "center",
-    padding: 12,
+    padding: 20,
+    minWidth: 300,
+    minHeight: 220,
     color: "white",
     textAlign: "center",
   },
   playerBoxBase: {
-    borderRadius: 10,
-    padding: 10,
-    textAlign: "center",
-    fontSize: 14,
+    borderRadius: 8,
+    padding: 4,
+    fontSize: 11,
     fontWeight: 500,
     display: "flex",
     flexDirection: "column",
     alignItems: "center",
     justifyContent: "center",
-    height: "100%",
+    width: 100,
+    height: 70,
     boxShadow: "0 2px 6px rgba(0,0,0,.15)",
   },
-  fire: { background: "#fecaca", border: "2px solid #fca5a5" },
-  storm: { background: "#bfdbfe", border: "2px solid #93c5fd" },
+  fire: { background: "#940f0fff", border: "2px solid #fca5a5" },
+  storm: { background: "#0072feff", border: "2px solid #93c5fd" },
   me: { outline: "3px solid #f59e0b" },
   turn: { boxShadow: "0 0 0 4px rgba(251,191,36,.7) inset" },
   btn: {
@@ -87,6 +101,36 @@ const styles = {
     zIndex: 50,
   },
   modal: { background: "white", padding: 20, borderRadius: 10, width: 360 },
+  infoBar: {
+    maxWidth: 760,
+    margin: "0 auto 12px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 24,
+    background: "rgba(0,0,0,.12)",
+    padding: "10px 16px",
+    borderRadius: 10,
+  },
+  pill: {
+    background: "rgba(0,0,0,.25)",
+    border: "1px solid rgba(255,255,255,.2)",
+    padding: "6px 10px",
+    borderRadius: 8,
+    fontWeight: 700,
+    fontSize: 14,
+  },
+  bigCard: {
+    background: "#111",
+    color: "white",
+    border: "2px solid #f59e0b",
+    padding: "12px 16px",
+    borderRadius: 10,
+    minWidth: 70,
+    textAlign: "center",
+    fontSize: 22,
+    fontWeight: 800,
+  },
 };
 
 function App() {
@@ -104,6 +148,11 @@ function App() {
   const [showBottom, setShowBottom] = useState(false);
   const [bottomCards, setBottomCards] = useState([]);
   const [mustBid, setMustBid] = useState(false);
+  const [scores, setScores] = useState({ Fire: 0, Storm: 0 });
+  const [lastTrick, setLastTrick] = useState(null);
+  const [trumpfSetter, setTrumpfSetter] = useState(null);
+  const [currentTrick, setCurrentTrick] = useState([]); // {playerId, card}[]
+  const trickTimer = React.useRef(null);
 
   useEffect(() => {
     socket.on("connect", () => {
@@ -160,9 +209,10 @@ function App() {
       setCurrentPlayer(data.currentPlayer || null);
     });
 
-    socket.on("turnUpdate", ({ currentPlayer }) =>
-      setCurrentPlayer(currentPlayer)
-    );
+    socket.on("turnUpdate", ({ currentPlayer }) => {
+      setCurrentPlayer(currentPlayer);
+      setIsMyTurn(!!currentPlayer && currentPlayer.id === socket.id);
+    });
 
     socket.on("biddingResult", ({ winner, bid }) => {
       setBiddingWinner({ winner, bid });
@@ -188,11 +238,54 @@ function App() {
 
     socket.on("trumpChosen", ({ trumpf, winner }) => {
       setTrumpf(trumpf);
+      setTrumpfSetter(winner);
       setHand((h) => sortHand(h, trumpf));
-      alert(`${winner.name} hat ${trumpf} als Trumpf gesetzt (erste Karte)!`);
+    });
+    socket.on("cardPlayed", ({ playerId, card }) => {
+      if (trickTimer.current) {
+        // ggf. altes Leeren abbrechen
+        clearTimeout(trickTimer.current);
+        trickTimer.current = null;
+      }
+      setCurrentTrick((prev) => [...prev, { playerId, card }].slice(-4));
+    });
+    socket.on("trickResult", ({ winner, cards, points }) => {
+      // sicherstellen, dass die 4 Karten komplett sind
+      setCurrentTrick(cards);
+      setLastTrick({ winner, cards, points });
+      // nach ~2s Tisch leeren
+      if (trickTimer.current) clearTimeout(trickTimer.current);
+      trickTimer.current = setTimeout(() => {
+        setCurrentTrick([]);
+      }, 2000);
+    });
+    socket.on("invalidAction", ({ msg }) => {
+      alert(msg);
+      // Falls jemand versehentlich deaktiviert hat, hier wieder aktivieren:
+      setIsMyTurn(
+        (cp) => cp || (currentPlayer && currentPlayer.id === socket.id)
+      );
     });
 
-    return () => socket.off();
+    socket.on("roundEnd", ({ roundPoints, teamScores }) => {
+      setScores(teamScores);
+      alert(
+        `Runde beendet!\nFire: ${roundPoints.Fire} | Storm: ${roundPoints.Storm}`
+      );
+      setLastTrick(null);
+      setCurrentTrick([]);
+    });
+
+    socket.on("gameOver", ({ winner, teamScores }) => {
+      setScores(teamScores);
+      alert(
+        `Spielende! Gewinner: Team ${winner}\nFire: ${teamScores.Fire}, Storm: ${teamScores.Storm}`
+      );
+    });
+    return () => {
+      socket.off();
+      if (trickTimer.current) clearTimeout(trickTimer.current);
+    };
   }, [trumpf]);
 
   const makeBid = (bid) => {
@@ -244,15 +337,19 @@ function App() {
     };
     return (
       <div style={boxStyle}>
-        <div style={{ fontWeight: 700 }}>
+        <div style={{ fontWeight: 900, fontSize: 12 }}>
           {p.name} {youLabel ? "(Du)" : ""}
         </div>
         <div style={{ fontSize: 12, opacity: 0.9 }}>Team {p.team}</div>
-        {p.passed ? (
-          <div style={{ fontSize: 11, color: "#991b1b", marginTop: 3 }}>
-            (Pass)
+        {p.passed && (
+          <div style={{ fontSize: 12, color: "#991b1b" }}>(Pass)</div>
+        )}
+        {/* Trumpf nur für den Richter */}
+        {trumpf && trumpfSetter && trumpfSetter.id === p.id && (
+          <div style={{ marginTop: 4, fontSize: 14 }}>
+            Trumpf: <span style={{ fontWeight: 800 }}>{trumpf}</span>
           </div>
-        ) : null}
+        )}
       </div>
     );
   };
@@ -260,6 +357,13 @@ function App() {
   return (
     <div style={styles.page}>
       <h1 style={styles.h1}>Shelem — Lobby &amp; Bieten</h1>
+
+      {/* Info-Bar (Gebot + Team-Punkte) */}
+      <div style={styles.infoBar}>
+        <div style={styles.pill}>Gebot: {currentBid}</div>
+        <div style={styles.pill}>Fire: {scores.Fire}</div>
+        <div style={styles.pill}>Storm: {scores.Storm}</div>
+      </div>
 
       {/* Popup Boden-Karten */}
       {showBottom && (
@@ -297,81 +401,188 @@ function App() {
       )}
 
       {/* Team Auswahl */}
-      {me && !me.team && (
+      {me && !me.team && !randomTeams && (
         <div style={styles.card}>
-          {!randomTeams ? (
-            <>
-              <h3 style={{ margin: 0 }}>Wähle dein Team:</h3>
-              <div style={styles.rowWrap}>
-                <button
-                  style={{ ...styles.btn, ...styles.btnRed }}
-                  onClick={() => socket.emit("chooseTeam", "Fire")}
-                >
-                  Team Fire
-                </button>
-                <button
-                  style={{ ...styles.btn, ...styles.btnBlue }}
-                  onClick={() => socket.emit("chooseTeam", "Storm")}
-                >
-                  Team Storm
-                </button>
-                {players.length === 1 && (
-                  <button
-                    style={{ ...styles.btn, ...styles.btnGreen }}
-                    onClick={() => socket.emit("chooseTeam", "Random")}
-                  >
-                    Random Teams
-                  </button>
-                )}
-              </div>
-            </>
-          ) : (
-            <h3>Teams werden automatisch zugewiesen…</h3>
-          )}
+          <h3 style={{ margin: 0 }}>Wähle dein Team:</h3>
+          <div style={styles.rowWrap}>
+            <button
+              style={{ ...styles.btn, ...styles.btnRed }}
+              onClick={() => socket.emit("chooseTeam", "Fire")}
+            >
+              Team Fire
+            </button>
+            <button
+              style={{ ...styles.btn, ...styles.btnBlue }}
+              onClick={() => socket.emit("chooseTeam", "Storm")}
+            >
+              Team Storm
+            </button>
+            {players.length === 1 && (
+              <button
+                style={{ ...styles.btn, ...styles.btnGreen }}
+                onClick={() => socket.emit("chooseTeam", "Random")}
+              >
+                Random Teams
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+      {me && (!me.team || me.team === "Pending") && randomTeams && (
+        <div style={styles.card}>
+          <h3>Teams werden automatisch zugewiesen…</h3>
         </div>
       )}
 
       {/* Spielfeld */}
       {players.length === 4 && (
-        <div style={styles.gridWrap}>
-          <div />
-          <PlayerBox p={seated[2]} />
-          <div />
-          <PlayerBox p={seated[1]} />
-          <div style={styles.tableCenter}>
-            {!biddingWinner ? (
-              <div style={{ fontSize: 18, fontWeight: 800 }}>
-                Gebot: {currentBid}
-              </div>
-            ) : (
-              <div>
-                <div style={{ fontSize: 12, opacity: 0.8 }}>
-                  Gebot Gewinner:
-                </div>
-                <div style={{ fontWeight: 800 }}>
-                  {biddingWinner.winner ? biddingWinner.winner.name : "Keiner"}
-                </div>
-                <div style={{ fontSize: 12 }}>Gebot: {biddingWinner.bid}</div>
-              </div>
-            )}
-            {trumpf && (
-              <div
-                style={{
-                  marginTop: 8,
-                  padding: "6px 10px",
-                  background: "#7c3aed",
-                  borderRadius: 8,
-                }}
-              >
-                <div style={{ fontSize: 12 }}>Trumpf</div>
-                <div style={{ fontSize: 22, fontWeight: 800 }}>{trumpf}</div>
-              </div>
-            )}
+        <div
+          style={{
+            position: "relative",
+            width: 600,
+            height: 500,
+            margin: "24px auto",
+            background: "#047857",
+            borderRadius: 12,
+          }}
+        >
+          {/* Tisch in der Mitte: aktueller Stich (bis zu 4 Karten) */}
+          <div
+            style={{
+              ...styles.tableCenter,
+              position: "absolute",
+              top: "50%",
+              left: "50%",
+              transform: "translate(-50%, -50%)",
+            }}
+          >
+            <div style={{ position: "relative", width: 220, height: 160 }}>
+              {(() => {
+                const posStyle = {
+                  top: { top: 0, left: "50%", transform: "translate(-50%, 0)" },
+                  right: {
+                    top: "50%",
+                    right: 0,
+                    transform: "translate(0, -50%)",
+                  },
+                  bottom: {
+                    bottom: 0,
+                    left: "50%",
+                    transform: "translate(-50%, 0)",
+                  },
+                  left: {
+                    top: "50%",
+                    left: 0,
+                    transform: "translate(0, -50%)",
+                  },
+                };
+
+                const getSide = (pid) => {
+                  if (!seated[0] || !seated[1] || !seated[2] || !seated[3])
+                    return null;
+                  if (seated[0]?.id === pid) return "bottom";
+                  if (seated[1]?.id === pid) return "right";
+                  if (seated[2]?.id === pid) return "top";
+                  if (seated[3]?.id === pid) return "left";
+                  return null;
+                };
+
+                const bySide = {};
+                currentTrick.forEach((t) => {
+                  const side = getSide(t.playerId);
+                  if (side && !bySide[side]) bySide[side] = t.card;
+                });
+
+                return (
+                  <>
+                    {bySide.top && (
+                      <div style={{ position: "absolute", ...posStyle.top }}>
+                        <div style={styles.tableCard}>{bySide.top}</div>
+                      </div>
+                    )}
+                    {bySide.right && (
+                      <div style={{ position: "absolute", ...posStyle.right }}>
+                        <div style={styles.tableCard}>{bySide.right}</div>
+                      </div>
+                    )}
+                    {bySide.bottom && (
+                      <div style={{ position: "absolute", ...posStyle.bottom }}>
+                        <div style={styles.tableCard}>{bySide.bottom}</div>
+                      </div>
+                    )}
+                    {bySide.left && (
+                      <div style={{ position: "absolute", ...posStyle.left }}>
+                        <div style={styles.tableCard}>{bySide.left}</div>
+                      </div>
+                    )}
+
+                    {currentTrick.length === 0 && (
+                      <div
+                        style={{
+                          position: "absolute",
+                          top: "50%",
+                          left: "50%",
+                          transform: "translate(-50%, -50%)",
+                          opacity: 0.6,
+                          fontSize: 12,
+                        }}
+                      >
+                        Warte auf Karten…
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
+            </div>
           </div>
-          <PlayerBox p={seated[3]} />
-          <div />
-          <PlayerBox p={seated[0]} youLabel />
-          <div />
+
+          {/* Spieler oben */}
+          <div
+            style={{
+              position: "absolute",
+              top: 10,
+              left: "50%",
+              transform: "translateX(-50%)",
+            }}
+          >
+            <PlayerBox p={seated[2]} />
+          </div>
+
+          {/* Spieler unten */}
+          <div
+            style={{
+              position: "absolute",
+              bottom: 10,
+              left: "50%",
+              transform: "translateX(-50%)",
+            }}
+          >
+            <PlayerBox p={seated[0]} youLabel />
+          </div>
+
+          {/* Spieler links */}
+          <div
+            style={{
+              position: "absolute",
+              top: "50%",
+              left: 10,
+              transform: "translateY(-50%)",
+            }}
+          >
+            <PlayerBox p={seated[3]} />
+          </div>
+
+          {/* Spieler rechts */}
+          <div
+            style={{
+              position: "absolute",
+              top: "50%",
+              right: 10,
+              transform: "translateY(-50%)",
+            }}
+          >
+            <PlayerBox p={seated[1]} />
+          </div>
         </div>
       )}
 

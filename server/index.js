@@ -20,6 +20,12 @@ let winnerPlayerId = null;
 let randomTeams = false;
 let consecutivePasses = 0;
 let forceBidPlayerId = null;
+// --- Neue globale Variablen für Stiche ---
+let currentTrick = []; // [{playerId, card}]
+let trickLeader = null; // Spieler, der die Farbe vorgibt
+let tricksPlayed = 0;
+let teamScores = { Fire: 0, Storm: 0 };
+let roundPoints = { Fire: 0, Storm: 0 };
 
 // === Karten Deck ===
 const suits = ["♠", "♥", "♦", "♣"];
@@ -140,6 +146,50 @@ function checkBiddingEnd() {
 
   return false;
 }
+// Hilfsfunktionen: Kartenwerte für Punkte
+function cardPoints(card) {
+  const rank = card.slice(0, -1);
+  if (rank === "A") return 15;
+  if (rank === "10") return 10;
+  if (rank === "5") return 5;
+  return 0;
+}
+
+// Kartenrang zum Vergleichen im Stich
+const rankOrder = [
+  "2",
+  "3",
+  "4",
+  "5",
+  "6",
+  "7",
+  "8",
+  "9",
+  "10",
+  "J",
+  "Q",
+  "K",
+  "A",
+];
+function compareCards(cardA, cardB, leadSuit, trumpSuit) {
+  const [rankA, suitA] = [cardA.slice(0, -1), cardA.slice(-1)];
+  const [rankB, suitB] = [cardB.slice(0, -1), cardB.slice(-1)];
+
+  if (suitA === trumpSuit && suitB !== trumpSuit) return 1;
+  if (suitB === trumpSuit && suitA !== trumpSuit) return -1;
+
+  if (suitA === trumpSuit && suitB === trumpSuit) {
+    return rankOrder.indexOf(rankA) - rankOrder.indexOf(rankB);
+  }
+
+  if (suitA === leadSuit && suitB !== leadSuit) return 1;
+  if (suitB === leadSuit && suitA !== leadSuit) return -1;
+
+  if (suitA === leadSuit && suitB === leadSuit) {
+    return rankOrder.indexOf(rankA) - rankOrder.indexOf(rankB);
+  }
+  return 0;
+}
 
 // === Socket.io Events ===
 io.on("connection", (socket) => {
@@ -159,7 +209,6 @@ io.on("connection", (socket) => {
       passed: false,
       seatPosition: null,
     };
-
     // Falls Random-Teams aktiv: sofort Team zuweisen
     if (randomTeams) {
       const fireCount = players.filter((p) => p.team === "Fire").length;
@@ -172,7 +221,6 @@ io.on("connection", (socket) => {
         player.team = "Storm";
       }
     }
-
     players.push(player);
 
     // Wenn nach Join beide Teams voll sind → Sitzordnung und Spiel starten
@@ -208,8 +256,16 @@ io.on("connection", (socket) => {
         randomTeams = true;
         io.emit("randomTeamsActivated");
 
+        // Erster Spiler kriegt direkt random Team
         const assigned = Math.random() < 0.5 ? "Fire" : "Storm";
         player.team = assigned;
+
+        // alle anderen Spieler blockieren
+        players.forEach((p) => {
+          if (!p.team) {
+            p.team = "Pending"; // Platzhalter, keine Buttons mehr
+          }
+        });
 
         io.emit("playersUpdate", players);
       }
@@ -292,9 +348,9 @@ io.on("connection", (socket) => {
 
     if (checkBiddingEnd()) return;
 
-    // Nächsten Spieler finden
+    // Nächsten Spieler finden gegen Uhrzeigersinn
     do {
-      currentPlayerIndex = (currentPlayerIndex + 1) % players.length;
+      currentPlayerIndex = (currentPlayerIndex + 3) % players.length;
     } while (players[currentPlayerIndex].passed);
 
     const next = players[currentPlayerIndex];
@@ -344,6 +400,9 @@ io.on("connection", (socket) => {
     // NEU: Discard-Phase ist vorbei
     io.to(socket.id).emit("discardDone");
 
+    const player = players.find((p) => p.id === socket.id);
+    trumpf = null;
+
     // Jetzt darf der Richter als erster spielen
     currentPlayerIndex = players.findIndex((p) => p.id === winnerPlayerId);
     const startPlayer = players[currentPlayerIndex];
@@ -354,28 +413,128 @@ io.on("connection", (socket) => {
     io.emit("turnUpdate", { currentPlayer: startPlayer });
   });
 
-  // === Karte ausspielen ===
+  // --- PlayCard Event erweitern ---
   socket.on("playCard", (card) => {
     const player = players.find((p) => p.id === socket.id);
     if (!player || !hands[socket.id]) return;
-    // Prüfen ob Karte in Hand
+
+    // Prüfen: Karte in Hand?
     if (!hands[socket.id].includes(card)) return;
-    // Trumpf automatisch bei erster ausgespielten Karte setzen
-    if (!trumpf) {
-      const suit = card.slice(-1); // letzte Stelle ist Symbol
-      trumpf = suit;
-      io.emit("trumpChosen", {
-        trumpf,
-        winner: player,
-      });
+
+    if (!trumpf && player.id === winnerPlayerId) {
+      trumpf = card.slice(-1);
+      io.emit("trumpChosen", { trumpf, winner: player });
     }
-    // Karte aus Hand entfernen
+    // Bedienpflicht prüfen
+    if (currentTrick.length > 0) {
+      const leadSuit = currentTrick[0].card.slice(-1);
+      const hasLead = hands[socket.id].some((c) => c.slice(-1) === leadSuit);
+      if (card.slice(-1) !== leadSuit && hasLead) {
+        socket.emit("invalidAction", {
+          msg: "Du musst die angespielte Farbe bedienen!",
+        });
+        return;
+      }
+    }
+
+    // Karte entfernen
     hands[socket.id] = hands[socket.id].filter((c) => c !== card);
     io.to(socket.id).emit("hand", hands[socket.id]);
 
-    // TODO: hier Logik für Stichverwaltung einfügen (wer hat welche Karte gelegt, wer gewinnt usw.)
+    // In Stich legen
+    currentTrick.push({ playerId: socket.id, card });
+    if (currentTrick.length === 1) {
+      trickLeader = socket.id;
+    }
     io.emit("cardPlayed", { playerId: socket.id, card });
+
+    // Wenn 4 Karten → Stich auswerten
+    if (currentTrick.length === 4) {
+      const leadSuit = currentTrick[0].card.slice(-1);
+
+      let winner = currentTrick[0];
+      for (let i = 1; i < 4; i++) {
+        const cmp = compareCards(
+          currentTrick[i].card,
+          winner.card,
+          leadSuit,
+          trumpf
+        );
+        if (cmp > 0) winner = currentTrick[i];
+      }
+
+      // Punkte berechnen
+      let trickPoints = 5; // Grundpunkte für Stich
+      currentTrick.forEach((c) => (trickPoints += cardPoints(c.card)));
+      const winnerPlayer = players.find((p) => p.id === winner.playerId);
+      roundPoints[winnerPlayer.team] += trickPoints;
+
+      io.emit("trickResult", {
+        winner: winnerPlayer,
+        cards: currentTrick,
+        points: trickPoints,
+      });
+
+      tricksPlayed++;
+      currentTrick = [];
+      currentPlayerIndex = players.findIndex((p) => p.id === winner.playerId);
+
+      // Alle Stiche gespielt?
+      if (tricksPlayed === 12) {
+        endRound();
+      } else {
+        const next = players[currentPlayerIndex];
+        io.to(next.id).emit("yourTurn", { currentBid, currentPlayer: next });
+        io.emit("turnUpdate", { currentPlayer: next });
+      }
+    } else {
+      // Nächster Spieler gegen  Uhrzeigersinn
+      currentPlayerIndex = (currentPlayerIndex + 3) % players.length;
+      const next = players[currentPlayerIndex];
+      io.to(next.id).emit("yourTurn", { currentBid, currentPlayer: next });
+      io.emit("turnUpdate", { currentPlayer: next });
+    }
   });
+
+  // --- Rundenauswertung ---
+  function endRound() {
+    const fire = roundPoints.Fire;
+    const storm = roundPoints.Storm;
+
+    const bidder = players.find((p) => p.id === winnerPlayerId);
+    const bidderTeam = bidder.team;
+    const otherTeam = bidderTeam === "Fire" ? "Storm" : "Fire";
+    const bid = bids[winnerPlayerId] || 0;
+
+    if (roundPoints[bidderTeam] >= bid) {
+      teamScores[bidderTeam] += roundPoints[bidderTeam];
+      teamScores[otherTeam] += roundPoints[otherTeam];
+    } else {
+      teamScores[bidderTeam] -= bid;
+      teamScores[otherTeam] += roundPoints[otherTeam];
+    }
+
+    io.emit("roundEnd", {
+      roundPoints,
+      teamScores,
+    });
+
+    // Reset für nächste Runde
+    tricksPlayed = 0;
+    roundPoints = { Fire: 0, Storm: 0 };
+    trumpf = null;
+    hands = {};
+    bottomCards = [];
+
+    bids = {};
+    winnerPlayerId = null;
+
+    // ggf. Spielende
+    if (teamScores.Fire >= 1165 || teamScores.Storm >= 1165) {
+      const winner = teamScores.Fire >= 1165 ? "Fire" : "Storm";
+      io.emit("gameOver", { winner, teamScores });
+    }
+  }
   socket.on("disconnect", () => {
     console.log("Player disconnected:", socket.id);
     players = players.filter((p) => p.id !== socket.id);
