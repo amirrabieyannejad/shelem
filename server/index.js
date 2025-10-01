@@ -26,6 +26,8 @@ let trickLeader = null; // Spieler, der die Farbe vorgibt
 let tricksPlayed = 0;
 let teamScores = { Fire: 0, Storm: 0 };
 let roundPoints = { Fire: 0, Storm: 0 };
+let MAX_BID = 165;
+let MAX_POINTS = 1165;
 
 // === Karten Deck ===
 const suits = ["♠", "♥", "♦", "♣"];
@@ -95,7 +97,13 @@ function deal() {
   let deck = createDeck();
   deck = shuffle(deck);
 
+  // neue Runde sauber starten
+  roundPoints = { Fire: 0, Storm: 0 };
+  tricksPlayed = 0;
+  currentTrick = [];
+
   hands = {};
+
   bottomCards = deck.slice(48); // letzte 4 Karten als "Bottom Cards"
 
   players.forEach((p, idx) => {
@@ -104,48 +112,61 @@ function deal() {
   });
 
   io.emit("bottomCards", bottomCards);
+
+  // einmalig 0:0 an alle schicken (für live-Anzeige)
+  io.emit("roundPointsUpdate", { roundPoints });
 }
 
 // === Check ob Bietrunde vorbei ===
-function checkBiddingEnd() {
-  const teamFire = players.filter((p) => p.team === "Fire");
-  const teamStorm = players.filter((p) => p.team === "Storm");
+// === Auktion beenden? (teamunabhängig) ===
+function maybeEndAuction() {
+  const active = players.filter((p) => !p.passed);
+  const haveAnyBid = Object.keys(bids).length > 0;
 
-  const firePassed = teamFire.length > 0 && teamFire.every((p) => p.passed);
-  const stormPassed = teamStorm.length > 0 && teamStorm.every((p) => p.passed);
-
-  // normales Ende, außer wir haben 3 Pässe in Folge
-  if ((firePassed || stormPassed) && consecutivePasses < 3) {
+  // b) Nur noch 1 aktiver Bieter übrig -> er gewinnt mit seinem höchsten Gebot
+  if (haveAnyBid && active.length === 1) {
     biddingActive = false;
-
-    const winnerTeam = firePassed ? "Storm" : "Fire";
-    const candidates = players.filter((p) => p.team === winnerTeam);
-
-    const teamBids = Object.entries(bids).filter(([id]) =>
-      candidates.some((c) => c.id === id)
-    );
-
-    if (teamBids.length === 0) {
-      io.emit("biddingResult", { winner: null, bid: 0 });
-      return true;
-    }
-
-    const [winnerId, highestBid] = teamBids.reduce((a, b) =>
+    const [winnerId, highestBid] = Object.entries(bids).reduce((a, b) =>
       a[1] > b[1] ? a : b
     );
-
     const winnerPlayer = players.find((p) => p.id === winnerId);
     winnerPlayerId = winnerId;
-
     io.emit("biddingResult", { winner: winnerPlayer, bid: highestBid });
-
-    // Boden automatisch anzeigen für Gewinner
     io.to(winnerId).emit("showBottomCards", { bottomCards });
     return true;
   }
 
+  // a) Nach einem (positiven) Gebot kommen 3 Pässe in Folge
+  if (consecutivePasses >= 3 && haveAnyBid) {
+    biddingActive = false;
+    const [winnerId, highestBid] = Object.entries(bids).reduce((a, b) =>
+      a[1] > b[1] ? a : b
+    );
+    const winnerPlayer = players.find((p) => p.id === winnerId);
+    winnerPlayerId = winnerId;
+    io.emit("biddingResult", { winner: winnerPlayer, bid: highestBid });
+    io.to(winnerId).emit("showBottomCards", { bottomCards });
+    return true;
+  }
+
+  // Sonderfall: 3 Pässe und noch KEIN Gebot -> jemanden zwingen (wie gehabt)
+  if (consecutivePasses >= 3 && !haveAnyBid) {
+    const notPassed = players.find((p) => !p.passed);
+    if (notPassed) {
+      forceBidPlayerId = notPassed.id;
+      io.to(notPassed.id).emit("yourTurn", {
+        currentBid,
+        currentPlayer: notPassed,
+        mustBid: true,
+      });
+      io.emit("turnUpdate", { currentPlayer: notPassed });
+      return true; // wir haben die Runde „angehalten“, next turn gesetzt
+    }
+  }
+
   return false;
 }
+
 // Hilfsfunktionen: Kartenwerte für Punkte
 function cardPoints(card) {
   const rank = card.slice(0, -1);
@@ -189,6 +210,33 @@ function compareCards(cardA, cardB, leadSuit, trumpSuit) {
     return rankOrder.indexOf(rankA) - rankOrder.indexOf(rankB);
   }
   return 0;
+}
+
+function startNewRound() {
+  // Auction- & Rundenstatus resetten
+  players.forEach((p) => (p.passed = false));
+  consecutivePasses = 0;
+  forceBidPlayerId = null;
+  bids = {};
+  currentBid = 0;
+  winnerPlayerId = null;
+  trumpf = null;
+
+  // Variante B: reihum weitergeben (empfohlen):
+  currentPlayerIndex = (currentPlayerIndex + 3) % players.length;
+
+  biddingActive = true;
+
+  // Karten geben & RoundPoints auf 0 an alle senden
+  deal(); // ruft io.emit("roundPointsUpdate", { roundPoints: {Fire:0,Storm:0} })
+
+  // Ersten Bieter benachrichtigen
+  const next = players[currentPlayerIndex];
+  io.to(next.id).emit("yourTurn", { currentBid, currentPlayer: next });
+  io.emit("turnUpdate", { currentPlayer: next });
+
+  // UI kriegt "passed=false"-Reset mit
+  io.emit("playersUpdate", players);
 }
 
 // === Socket.io Events ===
@@ -342,34 +390,29 @@ io.on("connection", (socket) => {
       bids[player.id] = bid;
       consecutivePasses = 0;
       forceBidPlayerId = null;
+      // ✅ Sofortiger Zuschlag bei Maximalgebot
+      if (currentBid >= MAX_BID) {
+        biddingActive = false;
+        winnerPlayerId = player.id;
+        io.emit("biddingResult", { winner: player, bid: currentBid });
+        io.to(player.id).emit("showBottomCards", { bottomCards });
+        return; // keine weiteren Bieter fragen
+      }
     }
 
     io.emit("playersUpdate", players);
 
-    if (checkBiddingEnd()) return;
+    // Prüfen, ob die Auktion hier enden soll
+    if (maybeEndAuction()) return;
 
-    // Nächsten Spieler finden gegen Uhrzeigersinn
+    // Nächsten Spieler (gegen Uhrzeigersinn) suchen, der noch nicht gepasst hat
     do {
       currentPlayerIndex = (currentPlayerIndex + 3) % players.length;
     } while (players[currentPlayerIndex].passed);
 
+    // Falls wir gerade jemanden zum Bieten zwingen müssen, wurde das in maybeEndAuction()
+    // bereits behandelt (return). Ansonsten normal weitermachen:
     const next = players[currentPlayerIndex];
-
-    // Sonderfall: 3 Pässe in Folge → der letzte muss bieten
-    if (consecutivePasses >= 3) {
-      const notPassed = players.find((p) => !p.passed);
-      if (notPassed) {
-        forceBidPlayerId = notPassed.id;
-        io.to(notPassed.id).emit("yourTurn", {
-          currentBid,
-          currentPlayer: notPassed,
-          mustBid: true,
-        });
-        io.emit("turnUpdate", { currentPlayer: notPassed });
-        return;
-      }
-    }
-
     io.to(next.id).emit("yourTurn", {
       currentBid,
       currentPlayer: next,
@@ -473,7 +516,10 @@ io.on("connection", (socket) => {
         winner: winnerPlayer,
         cards: currentTrick,
         points: trickPoints,
+        roundPoints,
       });
+
+      io.emit("roundPointsUpdate", { roundPoints });
 
       tricksPlayed++;
       currentTrick = [];
@@ -514,27 +560,28 @@ io.on("connection", (socket) => {
       teamScores[otherTeam] += roundPoints[otherTeam];
     }
 
-    io.emit("roundEnd", {
-      roundPoints,
-      teamScores,
-    });
+    io.emit("roundEnd", { roundPoints, teamScores });
 
-    // Reset für nächste Runde
+    // Reset lokale Rundendaten
     tricksPlayed = 0;
     roundPoints = { Fire: 0, Storm: 0 };
     trumpf = null;
     hands = {};
     bottomCards = [];
-
     bids = {};
     winnerPlayerId = null;
 
-    // ggf. Spielende
-    if (teamScores.Fire >= 1165 || teamScores.Storm >= 1165) {
-      const winner = teamScores.Fire >= 1165 ? "Fire" : "Storm";
+    // Spielende?
+    if (teamScores.Fire >= MAX_POINTS || teamScores.Storm >= MAX_POINTS) {
+      const winner = teamScores.Fire >= MAX_POINTS ? "Fire" : "Storm";
       io.emit("gameOver", { winner, teamScores });
+      return; // kein Neustart mehr
     }
+
+    //  Sofort neue Runde starten
+    startNewRound();
   }
+
   socket.on("disconnect", () => {
     console.log("Player disconnected:", socket.id);
     players = players.filter((p) => p.id !== socket.id);

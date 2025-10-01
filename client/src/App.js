@@ -25,6 +25,7 @@ const styles = {
     padding: 16,
     borderRadius: 8,
     marginTop: 16,
+    textAlign: "center",
   },
   tableCard: {
     background: "#111",
@@ -49,48 +50,21 @@ const styles = {
     width: "max-content",
     margin: "24px auto 0",
   },
-  tableCenter: {
-    background: "#065f46",
-    borderRadius: 12,
-    border: "2px solid #10b981",
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 20,
-    minWidth: 300,
-    minHeight: 220,
-    color: "white",
-    textAlign: "center",
-  },
-  playerBoxBase: {
-    borderRadius: 8,
-    padding: 4,
-    fontSize: 11,
-    fontWeight: 500,
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    justifyContent: "center",
-    width: 100,
-    height: 70,
-    boxShadow: "0 2px 6px rgba(0,0,0,.15)",
-  },
   fire: { background: "#940f0fff", border: "2px solid #fca5a5" },
   storm: { background: "#0072feff", border: "2px solid #93c5fd" },
   me: { outline: "3px solid #f59e0b" },
   turn: { boxShadow: "0 0 0 4px rgba(251,191,36,.7) inset" },
-  btn: {
-    padding: "8px 12px",
-    borderRadius: 6,
-    border: "1px solid #e5e7eb",
-    background: "#e5e7eb",
-    cursor: "pointer",
-  },
   btnRed: { background: "#fecaca" },
   btnBlue: { background: "#bfdbfe" },
   btnGreen: { background: "#bbf7d0" },
   rowWrap: { display: "flex", flexWrap: "wrap", gap: 8, marginTop: 8 },
+  centerRow: {
+    display: "flex",
+    flexWrap: "wrap",
+    gap: 8,
+    marginTop: 8,
+    justifyContent: "center", // ⬅️ zentrieren
+  },
   modalBackdrop: {
     position: "fixed",
     inset: 0,
@@ -102,15 +76,62 @@ const styles = {
   },
   modal: { background: "white", padding: 20, borderRadius: 10, width: 360 },
   infoBar: {
-    maxWidth: 760,
+    maxWidth: "min(92vw, 900px)",
     margin: "0 auto 12px",
+    display: "flex",
+    flexWrap: "wrap", // erlaubt Umbruch auf kleinen Screens
+    gap: 12,
+    justifyContent: "center",
+    alignItems: "center",
+    background: "rgba(0,0,0,.12)",
+    padding: "10px 12px",
+    borderRadius: 10,
+  },
+  tableWrap: {
+    position: "relative",
+    width: "min(94vw, 720px)", // statt 600px
+    height: "min(60vh, 520px)", // statt 500px
+    margin: "clamp(8px, 3vh, 24px) auto",
+    background: "#047857",
+    borderRadius: 12,
+  },
+  tableCenter: {
+    background: "#065f46",
+    border: "2px solid #10b981",
+    borderRadius: 12,
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    gap: 24,
-    background: "rgba(0,0,0,.12)",
-    padding: "10px 16px",
+    // passt sich an die tableWrap-Größe an
+    width: "80%",
+    height: "65%",
+    color: "white",
+    textAlign: "center",
+  },
+  playerBoxBase: {
     borderRadius: 10,
+    padding: 6,
+    fontSize: "clamp(10px, 2.6vw, 12px)",
+    fontWeight: 600,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    width: "clamp(80px, 18vw, 120px)", // responsive Breite
+    height: "clamp(56px, 12vw, 84px)", // responsive Höhe
+    boxShadow: "0 2px 6px rgba(0,0,0,.15)",
+    textAlign: "center",
+    flexDirection: "column",
+    lineHeight: 1.1,
+    gap: 2,
+  },
+  // optional: größere Touch-Ziele für Buttons
+  btn: {
+    padding: "10px 14px",
+    borderRadius: 8,
+    border: "1px solid #e5e7eb",
+    background: "#e5e7eb",
+    cursor: "pointer",
+    touchAction: "manipulation",
   },
   pill: {
     background: "rgba(0,0,0,.25)",
@@ -146,13 +167,32 @@ function App() {
   const [selectedDiscard, setSelectedDiscard] = useState([]);
   const [randomTeams, setRandomTeams] = useState(false);
   const [showBottom, setShowBottom] = useState(false);
+  const [lastTrick, setLastTrick] = useState(0);
   const [bottomCards, setBottomCards] = useState([]);
   const [mustBid, setMustBid] = useState(false);
   const [scores, setScores] = useState({ Fire: 0, Storm: 0 });
-  const [lastTrick, setLastTrick] = useState(null);
   const [trumpfSetter, setTrumpfSetter] = useState(null);
   const [currentTrick, setCurrentTrick] = useState([]); // {playerId, card}[]
-  const trickTimer = React.useRef(null);
+  const trickTimer = useRef(null);
+  const [roundPointsLive, setRoundPointsLive] = useState({ Fire: 0, Storm: 0 });
+
+  function setTabTitle({ me, isMyTurn }) {
+    if (!me) {
+      document.title = "Shelem — verbunden…";
+      return;
+    }
+    const team = me.team ? `Team ${me.team}` : "ohne Team";
+    const turn = isMyTurn ? " ⏳(Am Zug)" : "";
+    document.title = `${me.name} — ${team}${turn}`;
+  }
+  function setThemeColor(team) {
+    const meta =
+      document.querySelector('meta[name="theme-color"]') ||
+      Object.assign(document.createElement("meta"), { name: "theme-color" });
+    meta.content =
+      team === "Fire" ? "#940f0f" : team === "Storm" ? "#0072fe" : "#065f46";
+    if (!meta.parentNode) document.head.appendChild(meta);
+  }
 
   useEffect(() => {
     socket.on("connect", () => {
@@ -160,13 +200,16 @@ function App() {
       if (name) socket.emit("register", name);
     });
 
-    socket.on("invalidAction", ({ msg }) => alert(msg));
+    const onInvalidAction = ({ msg }) => alert(msg);
+    socket.on("invalidAction", onInvalidAction);
 
     socket.on("playersUpdate", (list) => {
       setPlayers(list);
       const myId = socket.id;
       const myself = list.find((p) => p.id === myId) || null;
       setMe(myself);
+      // Tab-Titel sofort updaten
+      setTabTitle({ me: myself, isMyTurn });
     });
 
     socket.on("randomTeamsActivated", () => setRandomTeams(true));
@@ -249,22 +292,18 @@ function App() {
       }
       setCurrentTrick((prev) => [...prev, { playerId, card }].slice(-4));
     });
-    socket.on("trickResult", ({ winner, cards, points }) => {
+    socket.on("trickResult", ({ winner, cards, points, roundPoints }) => {
       // sicherstellen, dass die 4 Karten komplett sind
       setCurrentTrick(cards);
       setLastTrick({ winner, cards, points });
+      // Live-Rundenpunkte von Server Übernehmen
+      if (roundPoints) setRoundPointsLive(roundPoints);
+
       // nach ~2s Tisch leeren
       if (trickTimer.current) clearTimeout(trickTimer.current);
       trickTimer.current = setTimeout(() => {
         setCurrentTrick([]);
-      }, 2000);
-    });
-    socket.on("invalidAction", ({ msg }) => {
-      alert(msg);
-      // Falls jemand versehentlich deaktiviert hat, hier wieder aktivieren:
-      setIsMyTurn(
-        (cp) => cp || (currentPlayer && currentPlayer.id === socket.id)
-      );
+      }, 1000);
     });
 
     socket.on("roundEnd", ({ roundPoints, teamScores }) => {
@@ -272,8 +311,20 @@ function App() {
       alert(
         `Runde beendet!\nFire: ${roundPoints.Fire} | Storm: ${roundPoints.Storm}`
       );
+
+      // Lokale UI sofort "neutral" stellen
+      setRoundPointsLive(roundPoints); // zeigt finalen Stand der Runde
+      setBiddingWinner(null);
+      setCurrentBid(0);
+      setTrumpf(null);
       setLastTrick(null);
       setCurrentTrick([]);
+      setIsMyTurn(false);
+      setMustBid(false);
+    });
+
+    socket.on("roundPointsUpdate", ({ roundPoints }) => {
+      setRoundPointsLive(roundPoints);
     });
 
     socket.on("gameOver", ({ winner, teamScores }) => {
@@ -284,9 +335,22 @@ function App() {
     });
     return () => {
       socket.off();
+      socket.off("invalidAction", onInvalidAction);
       if (trickTimer.current) clearTimeout(trickTimer.current);
     };
   }, [trumpf]);
+  useEffect(() => {
+    setTabTitle({ me, isMyTurn });
+  }, [me]);
+
+  // Wenn sich der Zug ändert, Titel aktualisieren
+  useEffect(() => {
+    setTabTitle({ me, isMyTurn });
+  }, [isMyTurn]);
+
+  useEffect(() => {
+    if (me?.team) setThemeColor(me.team);
+  }, [me?.team]);
 
   const makeBid = (bid) => {
     socket.emit("makeBid", bid);
@@ -342,7 +406,7 @@ function App() {
         </div>
         <div style={{ fontSize: 12, opacity: 0.9 }}>Team {p.team}</div>
         {p.passed && (
-          <div style={{ fontSize: 12, color: "#991b1b" }}>(Pass)</div>
+          <div style={{ fontSize: 12, color: "#ffffffff" }}>(Pass)</div>
         )}
         {/* Trumpf nur für den Richter */}
         {trumpf && trumpfSetter && trumpfSetter.id === p.id && (
@@ -354,6 +418,141 @@ function App() {
     );
   };
 
+  // Mini-Komponente für eine Karte
+  // === Karte -> Dateipfad (0-basiges Mapping wie vorher) ===
+  const POS = {
+    // Joker
+    JOKER: [0, 0], // farbig (row1,col1)
+    JOKER_BW: [6, 5], // s/w   (row7,col6)
+
+    // ♠ Spades
+    "A♠": [0, 1],
+    "2♠": [0, 2],
+    "3♠": [0, 3],
+    "4♠": [0, 4],
+    "5♠": [0, 5],
+    "6♠": [0, 6],
+    "7♠": [0, 7],
+    "8♠": [1, 0],
+    "9♠": [1, 1],
+    "10♠": [1, 2],
+    "J♠": [1, 3],
+    "Q♠": [1, 4],
+    "K♠": [1, 5],
+
+    // ♦ Diamonds
+    "A♦": [1, 6],
+    "2♦": [1, 7],
+    "3♦": [2, 0],
+    "4♦": [2, 1],
+    "5♦": [2, 2],
+    "6♦": [2, 3],
+    "7♦": [2, 4],
+    "8♦": [2, 5],
+    "9♦": [2, 6],
+    "10♦": [2, 7],
+    "J♦": [3, 0],
+    "Q♦": [3, 1],
+    "K♦": [3, 2],
+
+    // ♣ Clubs
+    "K♣": [3, 3],
+    "Q♣": [3, 4],
+    "J♣": [3, 5],
+    "10♣": [3, 6],
+    "9♣": [3, 7],
+    "8♣": [4, 0],
+    "7♣": [4, 1],
+    "6♣": [4, 2],
+    "5♣": [4, 3],
+    "4♣": [4, 4],
+    "3♣": [4, 5],
+    "2♣": [4, 6],
+    "A♣": [4, 7],
+
+    // ♥ Hearts
+    "K♥": [5, 0],
+    "Q♥": [5, 1],
+    "J♥": [5, 2],
+    "10♥": [5, 3],
+    "9♥": [5, 4],
+    "8♥": [5, 5],
+    "7♥": [5, 6],
+    "6♥": [5, 7],
+    "5♥": [6, 0],
+    "4♥": [6, 1],
+    "3♥": [6, 2],
+    "2♥": [6, 3],
+    "A♥": [6, 4],
+  };
+
+  // Dateien liegen in /public/cards_jpg_clean/ mit Namen card_rXX_cYY.jpg
+  const CARD_BASE = "/cards_png_round";
+
+  function cardPathFor(code) {
+    const pos =
+      POS[code] ||
+      (code === "JOKER" ? [0, 0] : code === "JOKER_BW" ? [6, 5] : null);
+    if (!pos) return null;
+    const [r0, c0] = pos; // 0-basiert -> 1-basiert
+    const r = String(r0 + 1).padStart(2, "0");
+    const c = String(c0 + 1).padStart(2, "0");
+    return `${CARD_BASE}/card_r${r}_c${c}.png`;
+  }
+
+  function SpriteCard({ code, size = "md", style = {} }) {
+    if (!code) return null;
+
+    const src = cardPathFor(code);
+    const width =
+      size === "lg"
+        ? "clamp(62px, 16vw, 96px)"
+        : size === "sm"
+        ? "clamp(44px, 10vw, 60px)"
+        : "clamp(56px, 12vw, 80px)";
+
+    if (!src) {
+      // Fallback, falls ein Code nicht gemappt ist
+      return (
+        <div
+          style={{
+            width,
+            aspectRatio: "63 / 88",
+            display: "grid",
+            placeItems: "center",
+            background: "#fff",
+            color: "#000",
+            borderRadius: 10,
+            border: "1px solid rgba(0,0,0,.15)",
+            boxShadow: "0 4px 10px rgba(0,0,0,.25)",
+            fontWeight: 700,
+            ...style,
+          }}
+        >
+          {code}
+        </div>
+      );
+    }
+
+    return (
+      <img
+        src={src}
+        alt={code}
+        draggable="false"
+        style={{
+          width,
+          height: "auto",
+          display: "block",
+          borderRadius: 10,
+          border: "1px solid rgba(0,0,0,.15)",
+          boxShadow: "0 4px 10px rgba(0,0,0,.25)",
+          userSelect: "none",
+          ...style,
+        }}
+      />
+    );
+  }
+
   return (
     <div style={styles.page}>
       <h1 style={styles.h1}>Shelem — Lobby &amp; Bieten</h1>
@@ -361,8 +560,14 @@ function App() {
       {/* Info-Bar (Gebot + Team-Punkte) */}
       <div style={styles.infoBar}>
         <div style={styles.pill}>Gebot: {currentBid}</div>
-        <div style={styles.pill}>Fire: {scores.Fire}</div>
-        <div style={styles.pill}>Storm: {scores.Storm}</div>
+
+        {/* Live-Rundenpunkte */}
+        <div style={styles.pill}>Runde Fire: {roundPointsLive.Fire}</div>
+        <div style={styles.pill}>Runde Storm: {roundPointsLive.Storm}</div>
+
+        {/* Gesamtpunkte (Spielstand kumuliert) */}
+        <div style={styles.pill}>Gesamt Fire: {scores.Fire}</div>
+        <div style={styles.pill}>Gesamt Storm: {scores.Storm}</div>
       </div>
 
       {/* Popup Boden-Karten */}
@@ -370,22 +575,32 @@ function App() {
         <div style={styles.modalBackdrop}>
           <div style={styles.modal}>
             <h3 style={{ margin: 0, fontWeight: 800 }}>Boden-Karten</h3>
-            <div style={{ ...styles.rowWrap, marginTop: 10 }}>
-              {bottomCards.map((c) => (
-                <span
-                  key={c}
+
+            {/* Karten als Bilder im neuen Layout */}
+            <div
+              style={{
+                display: "flex",
+                gap: 10,
+                flexWrap: "wrap",
+                justifyContent: "center",
+                alignItems: "center",
+                marginTop: 12,
+              }}
+            >
+              {bottomCards.map((c, i) => (
+                <SpriteCard
+                  key={`${c}-${i}`}
+                  code={c}
+                  size="lg"
                   style={{
-                    padding: "6px 10px",
-                    border: "1px solid #f59e0b",
-                    borderRadius: 6,
-                    background: "#000",
+                    boxShadow: "0 8px 18px rgba(0,0,0,.35)",
+                    border: "1px solid rgba(0,0,0,.12)",
                   }}
-                >
-                  {c}
-                </span>
+                />
               ))}
             </div>
-            <div style={{ marginTop: 12, textAlign: "right" }}>
+
+            <div style={{ marginTop: 16, textAlign: "right" }}>
               <button
                 style={{ ...styles.btn, background: "#86efac" }}
                 onClick={() => {
@@ -404,7 +619,7 @@ function App() {
       {me && !me.team && !randomTeams && (
         <div style={styles.card}>
           <h3 style={{ margin: 0 }}>Wähle dein Team:</h3>
-          <div style={styles.rowWrap}>
+          <div style={styles.centerRow}>
             <button
               style={{ ...styles.btn, ...styles.btnRed }}
               onClick={() => socket.emit("chooseTeam", "Fire")}
@@ -436,17 +651,7 @@ function App() {
 
       {/* Spielfeld */}
       {players.length === 4 && (
-        <div
-          style={{
-            position: "relative",
-            width: 600,
-            height: 500,
-            margin: "24px auto",
-            background: "#047857",
-            borderRadius: 12,
-          }}
-        >
-          {/* Tisch in der Mitte: aktueller Stich (bis zu 4 Karten) */}
+        <div style={styles.tableWrap}>
           <div
             style={{
               ...styles.tableCenter,
@@ -456,63 +661,95 @@ function App() {
               transform: "translate(-50%, -50%)",
             }}
           >
-            <div style={{ position: "relative", width: 220, height: 160 }}>
+            <div
+              style={{
+                position: "relative",
+                width: "80%",
+                height: "70%",
+                left: "6%",
+              }}
+            >
               {(() => {
                 const posStyle = {
-                  top: { top: 0, left: "50%", transform: "translate(-50%, 0)" },
+                  top: {
+                    top: "20%", // etwas oberhalb der Mitte
+                    left: "50%",
+                    transform: "translate(-50%, -60%)",
+                  },
                   right: {
                     top: "50%",
-                    right: 0,
-                    transform: "translate(0, -50%)",
+                    right: "20%", // etwas nach innen
+                    transform: "translate(60%, -50%)",
                   },
                   bottom: {
-                    bottom: 0,
+                    bottom: "20%", // etwas unterhalb der Mitte
                     left: "50%",
-                    transform: "translate(-50%, 0)",
+                    transform: "translate(-50%, 60%)",
                   },
                   left: {
                     top: "50%",
-                    left: 0,
-                    transform: "translate(0, -50%)",
+                    left: "20%", // etwas nach innen
+                    transform: "translate(-60%, -50%)",
                   },
                 };
 
                 const getSide = (pid) => {
-                  if (!seated[0] || !seated[1] || !seated[2] || !seated[3])
-                    return null;
+                  if (!seated[0]) return null;
                   if (seated[0]?.id === pid) return "bottom";
                   if (seated[1]?.id === pid) return "right";
                   if (seated[2]?.id === pid) return "top";
                   if (seated[3]?.id === pid) return "left";
                   return null;
                 };
-
                 const bySide = {};
                 currentTrick.forEach((t) => {
-                  const side = getSide(t.playerId);
-                  if (side && !bySide[side]) bySide[side] = t.card;
+                  const s = getSide(t.playerId);
+                  if (s && !bySide[s]) bySide[s] = t.card;
                 });
-
                 return (
                   <>
                     {bySide.top && (
-                      <div style={{ position: "absolute", ...posStyle.top }}>
-                        <div style={styles.tableCard}>{bySide.top}</div>
+                      <div
+                        style={{
+                          position: "absolute",
+                          zIndex: 3,
+                          ...posStyle.top,
+                        }}
+                      >
+                        <SpriteCard code={bySide.top} />
                       </div>
                     )}
                     {bySide.right && (
-                      <div style={{ position: "absolute", ...posStyle.right }}>
-                        <div style={styles.tableCard}>{bySide.right}</div>
+                      <div
+                        style={{
+                          position: "absolute",
+                          zIndex: 3,
+                          ...posStyle.right,
+                        }}
+                      >
+                        <SpriteCard code={bySide.right} />
                       </div>
                     )}
                     {bySide.bottom && (
-                      <div style={{ position: "absolute", ...posStyle.bottom }}>
-                        <div style={styles.tableCard}>{bySide.bottom}</div>
+                      <div
+                        style={{
+                          position: "absolute",
+                          zIndex: 3,
+                          ...posStyle.bottom,
+                        }}
+                      >
+                        <SpriteCard code={bySide.bottom} />
                       </div>
                     )}
                     {bySide.left && (
-                      <div style={{ position: "absolute", ...posStyle.left }}>
-                        <div style={styles.tableCard}>{bySide.left}</div>
+                      <div
+                        style={{
+                          position: "absolute",
+                          zIndex: 3,
+                          ...posStyle.left,
+                        }}
+                      >
+                        <SpriteCard code={bySide.left} />
                       </div>
                     )}
 
@@ -536,49 +773,51 @@ function App() {
             </div>
           </div>
 
-          {/* Spieler oben */}
+          {/* Spieler oben/unten/links/rechts mit Prozent-Abständen,
+        damit es auch auf kleinen Screens passt */}
           <div
             style={{
               position: "absolute",
-              top: 10,
+              top: "-1%",
               left: "50%",
               transform: "translateX(-50%)",
+              zIndex: 2,
             }}
           >
             <PlayerBox p={seated[2]} />
           </div>
 
-          {/* Spieler unten */}
           <div
             style={{
               position: "absolute",
-              bottom: 10,
+              bottom: "-1%",
               left: "50%",
               transform: "translateX(-50%)",
+              zIndex: 2,
             }}
           >
             <PlayerBox p={seated[0]} youLabel />
           </div>
 
-          {/* Spieler links */}
           <div
             style={{
               position: "absolute",
               top: "50%",
-              left: 10,
+              left: "-1%",
               transform: "translateY(-50%)",
+              zIndex: 2,
             }}
           >
             <PlayerBox p={seated[3]} />
           </div>
 
-          {/* Spieler rechts */}
           <div
             style={{
               position: "absolute",
               top: "50%",
-              right: 10,
+              right: "-1%",
               transform: "translateY(-50%)",
+              zIndex: 2,
             }}
           >
             <PlayerBox p={seated[1]} />
@@ -586,29 +825,24 @@ function App() {
         </div>
       )}
 
-      {/* Discard Phase */}
+      {/* Discard-Hinweis + Bestätigen */}
       {discardPhase && (
         <div style={styles.card}>
-          <h3>Wähle 4 Karten zum Abwerfen:</h3>
-          <div style={styles.rowWrap}>
-            {hand.map((card) => {
-              const selected = selectedDiscard.includes(card);
-              return (
-                <button
-                  key={card}
-                  onClick={() => toggleDiscard(card)}
-                  disabled={!selected && selectedDiscard.length >= 4}
-                  style={{
-                    ...styles.btn,
-                    background: selected ? "#f87171" : "#f3f4f6",
-                    color: selected ? "white" : "black",
-                    opacity: !selected && selectedDiscard.length >= 4 ? 0.5 : 1,
-                  }}
-                >
-                  {card}
-                </button>
-              );
-            })}
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 12,
+              flexWrap: "wrap",
+            }}
+          >
+            <h3 style={{ margin: 0 }}>
+              Wähle 4 Karten zum Abwerfen (Tippen/Clicken){" "}
+            </h3>
+            <div style={{ fontWeight: 800 }}>
+              Ausgewählt: {selectedDiscard.length} / 4
+            </div>
           </div>
           <div style={{ marginTop: 8 }}>
             <button
@@ -621,35 +855,6 @@ function App() {
           </div>
         </div>
       )}
-
-      {/* Hand */}
-      <div style={styles.card}>
-        <h2>Deine Hand:</h2>
-        <div style={styles.rowWrap}>
-          {hand.map((card) => (
-            <button
-              key={card}
-              onClick={() =>
-                biddingWinner && isMyTurn && !discardPhase && playCard(card)
-              }
-              disabled={!biddingWinner || !isMyTurn || discardPhase}
-              style={{
-                ...styles.btn,
-                background:
-                  !biddingWinner || !isMyTurn || discardPhase
-                    ? "#f3f4f6"
-                    : "#e5e7eb",
-                cursor:
-                  !biddingWinner || !isMyTurn || discardPhase
-                    ? "not-allowed"
-                    : "pointer",
-              }}
-            >
-              {card}
-            </button>
-          ))}
-        </div>
-      </div>
 
       {/* Bieten */}
       {isMyTurn && me && !me.passed && !biddingWinner && (
@@ -676,6 +881,105 @@ function App() {
           </div>
         </div>
       )}
+      {/* Hand */}
+      {/* Hand */}
+      <div style={styles.card}>
+        <h2>Deine Hand:</h2>
+
+        {/* leichtes Overlap-Layout für ein Kartenband */}
+        <div
+          style={{
+            display: "flex",
+            gap: 8,
+            flexWrap: "wrap",
+            alignItems: "flex-end",
+            paddingBottom: 8,
+            justifyContent: "center",
+          }}
+        >
+          {hand.map((card) => {
+            const isSelected = selectedDiscard.includes(card);
+            const canSelectMore = selectedDiscard.length < 4;
+            const inDiscard = discardPhase;
+
+            // Click-Verhalten:
+            // - in DiscardPhase: toggleDiscard
+            // - sonst (normal): playCard, wenn erlaubt
+            const clickable =
+              inDiscard || (biddingWinner && isMyTurn && !discardPhase);
+            const onClick = () => {
+              if (inDiscard) {
+                if (isSelected) {
+                  toggleDiscard(card); // immer abwählbar
+                } else if (canSelectMore) {
+                  toggleDiscard(card); // nur bis 4
+                }
+              } else if (biddingWinner && isMyTurn) {
+                playCard(card);
+              }
+            };
+
+            // Stil der Karte/Schaltfläche
+            const disabled =
+              // im Abwurfmodus nur sperren, wenn schon 4 gewählt und diese Karte nicht gewählt ist
+              (inDiscard && !isSelected && !canSelectMore) ||
+              // im Spielmodus sperren, wenn nicht am Zug
+              (!inDiscard && (!biddingWinner || !isMyTurn));
+
+            return (
+              <button
+                key={card}
+                onClick={onClick}
+                disabled={disabled}
+                aria-pressed={isSelected}
+                title={
+                  inDiscard
+                    ? isSelected
+                      ? "Abwurf entfernen"
+                      : "Zum Abwurf auswählen"
+                    : card
+                }
+                style={{
+                  // Button-Hülle möglichst „unsichtbar“
+                  padding: 0,
+                  background: "transparent",
+                  border: "none",
+                  position: "relative",
+                  cursor: disabled ? "not-allowed" : "pointer",
+                  // für kleine Overlap-Optik kann man hier z.B. marginLeft: -12 setzen,
+                  // wir lassen es neutral
+                }}
+              >
+                <div
+                  style={{
+                    // der Wrapper bewegt die Karte nach oben, wenn ausgewählt
+                    transform: isSelected
+                      ? "translateY(-10px)"
+                      : "translateY(0px)",
+                    transition: "transform 140ms ease",
+                    // optische Auswahl-Markierung
+                    outline: isSelected ? "3px solid #ef4444" : "none",
+                    borderRadius: 12,
+                    // leichter „Hover“ (nur wenn klickbar)
+                    filter: !disabled ? "brightness(1)" : "grayscale(0.2)",
+                  }}
+                >
+                  <SpriteCard
+                    code={card}
+                    size="sm"
+                    // extra Schlagschatten je nach Status
+                    style={{
+                      boxShadow: isSelected
+                        ? "0 12px 24px rgba(0,0,0,.35)"
+                        : "0 6px 14px rgba(0,0,0,.25)",
+                    }}
+                  />
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
 
       {/* Status */}
       {!isMyTurn && !biddingWinner && currentPlayer && (
