@@ -29,8 +29,15 @@ let roundPoints = { Fire: 0, Storm: 0 };
 let MAX_BID = 165;
 let MAX_POINTS = 1165;
 
+// Mindestens 80, oder die (aufgerundete) Hälfte des Maximalgebots
+const DOUBLE_NEGATIVE_MIN = Math.max(80, Math.ceil(MAX_BID / 2));
+
+let trickHistory = []; // Stiche der aktuellen Runde (Array mit 12 Einträgen)
+let roundsHistory = []; // Chronik aller Runden
+let roundCounter = 0; // Rundenzähler
+
 // === Karten Deck ===
-const suits = ["♠", "♥", "♦", "♣"];
+const suits = ["♠", "♥", "♣", "♦"];
 const ranks = [
   "2",
   "3",
@@ -101,6 +108,7 @@ function deal() {
   roundPoints = { Fire: 0, Storm: 0 };
   tricksPlayed = 0;
   currentTrick = [];
+  trickHistory = [];
 
   hands = {};
 
@@ -522,6 +530,25 @@ io.on("connection", (socket) => {
       io.emit("roundPointsUpdate", { roundPoints });
 
       tricksPlayed++;
+
+      // ... Winner/points bereits berechnet ...
+
+      // Reihenfolge des Ausspielens für die History
+      const plays = currentTrick.map(({ playerId, card }) => {
+        const pl = players.find((p) => p.id === playerId);
+        return { playerId, name: pl?.name || "", team: pl?.team || "", card };
+      });
+
+      trickHistory.push({
+        no: tricksPlayed, // 1..12 korrekt
+        plays,
+        leadSuit, // angespielte Farbe
+        trumpf, // aktueller Trumpf
+        winnerId: winner.playerId,
+        winnerName: winnerPlayer.name,
+        winnerTeam: winnerPlayer.team,
+        points: trickPoints,
+      });
       currentTrick = [];
       currentPlayerIndex = players.findIndex((p) => p.id === winner.playerId);
 
@@ -544,25 +571,91 @@ io.on("connection", (socket) => {
 
   // --- Rundenauswertung ---
   function endRound() {
-    const fire = roundPoints.Fire;
-    const storm = roundPoints.Storm;
-
-    const bidder = players.find((p) => p.id === winnerPlayerId);
+    const bidder = players.find((p) => p.id === winnerPlayerId) || {};
     const bidderTeam = bidder.team;
     const otherTeam = bidderTeam === "Fire" ? "Storm" : "Fire";
     const bid = bids[winnerPlayerId] || 0;
 
-    if (roundPoints[bidderTeam] >= bid) {
-      teamScores[bidderTeam] += roundPoints[bidderTeam];
-      teamScores[otherTeam] += roundPoints[otherTeam];
+    // Stiche zählen (für Doppel-Positiv)
+    const fireTrickCount = trickHistory.filter(
+      (t) => t.winnerTeam === "Fire"
+    ).length;
+    const stormTrickCount = trickHistory.filter(
+      (t) => t.winnerTeam === "Storm"
+    ).length;
+    const bidderTrickCount =
+      bidderTeam === "Fire" ? fireTrickCount : stormTrickCount;
+    const otherTrickCount =
+      otherTeam === "Fire" ? fireTrickCount : stormTrickCount;
+    const shutout = otherTrickCount === 0; // Gegner 0 Stiche
+
+    // Punkte dieser Runde je Team
+    const bidderPts = roundPoints[bidderTeam] || 0;
+    const otherPts = roundPoints[otherTeam] || 0;
+
+    // Delta, was wir auf den Gesamtstand draufrechnen
+    const delta = { Fire: 0, Storm: 0 };
+    let ruleApplied = "normal"; // "doublePositive" | "doubleNegative" | "normal"
+
+    if (shutout) {
+      // Doppel-Positiv
+      delta[bidderTeam] += 2 * bid;
+      // anderes Team bekommt 0
+      ruleApplied = "doublePositive";
+    } else if (bidderPts < bid) {
+      // Gebot verfehlt
+      if (otherPts >= DOUBLE_NEGATIVE_MIN) {
+        // Doppel-Negativ
+        delta[bidderTeam] -= 2 * bid;
+        delta[otherTeam] += otherPts; // Gegner behält seine erspielten Punkte
+        ruleApplied = "doubleNegative";
+      } else {
+        // Normale Strafe
+        delta[bidderTeam] -= bid;
+        delta[otherTeam] += otherPts;
+      }
     } else {
-      teamScores[bidderTeam] -= bid;
-      teamScores[otherTeam] += roundPoints[otherTeam];
+      // Gebot geschafft -> normale Rundensumme zählt
+      delta[bidderTeam] += bidderPts;
+      delta[otherTeam] += otherPts;
     }
 
-    io.emit("roundEnd", { roundPoints, teamScores });
+    // Auf Gesamtpunktestand anwenden
+    teamScores.Fire += delta.Fire;
+    teamScores.Storm += delta.Storm;
 
-    // Reset lokale Rundendaten
+    // Chronik-Eintrag
+    roundCounter += 1;
+    const roundEntry = {
+      round: roundCounter,
+      bid,
+      bidderId: winnerPlayerId,
+      bidderName: bidder.name || "",
+      bidderTeam,
+      trumpf, // letzter bekannter Trumpf dieser Runde
+      roundPoints: { ...roundPoints },
+      teamScoresAfter: { ...teamScores },
+      tricks: trickHistory.map((t) => ({ ...t })),
+      fireTrickCount,
+      stormTrickCount,
+      ruleApplied, // <-- welche Regel wir angewendet haben
+      doubleNegativeThreshold: DOUBLE_NEGATIVE_MIN,
+      deltaApplied: { ...delta }, // <-- was addiert/abgezogen wurde
+    };
+    roundsHistory.push(roundEntry);
+
+    // Events an Clients
+    io.emit("roundEnd", {
+      roundPoints,
+      teamScores,
+      tricks: trickHistory,
+      ruleApplied,
+      deltaApplied: delta,
+      doubleNegativeThreshold: DOUBLE_NEGATIVE_MIN,
+    });
+    io.emit("roundsHistoryUpdate", { roundsHistory });
+
+    // Reset für nächste Runde
     tricksPlayed = 0;
     roundPoints = { Fire: 0, Storm: 0 };
     trumpf = null;
@@ -570,15 +663,16 @@ io.on("connection", (socket) => {
     bottomCards = [];
     bids = {};
     winnerPlayerId = null;
+    trickHistory = [];
 
     // Spielende?
     if (teamScores.Fire >= MAX_POINTS || teamScores.Storm >= MAX_POINTS) {
       const winner = teamScores.Fire >= MAX_POINTS ? "Fire" : "Storm";
       io.emit("gameOver", { winner, teamScores });
-      return; // kein Neustart mehr
+      return;
     }
 
-    //  Sofort neue Runde starten
+    // Nächste Runde
     startNewRound();
   }
 
@@ -599,6 +693,9 @@ io.on("connection", (socket) => {
     }
 
     io.emit("playersUpdate", players);
+  });
+  socket.on("getRoundsHistory", () => {
+    socket.emit("roundsHistoryUpdate", { roundsHistory });
   });
 });
 

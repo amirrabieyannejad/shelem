@@ -26,6 +26,7 @@ const styles = {
     borderRadius: 8,
     marginTop: 16,
     textAlign: "center",
+    justifyContent: "center",
   },
   tableCard: {
     background: "#111",
@@ -50,10 +51,9 @@ const styles = {
     width: "max-content",
     margin: "24px auto 0",
   },
-  fire: { background: "#940f0fff", border: "2px solid #fca5a5" },
-  storm: { background: "#0072feff", border: "2px solid #93c5fd" },
-  me: { outline: "3px solid #f59e0b" },
-  turn: { boxShadow: "0 0 0 4px rgba(251,191,36,.7) inset" },
+  fire: { background: "#940f0fff", border: "2px solid #75ca7eff" },
+  storm: { background: "#0072feff", border: "2px solid #75ca7eff" },
+  turn: { boxShadow: "0 0 0 4px rgba(255, 11, 11, 1) inset" },
   btnRed: { background: "#fecaca" },
   btnBlue: { background: "#bfdbfe" },
   btnGreen: { background: "#bbf7d0" },
@@ -109,21 +109,25 @@ const styles = {
     textAlign: "center",
   },
   playerBoxBase: {
-    borderRadius: 10,
-    padding: 6,
-    fontSize: "clamp(10px, 2.6vw, 12px)",
-    fontWeight: 600,
+    borderRadius: "50%",
+    width: "clamp(44px, 10vw, 80px)", // vorher: 62/16vw/104
+    height: "clamp(44px, 10vw, 80px)",
+    padding: 6, // vorher: 8
     display: "flex",
+    flexDirection: "column",
     alignItems: "center",
     justifyContent: "center",
-    width: "clamp(80px, 18vw, 120px)", // responsive Breite
-    height: "clamp(56px, 12vw, 84px)", // responsive Höhe
-    boxShadow: "0 2px 6px rgba(0,0,0,.15)",
+    gap: 3, // vorher: 4
     textAlign: "center",
-    flexDirection: "column",
-    lineHeight: 1.1,
-    gap: 2,
+    lineHeight: 1.05,
+    overflow: "hidden",
+    boxShadow: "0 4px 10px rgba(0,0,0,.2)",
+    fontSize: "clamp(9px, 2.1vw, 11px)", // minimal kleiner
   },
+
+  // Zug-Highlight bleibt als innerer Ring
+  turn: { boxShadow: "inset 0 0 0 8px rgba(251, 240, 36, 1)" },
+
   // optional: größere Touch-Ziele für Buttons
   btn: {
     padding: "10px 14px",
@@ -132,6 +136,7 @@ const styles = {
     background: "#e5e7eb",
     cursor: "pointer",
     touchAction: "manipulation",
+    justifyContent: "center",
   },
   pill: {
     background: "rgba(0,0,0,.25)",
@@ -151,6 +156,105 @@ const styles = {
     textAlign: "center",
     fontSize: 22,
     fontWeight: 800,
+  },
+  // HUD: liegt als Grid über dem Tisch, fängt keine Klicks ab
+  hudGrid: {
+    position: "absolute",
+    inset: 8, // kleiner Innenabstand
+    display: "grid",
+    gridTemplateColumns: "1fr auto 1fr",
+    gridTemplateRows: "1fr auto 1fr",
+    pointerEvents: "none", // Klicks gehen „durch“
+    zIndex: 4,
+  },
+  hudPill: {
+    background: "rgba(0,0,0,.25)",
+    border: "1px solid rgba(255,255,255,.18)",
+    padding: "6px 10px",
+    borderRadius: 10,
+    fontWeight: 800,
+    fontSize: 13,
+    color: "#fff",
+    whiteSpace: "nowrap",
+    boxShadow: "0 2px 6px rgba(0,0,0,.15)",
+  },
+  // Positionierungs-Helfer (im Grid platziert)
+  hudTL: {
+    gridColumn: "1",
+    gridRow: "1",
+    justifySelf: "start",
+    alignSelf: "start",
+  },
+  hudTR: {
+    gridColumn: "3",
+    gridRow: "1",
+    justifySelf: "end",
+    alignSelf: "start",
+  },
+  hudBL: {
+    gridColumn: "1",
+    gridRow: "3",
+    justifySelf: "start",
+    alignSelf: "end",
+  },
+  hudBR: {
+    gridColumn: "3",
+    gridRow: "3",
+    justifySelf: "end",
+    alignSelf: "end",
+  },
+  hudLM: {
+    gridColumn: "1",
+    gridRow: "2",
+    justifySelf: "start",
+    alignSelf: "center",
+  },
+  hudRM: {
+    gridColumn: "3",
+    gridRow: "2",
+    justifySelf: "end",
+    alignSelf: "center",
+  },
+  hudButtonWrap: {
+    gridColumn: "3",
+    gridRow: "3",
+    justifySelf: "end",
+    alignSelf: "end",
+    pointerEvents: "auto",
+  },
+  hudButton: {
+    padding: "10px 10px",
+    borderRadius: 20,
+    border: "0px solid #dbeafe",
+    background: "#dbeafe",
+    fontWeight: 700,
+    cursor: "pointer",
+  },
+  hudLTop: {
+    gridColumn: "1",
+    gridRow: "2",
+    justifySelf: "start",
+    alignSelf: "start",
+    marginLeft: "4px",
+    marginTop: "8px",
+  },
+  hudRTop: {
+    gridColumn: "3",
+    gridRow: "2",
+    justifySelf: "end",
+    alignSelf: "start",
+    marginRight: "4px",
+    marginTop: "8px",
+  },
+  hudRoundFire: {
+    position: "absolute",
+    top: "38px", // etwas unter Gesamt Fire
+    left: "12px",
+  },
+  hudRoundStorm: {
+    position: "absolute",
+    top: "38px",
+    right: "12px",
   },
 };
 
@@ -175,6 +279,28 @@ function App() {
   const [currentTrick, setCurrentTrick] = useState([]); // {playerId, card}[]
   const trickTimer = useRef(null);
   const [roundPointsLive, setRoundPointsLive] = useState({ Fire: 0, Storm: 0 });
+  const [showStats, setShowStats] = useState(false);
+  const [roundsHistory, setRoundsHistory] = useState([]);
+  const [expandedRounds, setExpandedRounds] = useState({}); // round -> true/false
+  const [myBid, setMyBid] = useState(100);
+
+  // Reihenfolge der Suit-Zeilen & Rangfolge innerhalb einer Suit
+  const SUIT_ROWS = ["♠", "♥", "♣", "♦"];
+  const RANK_ORDER = [
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8",
+    "9",
+    "10",
+    "J",
+    "Q",
+    "K",
+    "A",
+  ];
 
   function setTabTitle({ me, isMyTurn }) {
     if (!me) {
@@ -198,6 +324,8 @@ function App() {
     socket.on("connect", () => {
       const name = prompt("Bitte gib deinen Namen ein:");
       if (name) socket.emit("register", name);
+
+      socket.emit("getRoundsHistory");
     });
 
     const onInvalidAction = ({ msg }) => alert(msg);
@@ -215,7 +343,7 @@ function App() {
     socket.on("randomTeamsActivated", () => setRandomTeams(true));
 
     const sortHand = (cards, tr) => {
-      const suitOrder = ["♠", "♥", "♦", "♣"];
+      const suitOrder = ["♠", "♥", "♣", "♦"];
       const rankOrder = [
         "2",
         "3",
@@ -250,6 +378,8 @@ function App() {
       setCurrentBid(data.currentBid);
       setMustBid(!!data.mustBid);
       setCurrentPlayer(data.currentPlayer || null);
+      // Startwert für mein eigenes Gebot setzen
+      setMyBid(Math.max(data.currentBid + 5, 100));
     });
 
     socket.on("turnUpdate", ({ currentPlayer }) => {
@@ -304,6 +434,10 @@ function App() {
       trickTimer.current = setTimeout(() => {
         setCurrentTrick([]);
       }, 1000);
+    });
+
+    socket.on("roundsHistoryUpdate", ({ roundsHistory }) => {
+      setRoundsHistory(roundsHistory || []);
     });
 
     socket.on("roundEnd", ({ roundPoints, teamScores }) => {
@@ -397,7 +531,6 @@ function App() {
       ...styles.playerBoxBase,
       ...(p.team === "Fire" ? styles.fire : styles.storm),
       ...(currentPlayer && currentPlayer.id === p.id ? styles.turn : {}),
-      ...(me && me.id === p.id ? styles.me : {}),
     };
     return (
       <div style={boxStyle}>
@@ -411,7 +544,7 @@ function App() {
         {/* Trumpf nur für den Richter */}
         {trumpf && trumpfSetter && trumpfSetter.id === p.id && (
           <div style={{ marginTop: 4, fontSize: 14 }}>
-            Trumpf: <span style={{ fontWeight: 800 }}>{trumpf}</span>
+            👑: <span style={{ fontWeight: 800 }}>{trumpf}</span>
           </div>
         )}
       </div>
@@ -499,6 +632,48 @@ function App() {
     const c = String(c0 + 1).padStart(2, "0");
     return `${CARD_BASE}/card_r${r}_c${c}.png`;
   }
+  // TrickRow
+  function TrickRow({ t }) {
+    return (
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 8,
+          padding: "6px 8px",
+          background: "#fff",
+          borderRadius: 10,
+          border: "1px solid #e5e7eb",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            gap: 6,
+            flexWrap: "wrap",
+            alignItems: "center",
+          }}
+        >
+          {t.plays.map((p, i) => (
+            <div key={i} title={`#${i + 1} · ${p.name} (${p.team})`}>
+              <SpriteCard code={p.card} size="xxs" />
+            </div>
+          ))}
+        </div>
+        <div
+          style={{
+            fontWeight: 800,
+            fontSize: 12,
+            minWidth: 52,
+            textAlign: "right",
+          }}
+        >
+          +{t.points}
+        </div>
+      </div>
+    );
+  }
 
   function SpriteCard({ code, size = "md", style = {} }) {
     if (!code) return null;
@@ -507,10 +682,13 @@ function App() {
     const width =
       size === "lg"
         ? "clamp(62px, 16vw, 96px)"
+        : size === "md"
+        ? "clamp(56px, 12vw, 80px)"
         : size === "sm"
         ? "clamp(44px, 10vw, 60px)"
-        : "clamp(56px, 12vw, 80px)";
-
+        : size === "xs"
+        ? "clamp(32px, 7vw, 40px)" // deutlich kleiner
+        : /* xxs */ "clamp(26px, 6vw, 32px)";
     if (!src) {
       // Fallback, falls ein Code nicht gemappt ist
       return (
@@ -555,21 +733,6 @@ function App() {
 
   return (
     <div style={styles.page}>
-      <h1 style={styles.h1}>Shelem — Lobby &amp; Bieten</h1>
-
-      {/* Info-Bar (Gebot + Team-Punkte) */}
-      <div style={styles.infoBar}>
-        <div style={styles.pill}>Gebot: {currentBid}</div>
-
-        {/* Live-Rundenpunkte */}
-        <div style={styles.pill}>Runde Fire: {roundPointsLive.Fire}</div>
-        <div style={styles.pill}>Runde Storm: {roundPointsLive.Storm}</div>
-
-        {/* Gesamtpunkte (Spielstand kumuliert) */}
-        <div style={styles.pill}>Gesamt Fire: {scores.Fire}</div>
-        <div style={styles.pill}>Gesamt Storm: {scores.Storm}</div>
-      </div>
-
       {/* Popup Boden-Karten */}
       {showBottom && (
         <div style={styles.modalBackdrop}>
@@ -652,6 +815,41 @@ function App() {
       {/* Spielfeld */}
       {players.length === 4 && (
         <div style={styles.tableWrap}>
+          {/* HUD Gesamtpunkte */}
+          <div style={styles.hudGrid}>
+            <div style={{ ...styles.hudTL }}>
+              <span style={styles.hudPill}>Gesamt Fire: {scores.Fire}</span>
+            </div>
+            <div style={styles.hudTR}>
+              <span style={styles.hudPill}>Gesamt Storm: {scores.Storm}</span>
+            </div>
+
+            <div style={styles.hudBL}>
+              <span style={styles.hudPill}>Gebot: {currentBid}</span>
+            </div>
+            <div style={styles.hudButtonWrap}>
+              <button
+                style={styles.hudButton}
+                onClick={() => setShowStats(true)}
+              >
+                آمار
+              </button>
+            </div>
+          </div>
+
+          {/* Rundenpunkte explizit platziert */}
+          <div style={styles.hudRoundFire}>
+            <span style={styles.hudPill}>
+              Runde Fire: {roundPointsLive.Fire}
+            </span>
+          </div>
+          <div style={styles.hudRoundStorm}>
+            <span style={styles.hudPill}>
+              Runde Storm: {roundPointsLive.Storm}
+            </span>
+          </div>
+
+          {/* Karten-Mitte */}
           <div
             style={{
               ...styles.tableCenter,
@@ -670,88 +868,50 @@ function App() {
               }}
             >
               {(() => {
-                const posStyle = {
-                  top: {
-                    top: "20%", // etwas oberhalb der Mitte
-                    left: "50%",
-                    transform: "translate(-50%, -60%)",
-                  },
-                  right: {
-                    top: "50%",
-                    right: "20%", // etwas nach innen
-                    transform: "translate(60%, -50%)",
-                  },
-                  bottom: {
-                    bottom: "20%", // etwas unterhalb der Mitte
-                    left: "50%",
-                    transform: "translate(-50%, 60%)",
-                  },
-                  left: {
-                    top: "50%",
-                    left: "20%", // etwas nach innen
-                    transform: "translate(-60%, -50%)",
-                  },
-                };
+                // Karten werden in der Reihenfolge dargestellt, wie sie im Stich liegen:
+                // currentTrick[0] = zuerst gespielt, ... [3] = zuletzt gespielt (liegt oben)
+                const order = currentTrick;
 
-                const getSide = (pid) => {
-                  if (!seated[0]) return null;
-                  if (seated[0]?.id === pid) return "bottom";
-                  if (seated[1]?.id === pid) return "right";
-                  if (seated[2]?.id === pid) return "top";
-                  if (seated[3]?.id === pid) return "left";
-                  return null;
-                };
-                const bySide = {};
-                currentTrick.forEach((t) => {
-                  const s = getSide(t.playerId);
-                  if (s && !bySide[s]) bySide[s] = t.card;
-                });
+                // Versetzte Slots rund um die Mitte (sehr nah beieinander → Überlappung)
+                // Du kannst die translate-Werte fein-tunen (z.B. -36%/-18%/12% etc.)
+                const slots = [
+                  {
+                    top: "50%",
+                    left: "50%",
+                    transform: "translate(-50%, -72%) rotate(-6deg)",
+                  }, // 1. Karte (oben/unten Gefühl)
+                  {
+                    top: "50%",
+                    left: "50%",
+                    transform: "translate(-78%, -50%) rotate(-2deg)",
+                  }, // 2. Karte (links)
+                  {
+                    top: "50%",
+                    left: "50%",
+                    transform: "translate(-50%, -28%) rotate(2deg)",
+                  }, // 3. Karte (unten)
+                  {
+                    top: "50%",
+                    left: "50%",
+                    transform: "translate(-22%, -50%) rotate(6deg)",
+                  }, // 4. Karte (rechts)
+                ];
+
                 return (
                   <>
-                    {bySide.top && (
+                    {order.map((t, i) => (
                       <div
+                        key={`${t.playerId}-${t.card}-${i}`}
                         style={{
                           position: "absolute",
-                          zIndex: 3,
-                          ...posStyle.top,
+                          zIndex: 10 + i, // später gespielt = höher
+                          ...slots[i], // sanfte Überlappung + Mini-Rotation
                         }}
+                        title={`#${i + 1} gespielt`}
                       >
-                        <SpriteCard code={bySide.top} />
+                        <SpriteCard code={t.card} />
                       </div>
-                    )}
-                    {bySide.right && (
-                      <div
-                        style={{
-                          position: "absolute",
-                          zIndex: 3,
-                          ...posStyle.right,
-                        }}
-                      >
-                        <SpriteCard code={bySide.right} />
-                      </div>
-                    )}
-                    {bySide.bottom && (
-                      <div
-                        style={{
-                          position: "absolute",
-                          zIndex: 3,
-                          ...posStyle.bottom,
-                        }}
-                      >
-                        <SpriteCard code={bySide.bottom} />
-                      </div>
-                    )}
-                    {bySide.left && (
-                      <div
-                        style={{
-                          position: "absolute",
-                          zIndex: 3,
-                          ...posStyle.left,
-                        }}
-                      >
-                        <SpriteCard code={bySide.left} />
-                      </div>
-                    )}
+                    ))}
 
                     {currentTrick.length === 0 && (
                       <div
@@ -858,34 +1018,103 @@ function App() {
 
       {/* Bieten */}
       {isMyTurn && me && !me.passed && !biddingWinner && (
-        <div style={styles.card}>
-          <h3>Dein Zug — aktuelles Gebot: {currentBid}</h3>
-          <div style={styles.rowWrap}>
-            {!mustBid && (
-              <button style={styles.btn} onClick={() => makeBid(0)}>
-                Pass
+        <div style={styles.modalBackdrop}>
+          <div style={styles.modal}>
+            <h3
+              style={{
+                margin: 0,
+                fontWeight: 800,
+                color: "#000000",
+                textAlign: "center",
+              }}
+            >
+              امتیاز پیشنهادی شما{" "}
+            </h3>
+            <p
+              style={{
+                color: "#000000",
+                textAlign: "center",
+              }}
+            >
+              آخرین امتیاز پیشنهاد شده: {currentBid}
+            </p>
+
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 20,
+                margin: "20px 0",
+              }}
+            >
+              <button
+                style={{ ...styles.btn, fontSize: 24 }}
+                onClick={() => setMyBid((prev) => Math.max(prev - 5, 100))}
+              >
+                –
               </button>
-            )}
-            {[...Array(14).keys()]
-              .map((i) => (i + 1) * 5 + 95)
-              .filter((bid) => bid > currentBid)
-              .map((bid) => (
-                <button
-                  key={bid}
-                  style={{ ...styles.btn, background: "#bfdbfe" }}
-                  onClick={() => makeBid(bid)}
-                >
-                  {bid}
-                </button>
-              ))}
+
+              <div
+                style={{
+                  fontSize: 36,
+                  fontWeight: 900,
+                  minWidth: 80,
+                  textAlign: "center",
+                  color: "black",
+                }}
+              >
+                {myBid || 100}
+              </div>
+
+              <button
+                style={{ ...styles.btn, fontSize: 24 }}
+                onClick={() => setMyBid((prev) => Math.min(prev + 5, 165))}
+              >
+                +
+              </button>
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                marginTop: 20,
+              }}
+            >
+              <button
+                style={{
+                  ...styles.btn,
+                  background: "#fbbf24",
+                  color: "#000",
+                  padding: "16px 60px",
+                  fontWeight: 800,
+                  fontSize: 15,
+                }}
+                onClick={() => makeBid(0)}
+              >
+                پاس
+              </button>
+              <button
+                style={{
+                  ...styles.btn,
+                  background: "#22c55e",
+                  color: "#000000ff",
+                  padding: "16px 60px",
+                  fontWeight: 800,
+                  fontSize: 15,
+                }}
+                onClick={() => makeBid(myBid)}
+              >
+                تایید
+              </button>
+            </div>
           </div>
         </div>
       )}
-      {/* Hand */}
+
       {/* Hand */}
       <div style={styles.card}>
-        <h2>Deine Hand:</h2>
-
         {/* leichtes Overlap-Layout für ein Kartenband */}
         <div
           style={{
@@ -985,6 +1214,262 @@ function App() {
       {!isMyTurn && !biddingWinner && currentPlayer && (
         <div style={{ textAlign: "center", marginTop: 16 }}>
           Aktuell am Zug: {currentPlayer.name} (Team {currentPlayer.team})
+        </div>
+      )}
+      {showStats && (
+        <div style={styles.modalBackdrop}>
+          <div
+            style={{
+              ...styles.modal,
+              width: 800,
+              maxWidth: "95vw",
+              maxHeight: "85vh",
+              overflow: "auto",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 12,
+              }}
+            >
+              <h3 style={{ margin: 0, fontWeight: 800 }}>Statistik</h3>
+              <button
+                className="close"
+                style={styles.btn}
+                onClick={() => setShowStats(false)}
+              >
+                Schließen
+              </button>
+            </div>
+
+            {!roundsHistory || roundsHistory.length === 0 ? (
+              <div style={{ marginTop: 12 }}>
+                Noch keine Rundendaten vorhanden.
+              </div>
+            ) : (
+              <div style={{ display: "grid", gap: 12, marginTop: 12 }}>
+                {roundsHistory.map((r) => {
+                  const isOpen = !!expandedRounds[r.round];
+                  return (
+                    <div
+                      key={r.round}
+                      style={{
+                        border: "1px solid #e5e7eb",
+                        borderRadius: 10,
+                        background: "#fafafa",
+                      }}
+                    >
+                      {/* Kopfzeile einer Runde */}
+                      <button
+                        onClick={() =>
+                          setExpandedRounds((prev) => ({
+                            ...prev,
+                            [r.round]: !prev[r.round],
+                          }))
+                        }
+                        style={{
+                          display: "flex",
+                          width: "100%",
+                          textAlign: "left",
+                          justifyContent: "space-between",
+                          gap: 10,
+                          alignItems: "center",
+                          padding: 10,
+                          background: "transparent",
+                          border: "none",
+                          cursor: "pointer",
+                          borderBottom: isOpen ? "1px solid #e5e7eb" : "none",
+                          borderRadius: "10px 10px 0 0",
+                        }}
+                        title="Details ein-/ausklappen"
+                      >
+                        <div style={{ fontWeight: 800 }}>
+                          Runde {r.round}
+                          {r.trumpf ? ` · Trumpf: ${r.trumpf}` : ""}
+                        </div>
+                        <div
+                          style={{
+                            display: "flex",
+                            gap: 10,
+                            flexWrap: "wrap",
+                            alignItems: "center",
+                          }}
+                        >
+                          <span className="pill" style={styles.pill}>
+                            Bieter: {r.bidderName || "-"} ({r.bidderTeam || "?"}
+                            )
+                          </span>
+                          <span className="pill" style={styles.pill}>
+                            Gebot: {r.bid || 0}
+                          </span>
+                          <span className="pill" style={styles.pill}>
+                            Runde Fire: {r.roundPoints?.Fire ?? 0}
+                          </span>
+                          <span className="pill" style={styles.pill}>
+                            Runde Storm: {r.roundPoints?.Storm ?? 0}
+                          </span>
+                          {r.ruleApplied === "doublePositive" && (
+                            <span className="pill" style={styles.pill}>
+                              Doppel-Positiv (+{r.bid * 2})
+                            </span>
+                          )}
+                          {r.ruleApplied === "doubleNegative" && (
+                            <span className="pill" style={styles.pill}>
+                              Doppel-Negativ (−{r.bid * 2})
+                            </span>
+                          )}
+
+                          <span className="pill" style={styles.pill}>
+                            Gesamt Fire: {r.teamScoresAfter?.Fire ?? "-"}
+                          </span>
+                          <span className="pill" style={styles.pill}>
+                            Gesamt Storm: {r.teamScoresAfter?.Storm ?? "-"}
+                          </span>
+                        </div>
+                      </button>
+
+                      {/* Details: 12 Stiche mit Kartenanzeige */}
+                      {isOpen && (
+                        <div style={{ padding: 10 }}>
+                          {/* Header – Richter & Trumpf */}
+                          <div
+                            style={{
+                              display: "flex",
+                              gap: 12,
+                              alignItems: "center",
+                              flexWrap: "wrap",
+                              marginBottom: 10,
+                            }}
+                          >
+                            <div className="pill" style={styles.pill}>
+                              Richter: {r.bidderName || "-"}
+                            </div>
+                            {r.trumpf && (
+                              <span className="pill" style={styles.pill}>
+                                Trumpf: {r.trumpf}
+                              </span>
+                            )}
+                            <span className="pill" style={styles.pill}>
+                              Gebot: {r.bid || 0}
+                            </span>
+                          </div>
+
+                          {/* Stiche nach Team gruppiert */}
+                          {(() => {
+                            const fireTricks = (r.tricks || []).filter(
+                              (t) => t.winnerTeam === "Fire"
+                            );
+                            const stormTricks = (r.tricks || []).filter(
+                              (t) => t.winnerTeam === "Storm"
+                            );
+
+                            return (
+                              <div style={{ display: "grid", gap: 14 }}>
+                                {/* Team Storm */}
+                                <div
+                                  style={{
+                                    background: "#f1f5f9",
+                                    border: "1px solid #e2e8f0",
+                                    borderRadius: 10,
+                                    padding: 10,
+                                  }}
+                                >
+                                  <div
+                                    style={{
+                                      fontWeight: 900,
+                                      marginBottom: 8,
+                                      color: "#000000",
+                                    }}
+                                  >
+                                    Team Storm – Stiche
+                                  </div>
+                                  {stormTricks.length === 0 ? (
+                                    <div style={{ opacity: 0.7 }}>
+                                      Keine Stiche.
+                                    </div>
+                                  ) : (
+                                    <div style={{ display: "grid", gap: 8 }}>
+                                      {stormTricks.map((t) => (
+                                        <TrickRow key={`storm-${t.no}`} t={t} />
+                                        // oder: <TrickStack key={`storm-${t.no}`} t={t} />
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+
+                                {/* Team Fire */}
+                                <div
+                                  style={{
+                                    background: "#fef2f2",
+                                    border: "1px solid #fee2e2",
+                                    borderRadius: 10,
+                                    padding: 10,
+                                  }}
+                                >
+                                  <div
+                                    style={{
+                                      fontWeight: 900,
+                                      marginBottom: 8,
+                                      color: "#000000",
+                                    }}
+                                  >
+                                    Team Fire – Stiche
+                                  </div>
+                                  {fireTricks.length === 0 ? (
+                                    <div style={{ opacity: 0.7 }}>
+                                      Keine Stiche.
+                                    </div>
+                                  ) : (
+                                    <div style={{ display: "grid", gap: 8 }}>
+                                      {fireTricks.map((t) => (
+                                        <TrickRow key={`fire-${t.no}`} t={t} />
+                                        // oder: <TrickStack key={`fire-${t.no}`} t={t} />
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+
+                                {/* Summen */}
+                                <div
+                                  style={{
+                                    display: "flex",
+                                    gap: 10,
+                                    flexWrap: "wrap",
+                                    alignItems: "center",
+                                    justifyContent: "flex-end",
+                                  }}
+                                >
+                                  <span className="pill" style={styles.pill}>
+                                    Round Punkte – Storm:{" "}
+                                    {r.roundPoints?.Storm ?? 0}
+                                  </span>
+                                  <span className="pill" style={styles.pill}>
+                                    Round Punkte – Fire:{" "}
+                                    {r.roundPoints?.Fire ?? 0}
+                                  </span>
+                                  <span className="pill" style={styles.pill}>
+                                    Gesamt – Storm:{" "}
+                                    {r.teamScoresAfter?.Storm ?? "-"}
+                                  </span>
+                                  <span className="pill" style={styles.pill}>
+                                    Gesamt – Fire:{" "}
+                                    {r.teamScoresAfter?.Fire ?? "-"}
+                                  </span>
+                                </div>
+                              </div>
+                            );
+                          })()}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>
