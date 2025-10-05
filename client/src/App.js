@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from "react";
 import { io } from "socket.io-client";
 
-const socket = io("http://localhost:3001");
+const socket = io(`http://${window.location.hostname}:3001`);
 
 // --- einfache Styles ohne Tailwind ---
 const styles = {
@@ -1050,7 +1050,10 @@ function App() {
             >
               <button
                 style={{ ...styles.btn, fontSize: 24 }}
-                onClick={() => setMyBid((prev) => Math.max(prev - 5, 100))}
+                onClick={() =>
+                  setMyBid((prev) => Math.max(prev - 5, currentBid + 5))
+                }
+                disabled={myBid <= currentBid + 5}
               >
                 –
               </button>
@@ -1209,13 +1212,6 @@ function App() {
           })}
         </div>
       </div>
-
-      {/* Status */}
-      {!isMyTurn && !biddingWinner && currentPlayer && (
-        <div style={{ textAlign: "center", marginTop: 16 }}>
-          Aktuell am Zug: {currentPlayer.name} (Team {currentPlayer.team})
-        </div>
-      )}
       {showStats && (
         <div style={styles.modalBackdrop}>
           <div

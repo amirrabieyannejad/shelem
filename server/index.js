@@ -178,7 +178,7 @@ function maybeEndAuction() {
 // Hilfsfunktionen: Kartenwerte für Punkte
 function cardPoints(card) {
   const rank = card.slice(0, -1);
-  if (rank === "A") return 15;
+  if (rank === "A") return 10;
   if (rank === "10") return 10;
   if (rank === "5") return 5;
   return 0;
