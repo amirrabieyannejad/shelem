@@ -36,6 +36,11 @@ let trickHistory = []; // Stiche der aktuellen Runde (Array mit 12 Einträgen)
 let roundsHistory = []; // Chronik aller Runden
 let roundCounter = 0; // Rundenzähler
 
+// Varianten-Flags
+const VARIANTS = { UNDECIDED: "UNDECIDED", NORMAL: "NORMAL", FLIP: "FLIP" };
+let roundVariant = VARIANTS.UNDECIDED;
+let variantPending = false;
+
 // === Karten Deck ===
 const suits = ["♠", "♥", "♣", "♦"];
 const ranks = [
@@ -103,6 +108,8 @@ function assignSeats() {
 function deal() {
   let deck = createDeck();
   deck = shuffle(deck);
+  roundVariant = VARIANTS.UNDECIDED;
+  variantPending = false;
 
   // neue Runde sauber starten
   roundPoints = { Fire: 0, Storm: 0 };
@@ -200,10 +207,26 @@ const rankOrder = [
   "K",
   "A",
 ];
-function compareCards(cardA, cardB, leadSuit, trumpSuit) {
+function compareCards(cardA, cardB, leadSuit, trumpSuit, isFlip = false) {
   const [rankA, suitA] = [cardA.slice(0, -1), cardA.slice(-1)];
   const [rankB, suitB] = [cardB.slice(0, -1), cardB.slice(-1)];
 
+  if (isFlip) {
+    // Kein Trumpf. Nur Karten der angespielten Farbe können gewinnen.
+    const aLed = suitA === leadSuit;
+    const bLed = suitB === leadSuit;
+    if (aLed && !bLed) return 1;
+    if (!aLed && bLed) return -1;
+    if (aLed && bLed) {
+      // 2 ist höchste, A niedrigste → kleinerer Index ist stärker
+      const ia = rankOrder.indexOf(rankA);
+      const ib = rankOrder.indexOf(rankB);
+      return ib - ia; // positiv, wenn A stärker (ia < ib)
+    }
+    return 0;
+  }
+
+  // Normal (mit Trumpf)
   if (suitA === trumpSuit && suitB !== trumpSuit) return 1;
   if (suitB === trumpSuit && suitA !== trumpSuit) return -1;
 
@@ -370,6 +393,35 @@ io.on("connection", (socket) => {
       io.emit("playersUpdate", players);
     }
   });
+  socket.on("setVariant", ({ variant }) => {
+    // Nur der Startspieler (Richter) darf wählen
+    if (socket.id !== winnerPlayerId) return;
+    if (variant !== "NORMAL" && variant !== "FLIP") return;
+
+    roundVariant = variant === "NORMAL" ? VARIANTS.NORMAL : VARIANTS.FLIP;
+    variantPending = false;
+
+    // Bei NORMAL: Trumpf = Farbe der ERSTEN Karte im aktuellen Stich
+    let justSetTrump = null;
+    if (roundVariant === VARIANTS.NORMAL && !trumpf && currentTrick[0]) {
+      justSetTrump = currentTrick[0].card.slice(-1);
+      trumpf = justSetTrump;
+      io.emit("trumpChosen", {
+        trumpf,
+        winner: players.find((p) => p.id === winnerPlayerId),
+      });
+    }
+
+    io.emit("variantChosen", { variant: roundVariant, trumpf: justSetTrump });
+
+    // Falls genau 1 Karte liegt (wir hatten pausiert): jetzt weiterspielen lassen
+    if (currentTrick.length === 1) {
+      currentPlayerIndex = (currentPlayerIndex + 3) % players.length;
+      const next = players[currentPlayerIndex];
+      io.to(next.id).emit("yourTurn", { currentBid, currentPlayer: next });
+      io.emit("turnUpdate", { currentPlayer: next });
+    }
+  });
 
   socket.on("makeBid", (bid) => {
     if (!biddingActive) return;
@@ -472,10 +524,6 @@ io.on("connection", (socket) => {
     // Prüfen: Karte in Hand?
     if (!hands[socket.id].includes(card)) return;
 
-    if (!trumpf && player.id === winnerPlayerId) {
-      trumpf = card.slice(-1);
-      io.emit("trumpChosen", { trumpf, winner: player });
-    }
     // Bedienpflicht prüfen
     if (currentTrick.length > 0) {
       const leadSuit = currentTrick[0].card.slice(-1);
@@ -494,6 +542,22 @@ io.on("connection", (socket) => {
 
     // In Stich legen
     currentTrick.push({ playerId: socket.id, card });
+    const isFirstInTrick = currentTrick.length === 1;
+    if (isFirstInTrick) {
+      trickLeader = socket.id;
+      // Startspieler (Richter) entscheidet nach der ersten Karte die Variante
+      if (player.id === winnerPlayerId) {
+        if (roundVariant === VARIANTS.UNDECIDED) {
+          variantPending = true;
+          io.to(player.id).emit("askVariant", { options: ["NORMAL", "FLIP"] });
+        } else if (roundVariant === VARIANTS.NORMAL && !trumpf) {
+          // Falls Runde bereits auf NORMAL stand (z. B. spätere Anpassungen), setze Trumpf jetzt
+          trumpf = card.slice(-1);
+          io.emit("trumpChosen", { trumpf, winner: player });
+        }
+      }
+    }
+
     if (currentTrick.length === 1) {
       trickLeader = socket.id;
     }
@@ -509,7 +573,8 @@ io.on("connection", (socket) => {
           currentTrick[i].card,
           winner.card,
           leadSuit,
-          trumpf
+          trumpf,
+          roundVariant === VARIANTS.FLIP
         );
         if (cmp > 0) winner = currentTrick[i];
       }
@@ -561,11 +626,15 @@ io.on("connection", (socket) => {
         io.emit("turnUpdate", { currentPlayer: next });
       }
     } else {
-      // Nächster Spieler gegen  Uhrzeigersinn
-      currentPlayerIndex = (currentPlayerIndex + 3) % players.length;
-      const next = players[currentPlayerIndex];
-      io.to(next.id).emit("yourTurn", { currentBid, currentPlayer: next });
-      io.emit("turnUpdate", { currentPlayer: next });
+      if (currentTrick.length === 1 && variantPending) {
+        // Solange die Wahl "Normal/Flip" offen ist, NICHT weitergeben
+      } else {
+        // Nächster Spieler gegen Uhrzeigersinn
+        currentPlayerIndex = (currentPlayerIndex + 3) % players.length;
+        const next = players[currentPlayerIndex];
+        io.to(next.id).emit("yourTurn", { currentBid, currentPlayer: next });
+        io.emit("turnUpdate", { currentPlayer: next });
+      }
     }
   });
 

@@ -283,6 +283,10 @@ function App() {
   const [roundsHistory, setRoundsHistory] = useState([]);
   const [expandedRounds, setExpandedRounds] = useState({}); // round -> true/false
   const [myBid, setMyBid] = useState(100);
+  const [variantModal, setVariantModal] = useState({
+    open: false,
+    options: [],
+  });
 
   // Reihenfolge der Suit-Zeilen & Rangfolge innerhalb einer Suit
   const SUIT_ROWS = ["♠", "♥", "♣", "♦"];
@@ -369,6 +373,18 @@ function App() {
         return rankOrder.indexOf(ra) - rankOrder.indexOf(rb);
       });
     };
+    socket.on("askVariant", ({ options }) => {
+      setVariantModal({ open: true, options: options || ["NORMAL", "FLIP"] });
+    });
+
+    socket.on("variantChosen", ({ variant, trumpf: t }) => {
+      setVariantModal({ open: false, options: [] });
+      if (t) {
+        setTrumpf(t);
+        // vorhandene sortHand-Funktion benutzen
+        setHand((h) => sortHand(h, t));
+      }
+    });
 
     socket.on("hand", (cards) => setHand(sortHand(cards, trumpf)));
     socket.on("bottomCards", (cards) => console.log("Boden:", cards));
@@ -1012,6 +1028,47 @@ function App() {
             >
               Abwerfen bestätigen
             </button>
+          </div>
+        </div>
+      )}
+      {variantModal.open && (
+        <div style={styles.modalBackdrop}>
+          <div style={styles.modal}>
+            <h3 style={{ margin: 0, fontWeight: 800, textAlign: "center" }}>
+              Runde: Normal oder Flip?
+            </h3>
+            <p style={{ textAlign: "center", marginTop: 8 }}>
+              Entscheidung nach der ersten Karte des Startspielers.
+            </p>
+            <div
+              style={{
+                display: "flex",
+                gap: 10,
+                justifyContent: "center",
+                marginTop: 16,
+              }}
+            >
+              <button
+                style={{
+                  ...styles.btn,
+                  background: "#dbeafe",
+                  fontWeight: 800,
+                }}
+                onClick={() => socket.emit("setVariant", { variant: "NORMAL" })}
+              >
+                Normal
+              </button>
+              <button
+                style={{
+                  ...styles.btn,
+                  background: "#fde68a",
+                  fontWeight: 800,
+                }}
+                onClick={() => socket.emit("setVariant", { variant: "FLIP" })}
+              >
+                Flip
+              </button>
+            </div>
           </div>
         </div>
       )}
