@@ -730,11 +730,19 @@ io.on("connection", (socket) => {
       deltaApplied: { ...delta }, // <-- was addiert/abgezogen wurde
     };
     roundsHistory.push(roundEntry);
+    // schickt den Sieger mit
+    const roundWinnerTeam =
+      roundPoints.Fire === roundPoints.Storm
+        ? null
+        : roundPoints.Fire > roundPoints.Storm
+        ? "Fire"
+        : "Storm";
 
     // Events an Clients
     io.emit("roundEnd", {
       roundPoints,
       teamScores,
+      roundWinnerTeam,
       tricks: trickHistory,
       ruleApplied,
       deltaApplied: delta,

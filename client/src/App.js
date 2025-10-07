@@ -312,8 +312,8 @@ function App() {
       return;
     }
     const team = me.team ? `Team ${me.team}` : "ohne Team";
-    const turn = isMyTurn ? " ⏳(Am Zug)" : "";
-    document.title = `${me.name} — ${team}${turn}`;
+    const turn = isMyTurn ? " ⏳" : "";
+    document.title = `${turn} ${me.name} — ${team}`;
   }
   function setThemeColor(team) {
     const meta =
@@ -456,22 +456,53 @@ function App() {
       setRoundsHistory(roundsHistory || []);
     });
 
-    socket.on("roundEnd", ({ roundPoints, teamScores }) => {
-      setScores(teamScores);
-      alert(
-        `Runde beendet!\nFire: ${roundPoints.Fire} | Storm: ${roundPoints.Storm}`
-      );
+    socket.on(
+      "roundEnd",
+      ({ roundPoints, teamScores, roundWinnerTeam, ruleApplied }) => {
+        // Fallback: selbst bestimmen, falls Server roundWinnerTeam nicht mitsendet
+        const computed =
+          roundPoints.Fire === roundPoints.Storm
+            ? null
+            : roundPoints.Fire > roundPoints.Storm
+            ? "Fire"
+            : "Storm";
 
-      // Lokale UI sofort "neutral" stellen
-      setRoundPointsLive(roundPoints); // zeigt finalen Stand der Runde
-      setBiddingWinner(null);
-      setCurrentBid(0);
-      setTrumpf(null);
-      setLastTrick(null);
-      setCurrentTrick([]);
-      setIsMyTurn(false);
-      setMustBid(false);
-    });
+        const winnerTeam = roundWinnerTeam ?? computed;
+        const winnerLabel = winnerTeam ? `Team ${winnerTeam}` : "Unentschieden";
+        const leaderText =
+          teamScores.Fire === teamScores.Storm
+            ? "Gleichstand"
+            : teamScores.Fire > teamScores.Storm
+            ? "Team Fire führt"
+            : "Team Storm führt";
+
+        const ruleTxt =
+          ruleApplied === "doublePositive"
+            ? " · Doppel-Positiv"
+            : ruleApplied === "doubleNegative"
+            ? " · Doppel-Negativ"
+            : "";
+
+        alert(
+          `Runde beendet${ruleTxt}!\n` +
+            `Rundensieger: ${winnerLabel}\n` +
+            `Rundenpunkte — Fire: ${roundPoints.Fire} | Storm: ${roundPoints.Storm}\n` +
+            `Gesamt — Fire: ${teamScores.Fire} | Storm: ${teamScores.Storm} (${leaderText})`
+        );
+
+        // dein bestehendes Reset weiterführen:
+        setScores(teamScores);
+        setRoundPointsLive(roundPoints);
+        setBiddingWinner(null);
+        setCurrentBid(0);
+        setTrumpf(null);
+        setTrumpfSetter(null); // wichtig, damit der alte Richter nicht "klebt"
+        setLastTrick(null);
+        setCurrentTrick([]);
+        setIsMyTurn(false);
+        setMustBid(false);
+      }
+    );
 
     socket.on("roundPointsUpdate", ({ roundPoints }) => {
       setRoundPointsLive(roundPoints);
@@ -553,15 +584,22 @@ function App() {
         <div style={{ fontWeight: 900, fontSize: 12 }}>
           {p.name} {youLabel ? "(Du)" : ""}
         </div>
-        <div style={{ fontSize: 12, opacity: 0.9 }}>Team {p.team}</div>
+        {/* Trumpf nur für den Richter sowohl in Flip als auch in Normal  */}
+        {trumpfSetter && trumpfSetter.id === p.id && (
+          <div style={{ marginTop: 1, fontSize: 15 }}>
+            👑
+            {trumpf ? (
+              <>
+                حکم: <span style={{ fontWeight: 800 }}>{trumpf}</span>
+              </>
+            ) : (
+              <span style={{ fontWeight: 800 }}></span>
+            )}
+          </div>
+        )}
+
         {p.passed && (
           <div style={{ fontSize: 12, color: "#ffffffff" }}>(Pass)</div>
-        )}
-        {/* Trumpf nur für den Richter */}
-        {trumpf && trumpfSetter && trumpfSetter.id === p.id && (
-          <div style={{ marginTop: 4, fontSize: 14 }}>
-            👑: <span style={{ fontWeight: 800 }}>{trumpf}</span>
-          </div>
         )}
       </div>
     );
@@ -648,45 +686,104 @@ function App() {
     const c = String(c0 + 1).padStart(2, "0");
     return `${CARD_BASE}/card_r${r}_c${c}.png`;
   }
-  // TrickRow
+
+  // Fallback: Punktewert einer Karte (wie Server)
+  function cardPointsClient(card) {
+    const rank = card.slice(0, -1);
+    if (rank === "A") return 10;
+    if (rank === "10") return 10;
+    if (rank === "5") return 5;
+    return 0;
+  }
+
   function TrickRow({ t }) {
+    const win = t.winnerTeam; // "Fire" | "Storm" | undefined
+    const isFire = win === "Fire";
+    const isStorm = win === "Storm";
+
+    // Anspiel-Farbe (falls sie mal fehlt, nimm die erste Karte)
+    const leadSuit =
+      t.leadSuit || (t.plays && t.plays[0] ? t.plays[0].card.slice(-1) : "");
+
+    // Punkte (falls t.points fehlt, lokal berechnen)
+    const computedPoints =
+      5 + (t.plays || []).reduce((sum, p) => sum + cardPointsClient(p.card), 0);
+    const pts = Number.isFinite(t.points) ? t.points : computedPoints;
+
+    const rowStyle = {
+      display: "grid",
+      gridTemplateColumns: "auto 1fr auto",
+      alignItems: "center",
+      gap: 8,
+      padding: "8px 10px",
+      background: isFire ? "#ffe4e6" : isStorm ? "#eff6ff" : "#ffffff",
+      borderRadius: 10,
+      border: isFire
+        ? "1px solid #fecaca"
+        : isStorm
+        ? "1px solid #bfdbfe"
+        : "1px solid #e5e7eb",
+    };
+
+    const leftStyle = {
+      display: "flex",
+      alignItems: "center",
+      gap: 8,
+      fontWeight: 800,
+      fontSize: 12,
+      color: "#000000",
+      whiteSpace: "nowrap",
+    };
+
+    const suitBadge = {
+      padding: "2px 8px",
+      borderRadius: 9999,
+      fontWeight: 800,
+      fontSize: 12,
+      background: "#e5e7eb",
+      color: "#111",
+      lineHeight: 1,
+    };
+
+    const pointsBadge = {
+      padding: "4px 10px",
+      borderRadius: 9999,
+      fontWeight: 900,
+      fontSize: 12,
+      textAlign: "center",
+      minWidth: 56,
+      whiteSpace: "nowrap",
+      background: isFire ? "#ef4444" : isStorm ? "#3b82f6" : "#111827",
+      color: "#fff",
+    };
+
     return (
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 8,
-          padding: "6px 8px",
-          background: "#fff",
-          borderRadius: 10,
-          border: "1px solid #e5e7eb",
-        }}
-      >
+      <div style={rowStyle}>
+        {/* links: Stich + angespielte Farbe */}
+        <div style={leftStyle}>
+          <span>Stich {t.no}</span>
+          <span style={suitBadge}>{leadSuit || "?"}</span>
+        </div>
+
+        {/* mitte: ausgespielte Karten (Reihenfolge) */}
         <div
           style={{
             display: "flex",
             gap: 6,
             flexWrap: "wrap",
             alignItems: "center",
+            justifyContent: "flex-start",
           }}
         >
-          {t.plays.map((p, i) => (
+          {(t.plays || []).map((p, i) => (
             <div key={i} title={`#${i + 1} · ${p.name} (${p.team})`}>
               <SpriteCard code={p.card} size="xxs" />
             </div>
           ))}
         </div>
-        <div
-          style={{
-            fontWeight: 800,
-            fontSize: 12,
-            minWidth: 52,
-            textAlign: "right",
-          }}
-        >
-          +{t.points}
-        </div>
+
+        {/* rechts: Punkte deutlich sichtbar */}
+        <div style={pointsBadge}>+{pts}</div>
       </div>
     );
   }
@@ -1413,111 +1510,40 @@ function App() {
                             </span>
                           </div>
 
-                          {/* Stiche nach Team gruppiert */}
-                          {(() => {
-                            const fireTricks = (r.tricks || []).filter(
-                              (t) => t.winnerTeam === "Fire"
-                            );
-                            const stormTricks = (r.tricks || []).filter(
-                              (t) => t.winnerTeam === "Storm"
-                            );
+                          {/* Chronologische Liste der 12 Stiche */}
+                          <div style={{ display: "grid", gap: 8 }}>
+                            {(r.tricks || [])
+                              .slice()
+                              .sort((a, b) => a.no - b.no) // sicher chronologisch
+                              .map((t) => (
+                                <TrickRow key={t.no} t={t} />
+                              ))}
+                          </div>
 
-                            return (
-                              <div style={{ display: "grid", gap: 14 }}>
-                                {/* Team Storm */}
-                                <div
-                                  style={{
-                                    background: "#f1f5f9",
-                                    border: "1px solid #e2e8f0",
-                                    borderRadius: 10,
-                                    padding: 10,
-                                  }}
-                                >
-                                  <div
-                                    style={{
-                                      fontWeight: 900,
-                                      marginBottom: 8,
-                                      color: "#000000",
-                                    }}
-                                  >
-                                    Team Storm – Stiche
-                                  </div>
-                                  {stormTricks.length === 0 ? (
-                                    <div style={{ opacity: 0.7 }}>
-                                      Keine Stiche.
-                                    </div>
-                                  ) : (
-                                    <div style={{ display: "grid", gap: 8 }}>
-                                      {stormTricks.map((t) => (
-                                        <TrickRow key={`storm-${t.no}`} t={t} />
-                                        // oder: <TrickStack key={`storm-${t.no}`} t={t} />
-                                      ))}
-                                    </div>
-                                  )}
-                                </div>
-
-                                {/* Team Fire */}
-                                <div
-                                  style={{
-                                    background: "#fef2f2",
-                                    border: "1px solid #fee2e2",
-                                    borderRadius: 10,
-                                    padding: 10,
-                                  }}
-                                >
-                                  <div
-                                    style={{
-                                      fontWeight: 900,
-                                      marginBottom: 8,
-                                      color: "#000000",
-                                    }}
-                                  >
-                                    Team Fire – Stiche
-                                  </div>
-                                  {fireTricks.length === 0 ? (
-                                    <div style={{ opacity: 0.7 }}>
-                                      Keine Stiche.
-                                    </div>
-                                  ) : (
-                                    <div style={{ display: "grid", gap: 8 }}>
-                                      {fireTricks.map((t) => (
-                                        <TrickRow key={`fire-${t.no}`} t={t} />
-                                        // oder: <TrickStack key={`fire-${t.no}`} t={t} />
-                                      ))}
-                                    </div>
-                                  )}
-                                </div>
-
-                                {/* Summen */}
-                                <div
-                                  style={{
-                                    display: "flex",
-                                    gap: 10,
-                                    flexWrap: "wrap",
-                                    alignItems: "center",
-                                    justifyContent: "flex-end",
-                                  }}
-                                >
-                                  <span className="pill" style={styles.pill}>
-                                    Round Punkte – Storm:{" "}
-                                    {r.roundPoints?.Storm ?? 0}
-                                  </span>
-                                  <span className="pill" style={styles.pill}>
-                                    Round Punkte – Fire:{" "}
-                                    {r.roundPoints?.Fire ?? 0}
-                                  </span>
-                                  <span className="pill" style={styles.pill}>
-                                    Gesamt – Storm:{" "}
-                                    {r.teamScoresAfter?.Storm ?? "-"}
-                                  </span>
-                                  <span className="pill" style={styles.pill}>
-                                    Gesamt – Fire:{" "}
-                                    {r.teamScoresAfter?.Fire ?? "-"}
-                                  </span>
-                                </div>
-                              </div>
-                            );
-                          })()}
+                          {/* Summen / Footer */}
+                          <div
+                            style={{
+                              display: "flex",
+                              gap: 10,
+                              flexWrap: "wrap",
+                              alignItems: "center",
+                              justifyContent: "flex-end",
+                              marginTop: 10,
+                            }}
+                          >
+                            <span className="pill" style={styles.pill}>
+                              Round Punkte – Storm: {r.roundPoints?.Storm ?? 0}
+                            </span>
+                            <span className="pill" style={styles.pill}>
+                              Round Punkte – Fire: {r.roundPoints?.Fire ?? 0}
+                            </span>
+                            <span className="pill" style={styles.pill}>
+                              Gesamt – Storm: {r.teamScoresAfter?.Storm ?? "-"}
+                            </span>
+                            <span className="pill" style={styles.pill}>
+                              Gesamt – Fire: {r.teamScoresAfter?.Fire ?? "-"}
+                            </span>
+                          </div>
                         </div>
                       )}
                     </div>
