@@ -1107,10 +1107,11 @@ function App() {
             >
               <button
                 style={{ ...styles.btn, fontSize: 24 }}
-                onClick={() =>
-                  setMyBid((prev) => Math.max(prev - 5, currentBid + 5))
-                }
-                disabled={myBid <= currentBid + 5}
+                onClick={() => {
+                  const minAllowed = Math.max(100, currentBid + 5);
+                  setMyBid((prev) => Math.max(prev - 5, minAllowed));
+                }}
+                disabled={myBid <= Math.max(100, currentBid + 5)}
               >
                 –
               </button>
@@ -1130,6 +1131,7 @@ function App() {
               <button
                 style={{ ...styles.btn, fontSize: 24 }}
                 onClick={() => setMyBid((prev) => Math.min(prev + 5, 165))}
+                disabled={myBid >= 165}
               >
                 +
               </button>
@@ -1152,6 +1154,7 @@ function App() {
                   fontSize: 15,
                 }}
                 onClick={() => makeBid(0)}
+                disabled={mustBid}
               >
                 پاس
               </button>

@@ -427,6 +427,24 @@ io.on("connection", (socket) => {
     if (!biddingActive) return;
     const player = players.find((p) => p.id === socket.id);
     if (!player) return;
+    if (bid !== 0) {
+      // Validierung gegen Manipulation
+      const minAllowed = Math.max(100, currentBid + 5);
+      const isStepOk = bid % 5 === 0;
+      if (!isStepOk || bid < minAllowed || bid > MAX_BID) {
+        socket.emit("invalidAction", {
+          msg: `Ungültiges Gebot. Erlaubt: mindestens ${minAllowed}, höchstens ${MAX_BID}, in 5er-Schritten.`,
+        });
+        // Spieler bleibt am Zug:
+        io.to(player.id).emit("yourTurn", {
+          currentBid,
+          currentPlayer: player,
+          mustBid: forceBidPlayerId === player.id,
+        });
+        io.emit("turnUpdate", { currentPlayer: player });
+        return;
+      }
+    }
 
     // Falls gezwungener Spieler Pass machen will → blocken
     if (forceBidPlayerId === player.id && bid === 0) {
