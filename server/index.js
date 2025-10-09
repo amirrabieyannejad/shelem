@@ -299,6 +299,14 @@ io.on("connection", (socket) => {
       } else {
         player.team = "Storm";
       }
+    } else {
+      const fireCount = players.filter((p) => p.team === "Fire").length;
+      const stormCount = players.filter((p) => p.team === "Storm").length;
+      if (fireCount >= 2 && stormCount == 1) {
+        player.team = "Storm";
+      } else if (stormCount >= 2 && fireCount == 1) {
+        player.team = "Fire";
+      }
     }
     players.push(player);
 

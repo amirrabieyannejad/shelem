@@ -458,45 +458,72 @@ function App() {
 
     socket.on(
       "roundEnd",
-      ({ roundPoints, teamScores, roundWinnerTeam, ruleApplied }) => {
-        // Fallback: selbst bestimmen, falls Server roundWinnerTeam nicht mitsendet
-        const computed =
-          roundPoints.Fire === roundPoints.Storm
+      ({
+        roundPoints,
+        teamScores,
+        roundWinnerTeam, // Sieger nach Stichpunkten
+        ruleApplied, // "doublePositive" | "doubleNegative" | "normal"
+        deltaApplied, // { Fire: +/-X, Storm: +/-Y }  <-- NEU nutzen!
+      }) => {
+        // Sicher kopieren, damit spätere Updates (neue Runde) die Anzeige nicht beeinflussen
+        const rp = {
+          Fire: roundPoints?.Fire ?? 0,
+          Storm: roundPoints?.Storm ?? 0,
+        };
+        const after = {
+          Fire: teamScores?.Fire ?? 0,
+          Storm: teamScores?.Storm ?? 0,
+        };
+        const delta = {
+          Fire: deltaApplied?.Fire ?? 0,
+          Storm: deltaApplied?.Storm ?? 0,
+        };
+
+        // Anzeige-Helfer
+        const sign = (n) => (n >= 0 ? `+${n}` : `${n}`);
+        const ruleTxt =
+          ruleApplied === "doublePositive"
+            ? "Doppel-Positiv"
+            : ruleApplied === "doubleNegative"
+            ? "Doppel-Negativ"
+            : "Normal";
+
+        // Sieger nach Abrechnung (wer hat netto mehr bekommen?)
+        const winnerByDelta =
+          delta.Fire === delta.Storm
             ? null
-            : roundPoints.Fire > roundPoints.Storm
+            : delta.Fire > delta.Storm
             ? "Fire"
             : "Storm";
 
-        const winnerTeam = roundWinnerTeam ?? computed;
-        const winnerLabel = winnerTeam ? `Team ${winnerTeam}` : "Unentschieden";
-        const leaderText =
-          teamScores.Fire === teamScores.Storm
-            ? "Gleichstand"
-            : teamScores.Fire > teamScores.Storm
-            ? "Team Fire führt"
-            : "Team Storm führt";
+        // Optional auch der Sieger nach Stichpunkten (wie bisher)
+        const winnerByTricks =
+          roundWinnerTeam ??
+          (rp.Fire === rp.Storm ? null : rp.Fire > rp.Storm ? "Fire" : "Storm");
 
-        const ruleTxt =
-          ruleApplied === "doublePositive"
-            ? " · Doppel-Positiv"
-            : ruleApplied === "doubleNegative"
-            ? " · Doppel-Negativ"
-            : "";
+        const lines = [
+          `Runde beendet (${ruleTxt})`,
+          `**Sieger nach Abrechnung:** ${
+            winnerByDelta ? `Team ${winnerByDelta}` : "—"
+          }`,
+          `Rundenpunkte (Stiche): Fire ${rp.Fire} | Storm ${rp.Storm}${
+            winnerByTricks ? `  → Sieger: Team ${winnerByTricks}` : ""
+          }`,
+          `Abrechnung (Δ auf Gesamt): Fire ${sign(delta.Fire)} | Storm ${sign(
+            delta.Storm
+          )}`,
+          `Gesamt danach: Fire ${after.Fire} | Storm ${after.Storm}`,
+        ];
 
-        alert(
-          `Runde beendet${ruleTxt}!\n` +
-            `Rundensieger: ${winnerLabel}\n` +
-            `Rundenpunkte — Fire: ${roundPoints.Fire} | Storm: ${roundPoints.Storm}\n` +
-            `Gesamt — Fire: ${teamScores.Fire} | Storm: ${teamScores.Storm} (${leaderText})`
-        );
+        alert(lines.join("\n"));
 
-        // dein bestehendes Reset weiterführen:
-        setScores(teamScores);
-        setRoundPointsLive(roundPoints);
+        // States aktualisieren (danach kann die neue Runde direkt 0:0 senden)
+        setScores(after);
+        setRoundPointsLive(rp);
         setBiddingWinner(null);
         setCurrentBid(0);
         setTrumpf(null);
-        setTrumpfSetter(null); // wichtig, damit der alte Richter nicht "klebt"
+        setTrumpfSetter(null);
         setLastTrick(null);
         setCurrentTrick([]);
         setIsMyTurn(false);
