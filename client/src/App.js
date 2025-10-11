@@ -109,6 +109,7 @@ const styles = {
     textAlign: "center",
   },
   playerBoxBase: {
+    position: "relative",
     borderRadius: "50%",
     width: "clamp(44px, 10vw, 80px)", // vorher: 62/16vw/104
     height: "clamp(44px, 10vw, 80px)",
@@ -120,7 +121,7 @@ const styles = {
     gap: 3, // vorher: 4
     textAlign: "center",
     lineHeight: 1.05,
-    overflow: "hidden",
+    overflow: "visible",
     boxShadow: "0 4px 10px rgba(0,0,0,.2)",
     fontSize: "clamp(9px, 2.1vw, 11px)", // minimal kleiner
   },
@@ -283,10 +284,17 @@ function App() {
   const [roundsHistory, setRoundsHistory] = useState([]);
   const [expandedRounds, setExpandedRounds] = useState({}); // round -> true/false
   const [myBid, setMyBid] = useState(100);
+  const trickClearTimer = useRef(null);
+  const nextTrickFresh = useRef(false);
+
   const [variantModal, setVariantModal] = useState({
     open: false,
     options: [],
   });
+  const judgeId =
+    (trumpfSetter && trumpfSetter.id) ||
+    (biddingWinner && biddingWinner.winner && biddingWinner.winner.id) ||
+    null;
 
   // Reihenfolge der Suit-Zeilen & Rangfolge innerhalb einer Suit
   const SUIT_ROWS = ["♠", "♥", "♣", "♦"];
@@ -431,25 +439,33 @@ function App() {
       setHand((h) => sortHand(h, trumpf));
     });
     socket.on("cardPlayed", ({ playerId, card }) => {
-      if (trickTimer.current) {
-        // ggf. altes Leeren abbrechen
-        clearTimeout(trickTimer.current);
-        trickTimer.current = null;
-      }
-      setCurrentTrick((prev) => [...prev, { playerId, card }].slice(-4));
+      setCurrentTrick((prev) => {
+        // Falls der vorige Stich noch angezeigt wurde ODER wir explizit wissen,
+        // dass dies die erste Karte des nächsten Stiches ist → frisch beginnen
+        if (nextTrickFresh.current || prev.length >= 4) {
+          nextTrickFresh.current = false;
+          return [{ playerId, card }];
+        }
+        // normal anhängen
+        return [...prev, { playerId, card }];
+      });
     });
     socket.on("trickResult", ({ winner, cards, points, roundPoints }) => {
-      // sicherstellen, dass die 4 Karten komplett sind
+      // 4 Karten vom beendeten Stich kurz zeigen
       setCurrentTrick(cards);
       setLastTrick({ winner, cards, points });
-      // Live-Rundenpunkte von Server Übernehmen
+
       if (roundPoints) setRoundPointsLive(roundPoints);
 
-      // nach ~2s Tisch leeren
-      if (trickTimer.current) clearTimeout(trickTimer.current);
-      trickTimer.current = setTimeout(() => {
+      // vorhandenen Timer beenden
+      if (trickClearTimer.current) clearTimeout(trickClearTimer.current);
+
+      // Tisch automatisch leeren; parallel markieren wir,
+      // dass die nächste eingehende Karte ein NEUER Stich ist
+      nextTrickFresh.current = true;
+      trickClearTimer.current = setTimeout(() => {
         setCurrentTrick([]);
-      }, 1000);
+      }, 800); // 0.8s Anzeige – nach Wunsch anpassen
     });
 
     socket.on("roundsHistoryUpdate", ({ roundsHistory }) => {
@@ -601,26 +617,50 @@ function App() {
 
   const PlayerBox = ({ p, youLabel }) => {
     if (!p) return <div />;
+
     const boxStyle = {
       ...styles.playerBoxBase,
       ...(p.team === "Fire" ? styles.fire : styles.storm),
       ...(currentPlayer && currentPlayer.id === p.id ? styles.turn : {}),
     };
+
+    const isJudge = judgeId === p.id;
+
     return (
       <div style={boxStyle}>
+        {/* 👑 außerhalb am oberen Rand */}
+        {isJudge && (
+          <div
+            style={{
+              position: "absolute",
+              top: "0px",
+              left: "50%",
+              transform: "translate(-50%, -75%)",
+              fontSize: "clamp(26px, 5vw, 44px)",
+              lineHeight: 1,
+              pointerEvents: "none", // blockiert keine Klicks
+              textShadow: "0 2px 6px rgba(0,0,0,.35)",
+              zIndex: 40,
+            }}
+            aria-hidden
+          >
+            👑
+          </div>
+        )}
+
         <div style={{ fontWeight: 900, fontSize: 12 }}>
           {p.name} {youLabel ? "(Du)" : ""}
         </div>
-        {/* Trumpf nur für den Richter sowohl in Flip als auch in Normal  */}
-        {trumpfSetter && trumpfSetter.id === p.id && (
-          <div style={{ marginTop: 1, fontSize: 15 }}>
-            👑
+
+        {/* Text im Kreis lassen */}
+        {isJudge && (
+          <div style={{ marginTop: 5, fontSize: 13, fontWeight: 800 }}>
             {trumpf ? (
               <>
-                حکم: <span style={{ fontWeight: 800 }}>{trumpf}</span>
+                حکم: <span>{trumpf}</span>
               </>
             ) : (
-              <span style={{ fontWeight: 800 }}></span>
+              <span>Richter</span>
             )}
           </div>
         )}
@@ -1081,7 +1121,7 @@ function App() {
               top: "-1%",
               left: "50%",
               transform: "translateX(-50%)",
-              zIndex: 2,
+              zIndex: 30,
             }}
           >
             <PlayerBox p={seated[2]} />
@@ -1093,7 +1133,7 @@ function App() {
               bottom: "-1%",
               left: "50%",
               transform: "translateX(-50%)",
-              zIndex: 2,
+              zIndex: 30,
             }}
           >
             <PlayerBox p={seated[0]} youLabel />
@@ -1105,7 +1145,7 @@ function App() {
               top: "50%",
               left: "-1%",
               transform: "translateY(-50%)",
-              zIndex: 2,
+              zIndex: 30,
             }}
           >
             <PlayerBox p={seated[3]} />
@@ -1117,7 +1157,7 @@ function App() {
               top: "50%",
               right: "-1%",
               transform: "translateY(-50%)",
-              zIndex: 2,
+              zIndex: 30,
             }}
           >
             <PlayerBox p={seated[1]} />
