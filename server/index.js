@@ -78,6 +78,35 @@ const ranks = [
   "A",
 ];
 
+// === oben in index.js (unter createDeck / shuffle) ===
+const SUIT_ORDER = ["♠", "♥", "♣", "♦"];
+const RANK_ORDER = [
+  "2",
+  "3",
+  "4",
+  "5",
+  "6",
+  "7",
+  "8",
+  "9",
+  "10",
+  "J",
+  "Q",
+  "K",
+  "A",
+];
+
+function sortCards(cards) {
+  return [...cards].sort((a, b) => {
+    const [ra, sa] = [a.slice(0, -1), a.slice(-1)];
+    const [rb, sb] = [b.slice(0, -1), b.slice(-1)];
+    const sDiff = SUIT_ORDER.indexOf(sa) - SUIT_ORDER.indexOf(sb);
+    return sDiff !== 0
+      ? sDiff
+      : RANK_ORDER.indexOf(ra) - RANK_ORDER.indexOf(rb);
+  });
+}
+
 function createDeck() {
   const deck = [];
   for (const suit of suits) {
@@ -141,7 +170,7 @@ function deal() {
   bottomCards = deck.slice(48); // letzte 4 Karten als "Bottom Cards"
 
   players.forEach((p, idx) => {
-    hands[p.id] = deck.slice(idx * 12, idx * 12 + 12);
+    hands[p.id] = sortCards(deck.slice(idx * 12, idx * 12 + 12));
     io.to(p.id).emit("hand", hands[p.id]);
   });
 
@@ -538,7 +567,7 @@ io.on("connection", (socket) => {
     if (socket.id !== winnerPlayerId) return;
     if (!hands[socket.id]) return;
 
-    hands[socket.id] = [...hands[socket.id], ...bottomCards];
+    hands[socket.id] = sortCards([...hands[socket.id], ...bottomCards]);
     bottomCards = [];
 
     io.to(socket.id).emit("hand", hands[socket.id]);
@@ -550,7 +579,9 @@ io.on("connection", (socket) => {
     if (!hands[socket.id]) return;
     if (selected.length !== 4) return;
 
-    hands[socket.id] = hands[socket.id].filter((c) => !selected.includes(c));
+    hands[socket.id] = sortCards(
+      hands(hands[socket.id].filter((c) => !selected.includes(c)))
+    );
     io.to(socket.id).emit("hand", hands[socket.id]);
 
     // NEU: Discard-Phase ist vorbei

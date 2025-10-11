@@ -105,7 +105,7 @@ const SuitIcon = ({ suit = "♠", size = 32 }) => {
           <circle cx="22" cy="26" r="12" {...common} />
           <circle cx="42" cy="26" r="12" {...common} />
           <circle cx="32" cy="14" r="12" {...common} />
-          <rect x="28" y="36" width="8" height="16" rx="2" {...common} />
+          <rect x="28" y="30" width="8" height="16" rx="2" {...common} />
         </>
       )}
     </svg>
@@ -465,7 +465,8 @@ function App() {
 
     socket.on("randomTeamsActivated", () => setRandomTeams(true));
 
-    const sortHand = (cards, tr) => {
+    // feste Reihenfolge: ♠, ♥, ♣, ♦
+    const sortHand = (cards) => {
       const suitOrder = ["♠", "♥", "♣", "♦"];
       const rankOrder = [
         "2",
@@ -481,17 +482,17 @@ function App() {
         "Q",
         "K",
         "A",
-      ];
+      ]; // wie bisher
       return [...cards].sort((a, b) => {
         const [ra, sa] = [a.slice(0, -1), a.slice(-1)];
         const [rb, sb] = [b.slice(0, -1), b.slice(-1)];
-        if (sa === tr && sb !== tr) return -1;
-        if (sa !== tr && sb === tr) return 1;
-        if (suitOrder.indexOf(sa) !== suitOrder.indexOf(sb))
+        if (suitOrder.indexOf(sa) !== suitOrder.indexOf(sb)) {
           return suitOrder.indexOf(sa) - suitOrder.indexOf(sb);
+        }
         return rankOrder.indexOf(ra) - rankOrder.indexOf(rb);
       });
     };
+
     socket.on("askVariant", ({ options }) => {
       setVariantModal({ open: true, options: options || ["NORMAL", "FLIP"] });
     });
@@ -501,11 +502,11 @@ function App() {
       if (t) {
         setTrumpf(t);
         // vorhandene sortHand-Funktion benutzen
-        setHand((h) => sortHand(h, t));
+        setHand((h) => sortHand(h));
       }
     });
 
-    socket.on("hand", (cards) => setHand(sortHand(cards, trumpf)));
+    socket.on("hand", (cards) => setHand(sortHand(cards)));
     socket.on("bottomCards", (cards) => console.log("Boden:", cards));
 
     socket.on("yourTurn", (data) => {
@@ -533,7 +534,7 @@ function App() {
     });
 
     socket.on("discardPhase", ({ hand }) => {
-      setHand(sortHand(hand, trumpf));
+      setHand(sortHand(hand));
       setDiscardPhase(true);
       setSelectedDiscard([]);
     });
@@ -542,12 +543,13 @@ function App() {
 
     socket.on("discardDone", () => {
       setDiscardPhase(false);
+      setHand((h) => sortHand(h));
     });
 
     socket.on("trumpChosen", ({ trumpf, winner }) => {
       setTrumpf(trumpf);
       setTrumpfSetter(winner);
-      setHand((h) => sortHand(h, trumpf));
+      setHand((h) => sortHand(h));
     });
     socket.on("cardPlayed", ({ playerId, card }) => {
       setCurrentTrick((prev) => {
