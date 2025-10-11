@@ -27,7 +27,26 @@ let tricksPlayed = 0;
 let teamScores = { Fire: 0, Storm: 0 };
 let roundPoints = { Fire: 0, Storm: 0 };
 let MAX_BID = 165;
-let MAX_POINTS = 1165;
+//let MAX_POINTS = 1165;
+let MAX_POINTS = 300;
+
+let gamePaused = false;
+
+function stateSnapshot() {
+  return {
+    players,
+    teamScores,
+    roundPoints,
+    currentBid,
+    biddingActive,
+    currentPlayer: players[currentPlayerIndex] || null,
+    randomTeams,
+    trumpf,
+    winnerPlayerId,
+    roundVariant,
+    tricksPlayed,
+  };
+}
 
 // Mindestens 80, oder die (aufgerundete) Hälfte des Maximalgebots
 const DOUBLE_NEGATIVE_MIN = Math.max(80, Math.ceil(MAX_BID / 2));
@@ -244,7 +263,7 @@ function compareCards(cardA, cardB, leadSuit, trumpSuit, isFlip = false) {
 }
 
 function startNewRound() {
-  // Auction- & Rundenstatus resetten
+  // Reset
   players.forEach((p) => (p.passed = false));
   consecutivePasses = 0;
   forceBidPlayerId = null;
@@ -253,21 +272,19 @@ function startNewRound() {
   winnerPlayerId = null;
   trumpf = null;
 
-  // Variante B: reihum weitergeben (empfohlen):
-  currentPlayerIndex = (currentPlayerIndex + 3) % players.length;
+  // <-- wichtig: Reset sofort an alle Clients pushen
+  io.emit("playersUpdate", players);
 
+  // Startspieler rotiert gegen Uhrzeigersinn
+  currentPlayerIndex = (currentPlayerIndex + 3) % players.length;
   biddingActive = true;
 
-  // Karten geben & RoundPoints auf 0 an alle senden
-  deal(); // ruft io.emit("roundPointsUpdate", { roundPoints: {Fire:0,Storm:0} })
+  deal(); // schickt auch roundPoints=0
 
-  // Ersten Bieter benachrichtigen
+  // ersten Bieter informieren
   const next = players[currentPlayerIndex];
   io.to(next.id).emit("yourTurn", { currentBid, currentPlayer: next });
   io.emit("turnUpdate", { currentPlayer: next });
-
-  // UI kriegt "passed=false"-Reset mit
-  io.emit("playersUpdate", players);
 }
 
 // === Socket.io Events ===
@@ -309,6 +326,8 @@ io.on("connection", (socket) => {
       }
     }
     players.push(player);
+    socket.emit("stateSync", stateSnapshot()); // ⬅️ neu: Scores & Co. sofort für den Joiner
+    socket.emit("roundsHistoryUpdate", { roundsHistory }); // ⬅️ optional für History beim Join
 
     // Wenn nach Join beide Teams voll sind → Sitzordnung und Spiel starten
     const fire = players.filter((p) => p.team === "Fire");
@@ -316,6 +335,10 @@ io.on("connection", (socket) => {
 
     if (fire.length === 2 && storm.length === 2) {
       assignSeats(); // Wichtig: Sitzordnung festlegen
+      if (gamePaused) {
+        gamePaused = false;
+        io.emit("gameResumed");
+      }
 
       players.forEach((p) => (p.passed = false));
       consecutivePasses = 0;
@@ -384,6 +407,10 @@ io.on("connection", (socket) => {
 
     if (fire.length === 2 && storm.length === 2) {
       assignSeats(); // Wichtig: Sitzordnung festlegen
+      if (gamePaused) {
+        gamePaused = false;
+        io.emit("gameResumed"); // ⬅️ neu
+      }
 
       players.forEach((p) => (p.passed = false));
       consecutivePasses = 0;
@@ -793,11 +820,17 @@ io.on("connection", (socket) => {
       forceBidPlayerId = null;
       hands = {};
       bids = {};
+      gamePaused = true;
+      io.emit("gamePaused", { reason: "player_left" });
     }
-
     io.emit("playersUpdate", players);
   });
+
   socket.on("getRoundsHistory", () => {
+    socket.emit("roundsHistoryUpdate", { roundsHistory });
+  });
+  socket.on("requestState", () => {
+    socket.emit("stateSync", stateSnapshot());
     socket.emit("roundsHistoryUpdate", { roundsHistory });
   });
 });

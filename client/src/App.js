@@ -3,6 +3,115 @@ import { io } from "socket.io-client";
 
 const socket = io(`http://${window.location.hostname}:3001`);
 
+// simple, crisp crown
+const CrownIcon = ({ size = 40 }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 64 64"
+    aria-hidden
+    style={{ display: "block" }}
+    shapeRendering="geometricPrecision"
+  >
+    <defs>
+      <linearGradient id="gold" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stopColor="#FFE082" />
+        <stop offset="100%" stopColor="#F59E0B" />
+      </linearGradient>
+    </defs>
+    <path
+      d="M8 50 L16 20 L28 34 L36 18 L48 34 L56 20 L64 50 Z"
+      fill="url(#gold)"
+      stroke="#A16207"
+      strokeWidth="3"
+      strokeLinejoin="round"
+    />
+    <rect
+      x="13"
+      y="45"
+      width="44"
+      height="15"
+      rx="8"
+      fill="url(#gold)"
+      stroke="#A16207"
+      strokeWidth="3"
+    />
+    {/* jewels */}
+    <circle
+      cx="16"
+      cy="28"
+      r="4"
+      fill="#ef4444"
+      stroke="#9f1239"
+      strokeWidth="2"
+    />
+    <circle
+      cx="36"
+      cy="26"
+      r="4"
+      fill="#60a5fa"
+      stroke="#1d4ed8"
+      strokeWidth="2"
+    />
+    <circle
+      cx="52"
+      cy="28"
+      r="4"
+      fill="#22c55e"
+      stroke="#166534"
+      strokeWidth="2"
+    />
+  </svg>
+);
+
+// crisp suits
+const SuitIcon = ({ suit = "♠", size = 32 }) => {
+  const color = suit === "♦" || suit === "♥" ? "#ef4444" : "#111111";
+  const stroke = suit === "♦" || suit === "♥" ? "#7f1d1d" : "#000000";
+  const common = { fill: color, stroke, strokeWidth: 2 };
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 64 64"
+      aria-hidden
+      style={{ display: "block" }}
+      shapeRendering="geometricPrecision"
+    >
+      {suit === "♥" && (
+        <>
+          <path
+            d="M32 54 C 28 46, 8 36, 8 22 C 8 14, 14 10, 20 10
+                   C 25 10, 28 13, 32 18 C 36 13, 39 10, 44 10
+                   C 50 10, 56 14, 56 22 C 56 36, 36 46, 32 54 Z"
+            {...common}
+          />
+        </>
+      )}
+      {suit === "♦" && <path d="M32 6 L58 32 L32 58 L6 32 Z" {...common} />}
+      {suit === "♠" && (
+        <>
+          <path
+            d="M32 10 C 22 22, 8 28, 8 38 C 8 46, 14 52, 22 52
+                   C 27 52, 31 49, 32 46 C 33 49, 37 52, 42 52
+                   C 50 52, 56 46, 56 38 C 56 28, 42 22, 32 10 Z"
+            {...common}
+          />
+          <rect x="28" y="48" width="8" height="12" rx="2" {...common} />
+        </>
+      )}
+      {suit === "♣" && (
+        <>
+          <circle cx="22" cy="26" r="12" {...common} />
+          <circle cx="42" cy="26" r="12" {...common} />
+          <circle cx="32" cy="14" r="12" {...common} />
+          <rect x="28" y="36" width="8" height="16" rx="2" {...common} />
+        </>
+      )}
+    </svg>
+  );
+};
+
 // --- einfache Styles ohne Tailwind ---
 const styles = {
   page: {
@@ -286,6 +395,7 @@ function App() {
   const [myBid, setMyBid] = useState(100);
   const trickClearTimer = useRef(null);
   const nextTrickFresh = useRef(false);
+  const [paused, setPaused] = useState(false);
 
   const [variantModal, setVariantModal] = useState({
     open: false,
@@ -338,6 +448,7 @@ function App() {
       if (name) socket.emit("register", name);
 
       socket.emit("getRoundsHistory");
+      socket.emit("requestState");
     });
 
     const onInvalidAction = ({ msg }) => alert(msg);
@@ -470,6 +581,11 @@ function App() {
 
     socket.on("roundsHistoryUpdate", ({ roundsHistory }) => {
       setRoundsHistory(roundsHistory || []);
+      const last =
+        roundsHistory && roundsHistory.length
+          ? roundsHistory[roundsHistory.length - 1].teamScoresAfter
+          : null;
+      if (last) setScores(last);
     });
 
     socket.on(
@@ -550,6 +666,16 @@ function App() {
     socket.on("roundPointsUpdate", ({ roundPoints }) => {
       setRoundPointsLive(roundPoints);
     });
+    // Das Spiel pausieren/aktivieren
+    socket.on("gamePaused", () => setPaused(true));
+    socket.on("gameResumed", () => setPaused(false));
+
+    socket.on("stateSync", (s) => {
+      if (s?.teamScores) setScores(s.teamScores);
+      if (s?.roundPoints) setRoundPointsLive(s.roundPoints);
+      if (Array.isArray(s?.players)) setPlayers(s.players);
+      if (s?.trumpf) setTrumpf(s.trumpf);
+    });
 
     socket.on("gameOver", ({ winner, teamScores }) => {
       setScores(teamScores);
@@ -623,28 +749,42 @@ function App() {
       ...(p.team === "Fire" ? styles.fire : styles.storm),
       ...(currentPlayer && currentPlayer.id === p.id ? styles.turn : {}),
     };
-
     const isJudge = judgeId === p.id;
 
     return (
       <div style={boxStyle}>
-        {/* 👑 außerhalb am oberen Rand */}
+        {/* 👑 oben außen – jetzt als SVG */}
         {isJudge && (
           <div
             style={{
               position: "absolute",
-              top: "0px",
+              top: 0,
               left: "50%",
-              transform: "translate(-50%, -75%)",
-              fontSize: "clamp(26px, 5vw, 44px)",
-              lineHeight: 1,
-              pointerEvents: "none", // blockiert keine Klicks
-              textShadow: "0 2px 6px rgba(0,0,0,.35)",
+              transform: "translate(-50%, -82%)",
+              pointerEvents: "none",
               zIndex: 40,
             }}
             aria-hidden
           >
-            👑
+            <CrownIcon size={44} />
+          </div>
+        )}
+
+        {/* ♠/♥/♦/♣ unten außen (nur wenn trumpf gesetzt) */}
+        {isJudge && trumpf && (
+          <div
+            style={{
+              position: "absolute",
+              bottom: 0,
+              left: "50%",
+              transform: "translate(-50%, 60%)",
+              pointerEvents: "none",
+              zIndex: 40,
+            }}
+            aria-hidden
+            title={`Trumpf ${trumpf}`}
+          >
+            <SuitIcon suit={trumpf} size={36} />
           </div>
         )}
 
@@ -652,22 +792,13 @@ function App() {
           {p.name} {youLabel ? "(Du)" : ""}
         </div>
 
-        {/* Text im Kreis lassen */}
         {isJudge && (
           <div style={{ marginTop: 5, fontSize: 13, fontWeight: 800 }}>
-            {trumpf ? (
-              <>
-                حکم: <span>{trumpf}</span>
-              </>
-            ) : (
-              <span>Richter</span>
-            )}
+            {trumpf ? <></> : ""}
           </div>
         )}
 
-        {p.passed && (
-          <div style={{ fontSize: 12, color: "#ffffffff" }}>(Pass)</div>
-        )}
+        {p.passed && <div style={{ fontSize: 12 }}>(Pass)</div>}
       </div>
     );
   };
@@ -991,6 +1122,35 @@ function App() {
           <h3>Teams werden automatisch zugewiesen…</h3>
         </div>
       )}
+      {paused && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 60,
+            background: "rgba(0,0,0,.6)",
+            display: "grid",
+            placeItems: "center",
+          }}
+        >
+          <div
+            style={{
+              background: "white",
+              color: "#111",
+              padding: 20,
+              borderRadius: 12,
+              fontWeight: 800,
+              textAlign: "center",
+              minWidth: 280,
+            }}
+          >
+            Spieler fehlt – Spiel pausiert
+            <div style={{ marginTop: 8, fontWeight: 600 }}>
+              Warte bis 4 Spieler wieder verbunden sind…
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Spielfeld */}
       {players.length === 4 && (
@@ -1238,7 +1398,7 @@ function App() {
       )}
 
       {/* Bieten */}
-      {isMyTurn && me && !me.passed && !biddingWinner && (
+      {isMyTurn && !biddingWinner && (
         <div style={styles.modalBackdrop}>
           <div style={styles.modal}>
             <h3
