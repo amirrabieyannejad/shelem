@@ -31,6 +31,31 @@ let MAX_BID = 165;
 let MAX_POINTS = 300;
 
 let gamePaused = false;
+// --- Sitzplätze (1..4) mit fixen Teams ---
+const SEAT_TEAMS = { 1: "Fire", 2: "Storm", 3: "Fire", 4: "Storm" };
+// null = frei, sonst direkt Player-Objekt (Referenz)
+let seats = { 1: null, 2: null, 3: null, 4: null };
+
+function seatsEmpty() {
+  return !seats[1] && !seats[2] && !seats[3] && !seats[4];
+}
+function seatsFull() {
+  return !!seats[1] && !!seats[2] && !!seats[3] && !!seats[4];
+}
+// Hilfsfunktion: Reihenfolge aus Sitzen übernehmen (seatPosition NICHT überschreiben)
+function orderPlayersBySeats() {
+  players = [seats[1], seats[2], seats[3], seats[4]].filter(Boolean);
+}
+function broadcastSeats() {
+  io.emit("seatsUpdate", {
+    seats: {
+      1: seats[1]?.name || null,
+      2: seats[2]?.name || null,
+      3: seats[3]?.name || null,
+      4: seats[4]?.name || null,
+    },
+  });
+}
 
 function stateSnapshot() {
   return {
@@ -126,68 +151,50 @@ function shuffle(array) {
 }
 
 // === Sitzordnung festlegen ===
+// === Sitzordnung festlegen (aus Sitz-Slots übernehmen) ===
 function assignSeats() {
-  if (players.length !== 4) return;
-
-  // Teams trennen
-  const fireTeam = players.filter((p) => p.team === "Fire");
-  const stormTeam = players.filter((p) => p.team === "Storm");
-
-  // Sitzordnung: Fire-Storm-Fire-Storm (Teams sitzen sich gegenüber)
-  players = [
-    fireTeam[0], // Position 0
-    stormTeam[0], // Position 1
-    fireTeam[1], // Position 2 (gegenüber von Position 0)
-    stormTeam[1], // Position 3 (gegenüber von Position 1)
-  ];
-
-  // Sitzpositionen zuweisen
-  players.forEach((player, index) => {
-    player.seatPosition = index;
-  });
-
+  if (!seatsFull()) return;
+  orderPlayersBySeats();
   console.log(
-    "Sitzordnung festgelegt:",
-    players.map((p) => `${p.name} (${p.team}) - Sitz ${p.seatPosition}`)
+    "Sitzordnung (1=unten, 2=rechts, 3=oben, 4=links):",
+    players.map((p) => `${p.name} (${p.team}) @${p.seatPosition}`)
   );
 }
-function fillRandomTeamsNow() {
-  // aktuelle Zählung
-  const fire = players.filter((p) => p.team === "Fire");
-  const storm = players.filter((p) => p.team === "Storm");
-  const pendings = players.filter((p) => !p.team || p.team === "Pending");
 
-  // ausstehende Spieler balanciert verteilen (max 2 pro Team)
+function fillRandomTeamsNow() {
+  // Liste freier Plätze je Team
+  const freeFire = [1, 3].filter((s) => !seats[s]);
+  const freeStorm = [2, 4].filter((s) => !seats[s]);
+
+  // Spieler ohne finalen Platz/Team
+  const pendings = players.filter((p) => !p.seatPosition);
+
   for (const p of pendings) {
-    if (fire.length < 2 && (storm.length >= 2 || Math.random() < 0.5)) {
-      p.team = "Fire";
-      fire.push(p);
-    } else if (storm.length < 2) {
-      p.team = "Storm";
-      storm.push(p);
+    // balanciert verteilen
+    let seat = null;
+    const fireCnt = [seats[1], seats[3]].filter(Boolean).length;
+    const stormCnt = [seats[2], seats[4]].filter(Boolean).length;
+
+    if (fireCnt === stormCnt) {
+      // zufällig eines der beiden Teams nehmen
+      if (Math.random() < 0.5 && freeFire.length) seat = freeFire.shift();
+      else if (freeStorm.length) seat = freeStorm.shift();
+      else if (freeFire.length) seat = freeFire.shift();
+    } else if (fireCnt < stormCnt) {
+      if (freeFire.length) seat = freeFire.shift();
+    } else if (freeStorm.length) {
+      seat = freeStorm.shift();
+    }
+
+    if (seat) {
+      p.team = SEAT_TEAMS[seat];
+      p.seatPosition = seat;
+      seats[seat] = p;
     }
   }
 
+  broadcastSeats();
   io.emit("playersUpdate", players);
-
-  // Wenn voll → Sitzordnung + Start wie gehabt
-  if (fire.length === 2 && storm.length === 2) {
-    assignSeats();
-
-    players.forEach((p) => (p.passed = false));
-    consecutivePasses = 0;
-    forceBidPlayerId = null;
-    deal();
-    bids = {};
-    currentBid = 0;
-    currentPlayerIndex = 0;
-    biddingActive = true;
-
-    const next = players[currentPlayerIndex];
-    io.to(next.id).emit("yourTurn", { currentBid, currentPlayer: next });
-    io.emit("turnUpdate", { currentPlayer: next });
-    io.emit("playersUpdate", players);
-  }
 }
 
 // === Karten austeilen ===
@@ -369,55 +376,65 @@ io.on("connection", (socket) => {
       passed: false,
       seatPosition: null,
     };
-    // Falls Random-Teams aktiv: sofort Team zuweisen
-    if (randomTeams) {
-      const fireCount = players.filter((p) => p.team === "Fire").length;
-      const stormCount = players.filter((p) => p.team === "Storm").length;
 
-      // Gleichmäßige Verteilung sicherstellen
-      if (fireCount < 2 && (stormCount >= 2 || Math.random() < 0.5)) {
-        player.team = "Fire";
-      } else {
-        player.team = "Storm";
-      }
-    } else {
-      const fireCount = players.filter((p) => p.team === "Fire").length;
-      const stormCount = players.filter((p) => p.team === "Storm").length;
-      if (fireCount >= 2 && stormCount == 1) {
-        player.team = "Storm";
-      } else if (stormCount >= 2 && fireCount == 1) {
-        player.team = "Fire";
-      }
-    }
     players.push(player);
     socket.emit("stateSync", stateSnapshot()); // ⬅️ neu: Scores & Co. sofort für den Joiner
     socket.emit("roundsHistoryUpdate", { roundsHistory }); // ⬅️ optional für History beim Join
 
-    // Wenn nach Join beide Teams voll sind → Sitzordnung und Spiel starten
-    const fire = players.filter((p) => p.team === "Fire");
-    const storm = players.filter((p) => p.team === "Storm");
+    io.emit("playersUpdate", players);
+  });
+  socket.on("chooseSeat", ({ seat }) => {
+    const player = players.find((p) => p.id === socket.id);
+    if (!player) return;
 
-    if (fire.length === 2 && storm.length === 2) {
-      assignSeats(); // Wichtig: Sitzordnung festlegen
-      if (gamePaused) {
-        gamePaused = false;
-        io.emit("gameResumed");
-      }
-
-      players.forEach((p) => (p.passed = false));
-      consecutivePasses = 0;
-      forceBidPlayerId = null;
-      deal();
-      bids = {};
-      currentBid = 0;
-      currentPlayerIndex = 0;
-      biddingActive = true;
-
-      const next = players[currentPlayerIndex];
-      io.to(next.id).emit("yourTurn", { currentBid, currentPlayer: next });
-      io.emit("turnUpdate", { currentPlayer: next });
+    // während einer laufenden/ausgeteilten Runde blocken
+    if (Object.keys(hands).length || biddingActive) {
+      socket.emit("invalidAction", {
+        msg: "Sitzwechsel ist nur vor Rundenstart möglich.",
+      });
+      return;
     }
 
+    if (![1, 2, 3, 4].includes(seat)) return;
+    if (seats[seat] && seats[seat].id !== socket.id) {
+      socket.emit("invalidAction", { msg: "Dieser Platz ist bereits belegt." });
+      return;
+    }
+
+    // alten Platz freigeben
+    if (player.seatPosition && seats[player.seatPosition]?.id === player.id) {
+      seats[player.seatPosition] = null;
+    }
+
+    // neuen Platz belegen
+    seats[seat] = player;
+    player.seatPosition = seat;
+    player.team = SEAT_TEAMS[seat];
+
+    if (seatsFull()) orderPlayersBySeats(); // nur wenn 4/4
+    broadcastSeats();
+    io.emit("playersUpdate", players);
+  });
+
+  socket.on("leaveSeat", () => {
+    const player = players.find((p) => p.id === socket.id);
+    if (!player) return;
+
+    // nur vor Rundenstart erlaubt
+    if (Object.keys(hands).length || biddingActive) {
+      socket.emit("invalidAction", {
+        msg: "Sitz verlassen ist nur vor Rundenstart möglich.",
+      });
+      return;
+    }
+
+    if (player.seatPosition && seats[player.seatPosition]?.id === player.id) {
+      seats[player.seatPosition] = null;
+    }
+    player.seatPosition = null;
+    player.team = null;
+
+    broadcastSeats();
     io.emit("playersUpdate", players);
   });
 
@@ -425,154 +442,64 @@ io.on("connection", (socket) => {
     const player = players.find((p) => p.id === socket.id);
     if (!player) return;
 
-    // Hat schon irgendwer bewusst Fire/Storm gewählt?
-    const anyChosen = players.some(
-      (p) => p.team === "Fire" || p.team === "Storm"
-    );
-
-    // --- Fall A: "Random" starten (nur solange noch niemand ein Team gewählt hat)
-    if (team === "Random") {
-      if (anyChosen) {
-        socket.emit("invalidAction", {
-          msg: "Random ist nicht mehr möglich: Es wurde bereits ein Team gewählt.",
-        });
-        return;
-      }
-      // nur der erste Spieler darf Random starten
-      const isFirst = players[0] && players[0].id === socket.id;
-      if (!isFirst) {
-        socket.emit("invalidAction", {
-          msg: "Nur der erste Spieler darf Random Teams starten.",
-        });
-        return;
-      }
-
-      // Random-Modus aktivieren
-      randomTeams = true;
-      io.emit("randomTeamsActivated");
-
-      // Auslöser bekommt sofort ein Team (ausbalanciert; bei Gleichstand zufällig)
-      const fireCount = players.filter((p) => p.team === "Fire").length;
-      const stormCount = players.filter((p) => p.team === "Storm").length;
-
-      let assigned;
-      if (fireCount === stormCount) {
-        assigned = Math.random() < 0.5 ? "Fire" : "Storm";
-      } else {
-        assigned = fireCount < stormCount ? "Fire" : "Storm";
-      }
-      player.team = assigned;
-
-      // Alle anderen, die noch kein Team haben, blockieren wir mit "Pending"
-      players.forEach((p) => {
-        if (!p.team) p.team = "Pending";
+    // Wir unterstützen hier NUR noch Random, die manuelle Wahl passiert über chooseSeat
+    if (team !== "Random") {
+      socket.emit("invalidAction", {
+        msg: "Teams werden über Sitzplätze gewählt. Bitte einen Platz (1..4) anklicken.",
       });
-
-      io.emit("playersUpdate", players);
-      // Spieler direkt automatisch verteilen
-      fillRandomTeamsNow();
-
-      // Wenn jetzt schon beide Teams voll sind, direkt starten
-      const fire = players.filter((p) => p.team === "Fire");
-      const storm = players.filter((p) => p.team === "Storm");
-      if (fire.length === 2 && storm.length === 2) {
-        assignSeats();
-
-        // Auktion vorbereiten
-        players.forEach((p) => (p.passed = false));
-        consecutivePasses = 0;
-        forceBidPlayerId = null;
-        deal();
-        bids = {};
-        currentBid = 0;
-        currentPlayerIndex = 0;
-        biddingActive = true;
-
-        const next = players[currentPlayerIndex];
-        io.to(next.id).emit("yourTurn", { currentBid, currentPlayer: next });
-        io.emit("turnUpdate", { currentPlayer: next });
-        io.emit("playersUpdate", players);
-      }
-
-      return; // Random-Fall fertig
-    }
-
-    // --- Fall B: Random ist bereits aktiv -> automatische, balancierte Zuweisung
-    if (randomTeams) {
-      const fireCount = players.filter((p) => p.team === "Fire").length;
-      const stormCount = players.filter((p) => p.team === "Storm").length;
-
-      if (fireCount >= 2 && stormCount >= 2) {
-        socket.emit("invalidAction", { msg: "Teams sind bereits voll." });
-        return;
-      }
-
-      // Nur zuweisen, wenn der Spieler noch kein finales Team hat
-      if (!player.team || player.team === "Pending") {
-        player.team = fireCount <= stormCount ? "Fire" : "Storm";
-      }
-
-      io.emit("playersUpdate", players);
-
-      const fire = players.filter((p) => p.team === "Fire");
-      const storm = players.filter((p) => p.team === "Storm");
-      if (fire.length === 2 && storm.length === 2) {
-        assignSeats();
-
-        players.forEach((p) => (p.passed = false));
-        consecutivePasses = 0;
-        forceBidPlayerId = null;
-        deal();
-        bids = {};
-        currentBid = 0;
-        currentPlayerIndex = 0;
-        biddingActive = true;
-
-        const next = players[currentPlayerIndex];
-        io.to(next.id).emit("yourTurn", { currentBid, currentPlayer: next });
-        io.emit("turnUpdate", { currentPlayer: next });
-        io.emit("playersUpdate", players);
-      }
-
-      return; // Random-Modus-Fall fertig
-    }
-
-    // --- Fall C: Klassische manuelle Wahl (Random NICHT aktiv)
-    if (team !== "Fire" && team !== "Storm") {
-      socket.emit("invalidAction", { msg: "Ungültige Teamwahl." });
       return;
     }
 
-    const teamMembers = players.filter((p) => p.team === team);
-    if (teamMembers.length >= 2) {
-      socket.emit("teamFull", { msg: `Team ${team} ist voll` });
+    // Random nur, solange ALLE Plätze frei sind …
+    if (!seatsEmpty()) {
+      socket.emit("invalidAction", {
+        msg: "Random ist nur möglich, solange alle Plätze frei sind.",
+      });
       return;
     }
 
-    player.team = team;
-    io.emit("playersUpdate", players);
-
-    // Vollzählig? -> Start
-    const fire = players.filter((p) => p.team === "Fire");
-    const storm = players.filter((p) => p.team === "Storm");
-    if (fire.length === 2 && storm.length === 2) {
-      assignSeats();
-
-      players.forEach((p) => (p.passed = false));
-      consecutivePasses = 0;
-      forceBidPlayerId = null;
-      deal();
-      bids = {};
-      currentBid = 0;
-      currentPlayerIndex = 0;
-      biddingActive = true;
-
-      const next = players[currentPlayerIndex];
-      io.to(next.id).emit("yourTurn", { currentBid, currentPlayer: next });
-      io.emit("turnUpdate", { currentPlayer: next });
-      io.emit("playersUpdate", players);
+    // … und nur vom ersten beigetretenen Spieler
+    const isFirst = players[0] && players[0].id === socket.id;
+    if (!isFirst) {
+      socket.emit("invalidAction", {
+        msg: "Nur der erste Spieler darf Random Teams starten.",
+      });
+      return;
     }
+
+    // → die gesamte Platz-/Teamverteilung + Autostart übernimmt diese Funktion
+    fillRandomTeamsNow();
   });
+  socket.on("startGame", () => {
+    // nur starten, wenn 4 Plätze belegt und noch keine Runde läuft
+    if (!seatsFull()) {
+      socket.emit("invalidAction", {
+        msg: "Alle 4 Sitzplätze müssen belegt sein.",
+      });
+      return;
+    }
+    if (Object.keys(hands).length || biddingActive) {
+      socket.emit("invalidAction", { msg: "Eine Runde läuft bereits." });
+      return;
+    }
+
+    assignSeats(); // Sitzreihenfolge aus 1..4
+    players.forEach((p) => (p.passed = false));
+    consecutivePasses = 0;
+    forceBidPlayerId = null;
+    bids = {};
+    currentBid = 0;
+    currentPlayerIndex = 0; // Sitz 1 beginnt
+    biddingActive = true;
+
+    deal(); // teilt aus & sendet Hands/RoundPoints
+
+    const next = players[currentPlayerIndex];
+    io.to(next.id).emit("yourTurn", { currentBid, currentPlayer: next });
+    io.emit("turnUpdate", { currentPlayer: next });
+    io.emit("playersUpdate", players);
+  });
+
   socket.on("setVariant", ({ variant }) => {
     // Nur der Startspieler (Richter) darf wählen
     if (socket.id !== winnerPlayerId) return;
@@ -955,13 +882,23 @@ io.on("connection", (socket) => {
 
   socket.on("disconnect", () => {
     console.log("Player disconnected:", socket.id);
+
+    const leaving = players.find((p) => p.id === socket.id);
+    if (
+      leaving &&
+      leaving.seatPosition &&
+      seats[leaving.seatPosition]?.id === socket.id
+    ) {
+      seats[leaving.seatPosition] = null;
+    }
+
     players = players.filter((p) => p.id !== socket.id);
 
-    // Reset bei Disconnect
     if (players.length < 4) {
       gamePaused = true;
       io.emit("gamePaused", { reason: "player_left" });
     }
+    broadcastSeats();
     io.emit("playersUpdate", players);
   });
 
