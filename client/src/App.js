@@ -162,7 +162,6 @@ const styles = {
   },
   fire: { background: "#940f0fff", border: "2px solid #75ca7eff" },
   storm: { background: "#0072feff", border: "2px solid #75ca7eff" },
-  turn: { boxShadow: "0 0 0 4px rgba(255, 11, 11, 1) inset" },
   btnRed: { background: "#fecaca" },
   btnBlue: { background: "#bfdbfe" },
   btnGreen: { background: "#bbf7d0" },
@@ -396,6 +395,18 @@ function App() {
   const trickClearTimer = useRef(null);
   const nextTrickFresh = useRef(false);
   const [paused, setPaused] = useState(false);
+  // nur der erste (players[0]) darf "Random" sehen/auslösen
+  const isFirstPlayer = !!me && players[0] && players[0].id === me.id;
+
+  const anyChosen = players.some(
+    (p) => p.team === "Fire" || p.team === "Storm"
+  );
+  const canStartRandom = !randomTeams && !anyChosen && isFirstPlayer;
+
+  // Varianten wie am Server
+  const VARIANTS = { UNDECIDED: "UNDECIDED", NORMAL: "NORMAL", FLIP: "FLIP" };
+
+  const [roundVariant, setRoundVariant] = useState(VARIANTS.UNDECIDED);
 
   const [variantModal, setVariantModal] = useState({
     open: false,
@@ -499,11 +510,13 @@ function App() {
 
     socket.on("variantChosen", ({ variant, trumpf: t }) => {
       setVariantModal({ open: false, options: [] });
-      if (t) {
+      setRoundVariant(variant); // <— Variante merken
+      if (variant === VARIANTS.NORMAL && t) {
         setTrumpf(t);
-        // vorhandene sortHand-Funktion benutzen
-        setHand((h) => sortHand(h));
+      } else if (variant === VARIANTS.FLIP) {
+        setTrumpf(null); // <— bei Flip KEIN Trumpf-Symbol
       }
+      setHand((h) => sortHand(h)); // Hand neu sortieren
     });
 
     socket.on("hand", (cards) => setHand(sortHand(cards)));
@@ -549,6 +562,7 @@ function App() {
     socket.on("trumpChosen", ({ trumpf, winner }) => {
       setTrumpf(trumpf);
       setTrumpfSetter(winner);
+      setRoundVariant(VARIANTS.NORMAL);
       setHand((h) => sortHand(h));
     });
     socket.on("cardPlayed", ({ playerId, card }) => {
@@ -662,6 +676,7 @@ function App() {
         setCurrentTrick([]);
         setIsMyTurn(false);
         setMustBid(false);
+        setRoundVariant(VARIANTS.UNDECIDED);
       }
     );
 
@@ -677,6 +692,7 @@ function App() {
       if (s?.roundPoints) setRoundPointsLive(s.roundPoints);
       if (Array.isArray(s?.players)) setPlayers(s.players);
       if (s?.trumpf) setTrumpf(s.trumpf);
+      if (s?.roundVariant) setRoundVariant(s.roundVariant); // <— vom Server übernehmen
     });
 
     socket.on("gameOver", ({ winner, teamScores }) => {
@@ -743,19 +759,28 @@ function App() {
 
   const seated = getSeatingOrder();
 
+  // --- PlayerBox (zeigt Krone oben außen, Trumpf unten außen oder "Flip"-Badge)
   const PlayerBox = ({ p, youLabel }) => {
     if (!p) return <div />;
+
+    // ACHTUNG: diese Props/States müssen in App() existieren:
+    // - styles.playerBoxBase (mit overflow:"visible")
+    // - currentPlayer (für Zug-Highlight)
+    // - judgeId (id des Richters; aus trumpfSetter oder biddingWinner)
+    // - trumpf (z.B. "♠" | "♥" | "♣" | "♦" oder null)
+    // - roundVariant (VARIANTS.NORMAL | VARIANTS.FLIP | VARIANTS.UNDECIDED)
 
     const boxStyle = {
       ...styles.playerBoxBase,
       ...(p.team === "Fire" ? styles.fire : styles.storm),
       ...(currentPlayer && currentPlayer.id === p.id ? styles.turn : {}),
     };
+
     const isJudge = judgeId === p.id;
 
     return (
       <div style={boxStyle}>
-        {/* 👑 oben außen – jetzt als SVG */}
+        {/* 👑 oben außen */}
         {isJudge && (
           <div
             style={{
@@ -765,6 +790,7 @@ function App() {
               transform: "translate(-50%, -82%)",
               pointerEvents: "none",
               zIndex: 40,
+              filter: "drop-shadow(0 2px 6px rgba(0,0,0,.35))",
             }}
             aria-hidden
           >
@@ -772,16 +798,17 @@ function App() {
           </div>
         )}
 
-        {/* ♠/♥/♦/♣ unten außen (nur wenn trumpf gesetzt) */}
-        {isJudge && trumpf && (
+        {/* Trumpf unten außen NUR bei NORMAL + gesetztem trumpf */}
+        {isJudge && roundVariant === VARIANTS.NORMAL && trumpf && (
           <div
             style={{
               position: "absolute",
               bottom: 0,
               left: "50%",
-              transform: "translate(-50%, 60%)",
+              transform: "translate(-50%, 66%)",
               pointerEvents: "none",
               zIndex: 40,
+              filter: "drop-shadow(0 2px 6px rgba(0,0,0,.35))",
             }}
             aria-hidden
             title={`Trumpf ${trumpf}`}
@@ -790,16 +817,49 @@ function App() {
           </div>
         )}
 
+        {/* Bei FLIP: Badge unten außen */}
+        {isJudge && roundVariant === VARIANTS.FLIP && (
+          <div
+            style={{
+              position: "absolute",
+              bottom: 0,
+              left: "50%",
+              transform: "translate(-50%, 66%)",
+              pointerEvents: "none",
+              zIndex: 40,
+              background: "#111",
+              color: "#fff",
+              padding: "4px 10px",
+              borderRadius: 999,
+              fontWeight: 900,
+              fontSize: 12,
+              boxShadow: "0 2px 6px rgba(0,0,0,.25)",
+              border: "1px solid rgba(255,255,255,.25)",
+            }}
+            aria-hidden
+            title="Flip"
+          >
+            نرس
+          </div>
+        )}
+
+        {/* Name + (Du) */}
         <div style={{ fontWeight: 900, fontSize: 12 }}>
           {p.name} {youLabel ? "(Du)" : ""}
         </div>
 
+        {/* kleiner Status-Text im Kreis */}
         {isJudge && (
           <div style={{ marginTop: 5, fontSize: 13, fontWeight: 800 }}>
-            {trumpf ? <></> : ""}
+            {roundVariant === VARIANTS.FLIP
+              ? "Richter"
+              : trumpf
+              ? "حکم"
+              : "Richter"}
           </div>
         )}
 
+        {/* Pass-Hinweis */}
         {p.passed && <div style={{ fontSize: 12 }}>(Pass)</div>}
       </div>
     );
@@ -1099,16 +1159,20 @@ function App() {
             <button
               style={{ ...styles.btn, ...styles.btnRed }}
               onClick={() => socket.emit("chooseTeam", "Fire")}
+              disabled={anyChosen && !randomTeams}
             >
               Team Fire
             </button>
             <button
               style={{ ...styles.btn, ...styles.btnBlue }}
               onClick={() => socket.emit("chooseTeam", "Storm")}
+              disabled={anyChosen && !randomTeams}
             >
               Team Storm
             </button>
-            {players.length === 1 && (
+
+            {/* Random-Button so lange anzeigen, bis jemand Fire/Storm gewählt hat */}
+            {canStartRandom && (
               <button
                 style={{ ...styles.btn, ...styles.btnGreen }}
                 onClick={() => socket.emit("chooseTeam", "Random")}
@@ -1153,7 +1217,6 @@ function App() {
           </div>
         </div>
       )}
-
       {/* Spielfeld */}
       {players.length === 4 && (
         <div style={styles.tableWrap}>
@@ -1326,7 +1389,6 @@ function App() {
           </div>
         </div>
       )}
-
       {/* Discard-Hinweis + Bestätigen */}
       {discardPhase && (
         <div style={styles.card}>
@@ -1398,7 +1460,6 @@ function App() {
           </div>
         </div>
       )}
-
       {/* Bieten */}
       {isMyTurn && !biddingWinner && (
         <div style={styles.modalBackdrop}>
@@ -1501,7 +1562,6 @@ function App() {
           </div>
         </div>
       )}
-
       {/* Hand */}
       <div style={styles.card}>
         {/* leichtes Overlap-Layout für ein Kartenband */}

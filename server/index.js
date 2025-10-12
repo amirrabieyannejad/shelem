@@ -151,6 +151,44 @@ function assignSeats() {
     players.map((p) => `${p.name} (${p.team}) - Sitz ${p.seatPosition}`)
   );
 }
+function fillRandomTeamsNow() {
+  // aktuelle Zählung
+  const fire = players.filter((p) => p.team === "Fire");
+  const storm = players.filter((p) => p.team === "Storm");
+  const pendings = players.filter((p) => !p.team || p.team === "Pending");
+
+  // ausstehende Spieler balanciert verteilen (max 2 pro Team)
+  for (const p of pendings) {
+    if (fire.length < 2 && (storm.length >= 2 || Math.random() < 0.5)) {
+      p.team = "Fire";
+      fire.push(p);
+    } else if (storm.length < 2) {
+      p.team = "Storm";
+      storm.push(p);
+    }
+  }
+
+  io.emit("playersUpdate", players);
+
+  // Wenn voll → Sitzordnung + Start wie gehabt
+  if (fire.length === 2 && storm.length === 2) {
+    assignSeats();
+
+    players.forEach((p) => (p.passed = false));
+    consecutivePasses = 0;
+    forceBidPlayerId = null;
+    deal();
+    bids = {};
+    currentBid = 0;
+    currentPlayerIndex = 0;
+    biddingActive = true;
+
+    const next = players[currentPlayerIndex];
+    io.to(next.id).emit("yourTurn", { currentBid, currentPlayer: next });
+    io.emit("turnUpdate", { currentPlayer: next });
+    io.emit("playersUpdate", players);
+  }
+}
 
 // === Karten austeilen ===
 function deal() {
@@ -164,7 +202,6 @@ function deal() {
   tricksPlayed = 0;
   currentTrick = [];
   trickHistory = [];
-
   hands = {};
 
   bottomCards = deck.slice(48); // letzte 4 Karten als "Bottom Cards"
@@ -173,8 +210,6 @@ function deal() {
     hands[p.id] = sortCards(deck.slice(idx * 12, idx * 12 + 12));
     io.to(p.id).emit("hand", hands[p.id]);
   });
-
-  io.emit("bottomCards", bottomCards);
 
   // einmalig 0:0 an alle schicken (für live-Anzeige)
   io.emit("roundPointsUpdate", { roundPoints });
@@ -390,56 +425,138 @@ io.on("connection", (socket) => {
     const player = players.find((p) => p.id === socket.id);
     if (!player) return;
 
+    // Hat schon irgendwer bewusst Fire/Storm gewählt?
+    const anyChosen = players.some(
+      (p) => p.team === "Fire" || p.team === "Storm"
+    );
+
+    // --- Fall A: "Random" starten (nur solange noch niemand ein Team gewählt hat)
     if (team === "Random") {
-      if (players.length === 1) {
-        randomTeams = true;
-        io.emit("randomTeamsActivated");
-
-        // Erster Spiler kriegt direkt random Team
-        const assigned = Math.random() < 0.5 ? "Fire" : "Storm";
-        player.team = assigned;
-
-        // alle anderen Spieler blockieren
-        players.forEach((p) => {
-          if (!p.team) {
-            p.team = "Pending"; // Platzhalter, keine Buttons mehr
-          }
+      if (anyChosen) {
+        socket.emit("invalidAction", {
+          msg: "Random ist nicht mehr möglich: Es wurde bereits ein Team gewählt.",
         });
+        return;
+      }
+      // nur der erste Spieler darf Random starten
+      const isFirst = players[0] && players[0].id === socket.id;
+      if (!isFirst) {
+        socket.emit("invalidAction", {
+          msg: "Nur der erste Spieler darf Random Teams starten.",
+        });
+        return;
+      }
 
+      // Random-Modus aktivieren
+      randomTeams = true;
+      io.emit("randomTeamsActivated");
+
+      // Auslöser bekommt sofort ein Team (ausbalanciert; bei Gleichstand zufällig)
+      const fireCount = players.filter((p) => p.team === "Fire").length;
+      const stormCount = players.filter((p) => p.team === "Storm").length;
+
+      let assigned;
+      if (fireCount === stormCount) {
+        assigned = Math.random() < 0.5 ? "Fire" : "Storm";
+      } else {
+        assigned = fireCount < stormCount ? "Fire" : "Storm";
+      }
+      player.team = assigned;
+
+      // Alle anderen, die noch kein Team haben, blockieren wir mit "Pending"
+      players.forEach((p) => {
+        if (!p.team) p.team = "Pending";
+      });
+
+      io.emit("playersUpdate", players);
+      // Spieler direkt automatisch verteilen
+      fillRandomTeamsNow();
+
+      // Wenn jetzt schon beide Teams voll sind, direkt starten
+      const fire = players.filter((p) => p.team === "Fire");
+      const storm = players.filter((p) => p.team === "Storm");
+      if (fire.length === 2 && storm.length === 2) {
+        assignSeats();
+
+        // Auktion vorbereiten
+        players.forEach((p) => (p.passed = false));
+        consecutivePasses = 0;
+        forceBidPlayerId = null;
+        deal();
+        bids = {};
+        currentBid = 0;
+        currentPlayerIndex = 0;
+        biddingActive = true;
+
+        const next = players[currentPlayerIndex];
+        io.to(next.id).emit("yourTurn", { currentBid, currentPlayer: next });
+        io.emit("turnUpdate", { currentPlayer: next });
         io.emit("playersUpdate", players);
       }
-      return;
+
+      return; // Random-Fall fertig
     }
 
+    // --- Fall B: Random ist bereits aktiv -> automatische, balancierte Zuweisung
     if (randomTeams) {
       const fireCount = players.filter((p) => p.team === "Fire").length;
       const stormCount = players.filter((p) => p.team === "Storm").length;
 
-      if (fireCount < 2 && (stormCount >= 2 || Math.random() < 0.5)) {
-        player.team = "Fire";
-      } else {
-        player.team = "Storm";
-      }
-      io.emit("playersUpdate", players);
-    } else {
-      const teamMembers = players.filter((p) => p.team === team);
-      if (teamMembers.length >= 2) {
-        socket.emit("teamFull", { msg: `Team ${team} ist voll` });
+      if (fireCount >= 2 && stormCount >= 2) {
+        socket.emit("invalidAction", { msg: "Teams sind bereits voll." });
         return;
       }
-      player.team = team;
+
+      // Nur zuweisen, wenn der Spieler noch kein finales Team hat
+      if (!player.team || player.team === "Pending") {
+        player.team = fireCount <= stormCount ? "Fire" : "Storm";
+      }
+
       io.emit("playersUpdate", players);
+
+      const fire = players.filter((p) => p.team === "Fire");
+      const storm = players.filter((p) => p.team === "Storm");
+      if (fire.length === 2 && storm.length === 2) {
+        assignSeats();
+
+        players.forEach((p) => (p.passed = false));
+        consecutivePasses = 0;
+        forceBidPlayerId = null;
+        deal();
+        bids = {};
+        currentBid = 0;
+        currentPlayerIndex = 0;
+        biddingActive = true;
+
+        const next = players[currentPlayerIndex];
+        io.to(next.id).emit("yourTurn", { currentBid, currentPlayer: next });
+        io.emit("turnUpdate", { currentPlayer: next });
+        io.emit("playersUpdate", players);
+      }
+
+      return; // Random-Modus-Fall fertig
     }
 
+    // --- Fall C: Klassische manuelle Wahl (Random NICHT aktiv)
+    if (team !== "Fire" && team !== "Storm") {
+      socket.emit("invalidAction", { msg: "Ungültige Teamwahl." });
+      return;
+    }
+
+    const teamMembers = players.filter((p) => p.team === team);
+    if (teamMembers.length >= 2) {
+      socket.emit("teamFull", { msg: `Team ${team} ist voll` });
+      return;
+    }
+
+    player.team = team;
+    io.emit("playersUpdate", players);
+
+    // Vollzählig? -> Start
     const fire = players.filter((p) => p.team === "Fire");
     const storm = players.filter((p) => p.team === "Storm");
-
     if (fire.length === 2 && storm.length === 2) {
-      assignSeats(); // Wichtig: Sitzordnung festlegen
-      if (gamePaused) {
-        gamePaused = false;
-        io.emit("gameResumed"); // ⬅️ neu
-      }
+      assignSeats();
 
       players.forEach((p) => (p.passed = false));
       consecutivePasses = 0;
@@ -453,7 +570,6 @@ io.on("connection", (socket) => {
       const next = players[currentPlayerIndex];
       io.to(next.id).emit("yourTurn", { currentBid, currentPlayer: next });
       io.emit("turnUpdate", { currentPlayer: next });
-
       io.emit("playersUpdate", players);
     }
   });
@@ -580,7 +696,7 @@ io.on("connection", (socket) => {
     if (selected.length !== 4) return;
 
     hands[socket.id] = sortCards(
-      hands(hands[socket.id].filter((c) => !selected.includes(c)))
+      hands[socket.id].filter((c) => !selected.includes(c))
     );
     io.to(socket.id).emit("hand", hands[socket.id]);
 
@@ -843,14 +959,6 @@ io.on("connection", (socket) => {
 
     // Reset bei Disconnect
     if (players.length < 4) {
-      biddingActive = false;
-      trumpf = null;
-      winnerPlayerId = null;
-      currentBid = 0;
-      consecutivePasses = 0;
-      forceBidPlayerId = null;
-      hands = {};
-      bids = {};
       gamePaused = true;
       io.emit("gamePaused", { reason: "player_left" });
     }
