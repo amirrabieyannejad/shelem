@@ -362,8 +362,33 @@ function startNewRound() {
 io.on("connection", (socket) => {
   console.log("Player connected:", socket.id);
 
-  socket.on("register", (name) => {
-    console.log("Player gave a name:", name);
+  socket.on("register", (payload) => {
+    const { name, clientId } =
+      typeof payload === "string"
+        ? { name: payload, clientId: null }
+        : payload || {};
+    console.log("Player gave a name:", name, "clientId:", clientId);
+
+    // 1) Rebind: existiert schon ein Spieler mit gleicher clientId (bevorzugt) oder gleichem Namen?
+    let existing =
+      (clientId && players.find((p) => p.clientId === clientId)) ||
+      (name && players.find((p) => p.name === name));
+
+    if (existing) {
+      // socket.id aktualisieren, evtl. Namen updaten
+      existing.id = socket.id;
+      if (name) existing.name = name;
+      if (clientId) existing.clientId = clientId;
+      // Seats-Referenz sicherstellen
+      if (existing.seatPosition) seats[existing.seatPosition] = existing;
+
+      socket.emit("stateSync", stateSnapshot());
+      socket.emit("roundsHistoryUpdate", { roundsHistory });
+      io.emit("playersUpdate", players);
+      return;
+    }
+
+    // 2) Neuer Spieler (nur wenn Platz ist)
     if (players.length >= 4) {
       socket.emit("lobbyFull", { msg: "Lobby voll (max. 4 Spieler)" });
       return;
@@ -371,16 +396,16 @@ io.on("connection", (socket) => {
 
     const player = {
       id: socket.id,
+      clientId: clientId || null,
       name,
       team: null,
       passed: false,
       seatPosition: null,
     };
-
     players.push(player);
-    socket.emit("stateSync", stateSnapshot()); // ⬅️ neu: Scores & Co. sofort für den Joiner
-    socket.emit("roundsHistoryUpdate", { roundsHistory }); // ⬅️ optional für History beim Join
 
+    socket.emit("stateSync", stateSnapshot());
+    socket.emit("roundsHistoryUpdate", { roundsHistory });
     io.emit("playersUpdate", players);
   });
   socket.on("chooseSeat", ({ seat }) => {

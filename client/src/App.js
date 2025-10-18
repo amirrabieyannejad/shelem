@@ -455,9 +455,21 @@ function App() {
 
   useEffect(() => {
     socket.on("connect", () => {
-      const name = prompt("Bitte gib deinen Namen ein:");
-      if (name) socket.emit("register", name);
-
+      // stabile Client-ID + Name aus localStorage
+      let clientId = localStorage.getItem("shelem_clientId");
+      if (!clientId) {
+        clientId =
+          crypto?.randomUUID?.() || Math.random().toString(36).slice(2);
+        localStorage.setItem("shelem_clientId", clientId);
+      }
+      let name = localStorage.getItem("shelem_name");
+      if (!name) {
+        name = prompt("Bitte gib deinen Namen ein:") || "";
+        if (name.trim()) localStorage.setItem("shelem_name", name.trim());
+      }
+      if (name.trim()) {
+        socket.emit("register", { name: name.trim(), clientId });
+      }
       socket.emit("getRoundsHistory");
       socket.emit("requestState");
     });
@@ -706,7 +718,7 @@ function App() {
       socket.off("invalidAction", onInvalidAction);
       if (trickTimer.current) clearTimeout(trickTimer.current);
     };
-  }, [trumpf]);
+  }, []); // Events nur einmal registrieren
   useEffect(() => {
     setTabTitle({ me, isMyTurn });
   }, [me]);
