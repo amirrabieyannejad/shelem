@@ -1285,155 +1285,157 @@ function App() {
     );
   }
   // === Sitzplatzauswahl vorbereiten ===
-  const seatSelect =
-    !biddingWinner && !discardPhase && !hand.length && !me?.seatPosition
-      ? (() => {
-          const seatMap = { 1: null, 2: null, 3: null, 4: null };
-          players.forEach((p) => {
-            if (p.seatPosition) seatMap[p.seatPosition] = p;
-          });
-          const seatsAllFilled =
-            !!seatMap[1] && !!seatMap[2] && !!seatMap[3] && !!seatMap[4];
-          const mySeat = me?.seatPosition || null;
+  // sichtbar bis das Spiel wirklich startet (keine Hand, keine Auktion, keine Discard-Phase)
+  const roundNotStarted = !biddingActive && !discardPhase && !hand.length;
 
-          const seatsAllEmpty =
-            !seatMap[1] && !seatMap[2] && !seatMap[3] && !seatMap[4];
+  const seatSelect = roundNotStarted
+    ? (() => {
+        const seatMap = { 1: null, 2: null, 3: null, 4: null };
+        players.forEach((p) => {
+          if (p.seatPosition) seatMap[p.seatPosition] = p;
+        });
+        const seatsAllFilled =
+          !!seatMap[1] && !!seatMap[2] && !!seatMap[3] && !!seatMap[4];
+        const mySeat = me?.seatPosition || null;
 
-          const SEAT_TEAMS = { 1: "Fire", 2: "Storm", 3: "Fire", 4: "Storm" };
-          const seatLabel = (i) =>
-            `(${i}) Team ${SEAT_TEAMS[i]}${
-              SEAT_TEAMS[i] === "Fire" ? " (rot)" : ""
-            }`;
+        const seatsAllEmpty =
+          !seatMap[1] && !seatMap[2] && !seatMap[3] && !seatMap[4];
 
-          const seatStyle = (i) => ({
-            flex: "1 1 220px",
-            minWidth: 220,
-            borderRadius: 12,
-            padding: 12,
-            border: "2px solid #e5e7eb",
-            background: SEAT_TEAMS[i] === "Fire" ? "#ffe4e6" : "#eff6ff",
-          });
+        const SEAT_TEAMS = { 1: "Fire", 2: "Storm", 3: "Fire", 4: "Storm" };
+        const seatLabel = (i) =>
+          `(${i}) Team ${SEAT_TEAMS[i]}${
+            SEAT_TEAMS[i] === "Fire" ? " (rot)" : ""
+          }`;
 
-          const seatButtonStyle = (disabled) => ({
-            ...styles.btn,
-            background: disabled ? "#e5e7eb" : "#dcfce7",
-            cursor: disabled ? "not-allowed" : "pointer",
-            width: "100%",
-            fontWeight: 800,
-          });
+        const seatStyle = (i) => ({
+          flex: "1 1 220px",
+          minWidth: 220,
+          borderRadius: 12,
+          padding: 12,
+          border: "2px solid #e5e7eb",
+          background: SEAT_TEAMS[i] === "Fire" ? "#ffe4e6" : "#eff6ff",
+        });
 
-          return (
-            <div style={styles.card}>
-              <h3 style={{ margin: 0 }}>Sitzplätze wählen</h3>
+        const seatButtonStyle = (disabled) => ({
+          ...styles.btn,
+          background: disabled ? "#e5e7eb" : "#dcfce7",
+          cursor: disabled ? "not-allowed" : "pointer",
+          width: "100%",
+          fontWeight: 800,
+        });
 
-              {/* Random nur für ersten Spieler und nur wenn alle Plätze leer */}
-              {isFirstPlayer && seatsAllEmpty && (
-                <div style={{ marginTop: 8, textAlign: "center" }}>
-                  <button
-                    style={{ ...styles.btn, ...styles.btnGreen }}
-                    onClick={() => socket.emit("chooseTeam", "Random")}
-                    title="Zufällig und balanciert auf freie Plätze verteilen"
-                  >
-                    Random Teams
-                  </button>
-                </div>
-              )}
+        return (
+          <div style={styles.card}>
+            <h3 style={{ margin: 0 }}>Sitzplätze wählen</h3>
 
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-                  gap: 12,
-                  marginTop: 12,
-                }}
-              >
-                {[1, 2, 3, 4].map((i) => {
-                  const occupant = seatMap[i];
-                  const mine = mySeat === i;
-                  const occupiedByOther = occupant && occupant.id !== me?.id;
-                  return (
-                    <div key={i} style={seatStyle(i)}>
-                      <div style={{ fontWeight: 900, fontSize: 14 }}>
-                        {seatLabel(i)}
-                      </div>
-                      <div
-                        style={{
-                          marginTop: 6,
-                          padding: "10px 12px",
-                          borderRadius: 10,
-                          background: "#fff",
-                          border: "1px solid #e5e7eb",
-                          minHeight: 42,
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          fontWeight: 800,
-                        }}
-                      >
-                        {occupant ? occupant.name : "— frei —"}
-                      </div>
-
-                      <div style={{ marginTop: 8, display: "flex", gap: 8 }}>
-                        {/* Hauptbutton: auf freien Platz setzen / wechseln */}
-                        <button
-                          style={seatButtonStyle(occupiedByOther)}
-                          disabled={occupiedByOther}
-                          onClick={() => socket.emit("chooseSeat", { seat: i })}
-                          title={
-                            occupiedByOther
-                              ? "Platz ist belegt."
-                              : "Hier sitzen / wechseln"
-                          }
-                        >
-                          {occupiedByOther
-                            ? "Belegt"
-                            : mine
-                            ? "Hier bleiben"
-                            : "Hier sitzen"}
-                        </button>
-
-                        {/* Zusatz: nur wenn du hier sitzt → Platz freigeben */}
-                        {mine && (
-                          <button
-                            style={{
-                              ...styles.btn,
-                              background: "#fde68a",
-                              fontWeight: 800,
-                            }}
-                            onClick={() => socket.emit("leaveSeat")}
-                            title="Diesen Platz freigeben"
-                          >
-                            Platz freigeben
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
+            {/* Random nur für ersten Spieler und nur wenn alle Plätze leer */}
+            {isFirstPlayer && seatsAllEmpty && (
+              <div style={{ marginTop: 8, textAlign: "center" }}>
+                <button
+                  style={{ ...styles.btn, ...styles.btnGreen }}
+                  onClick={() => socket.emit("chooseTeam", "Random")}
+                  title="Zufällig und balanciert auf freie Plätze verteilen"
+                >
+                  Random Teams
+                </button>
               </div>
-              {/* Manuelles Starten: sichtbar für alle, sobald 4/4 sitzen */}
-              {seatsAllFilled && (
-                <div style={{ marginTop: 12 }}>
-                  <button
-                    style={{
-                      ...styles.btn,
-                      background: "#86efac",
-                      fontWeight: 900,
-                    }}
-                    onClick={() => socket.emit("startGame")}
-                    title="Spiel starten"
-                  >
-                    Spiel starten
-                  </button>
-                  <div style={{ marginTop: 6, fontSize: 12, color: "#111" }}>
-                    Alle sehen diesen Button – jeder darf starten.
+            )}
+
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                gap: 12,
+                marginTop: 12,
+              }}
+            >
+              {[1, 2, 3, 4].map((i) => {
+                const occupant = seatMap[i];
+                const mine = mySeat === i;
+                const occupiedByOther = occupant && occupant.id !== me?.id;
+                return (
+                  <div key={i} style={seatStyle(i)}>
+                    <div style={{ fontWeight: 900, fontSize: 14 }}>
+                      {seatLabel(i)}
+                    </div>
+                    <div
+                      style={{
+                        marginTop: 6,
+                        padding: "10px 12px",
+                        borderRadius: 10,
+                        background: "#fff",
+                        border: "1px solid #e5e7eb",
+                        minHeight: 42,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        fontWeight: 800,
+                      }}
+                    >
+                      {occupant ? occupant.name : "— frei —"}
+                    </div>
+
+                    <div style={{ marginTop: 8, display: "flex", gap: 8 }}>
+                      {/* Hauptbutton: auf freien Platz setzen / wechseln */}
+                      <button
+                        style={seatButtonStyle(occupiedByOther)}
+                        disabled={occupiedByOther}
+                        onClick={() => socket.emit("chooseSeat", { seat: i })}
+                        title={
+                          occupiedByOther
+                            ? "Platz ist belegt."
+                            : "Hier sitzen / wechseln"
+                        }
+                      >
+                        {occupiedByOther
+                          ? "Belegt"
+                          : mine
+                          ? "Hier bleiben"
+                          : "Hier sitzen"}
+                      </button>
+
+                      {/* Zusatz: nur wenn du hier sitzt → Platz freigeben */}
+                      {mine && (
+                        <button
+                          style={{
+                            ...styles.btn,
+                            background: "#fde68a",
+                            fontWeight: 800,
+                          }}
+                          onClick={() => socket.emit("leaveSeat")}
+                          title="Diesen Platz freigeben"
+                        >
+                          Platz freigeben
+                        </button>
+                      )}
+                    </div>
                   </div>
-                </div>
-              )}
+                );
+              })}
             </div>
-          );
-        })()
-      : null;
+            {/* Manuelles Starten: sichtbar für alle, sobald 4/4 sitzen */}
+            {seatsAllFilled && (
+              <div style={{ marginTop: 12 }}>
+                <button
+                  style={{
+                    ...styles.btn,
+                    background: "#86efac",
+                    fontWeight: 900,
+                  }}
+                  onClick={() => socket.emit("startGame")}
+                  title="Spiel starten"
+                >
+                  Spiel starten
+                </button>
+                <div style={{ marginTop: 6, fontSize: 12, color: "#111" }}>
+                  Alle sehen diesen Button – jeder darf starten.
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })()
+    : null;
 
   return (
     <div style={styles.page}>
@@ -1621,35 +1623,6 @@ function App() {
                   })()}
                 </div>
               </div>
-              {/* Start Button */}
-              {canStart && (
-                <div
-                  style={{
-                    position: "fixed",
-                    left: 0,
-                    right: 0,
-                    bottom: 20,
-                    display: "flex",
-                    justifyContent: "center",
-                    pointerEvents: "none",
-                  }}
-                >
-                  <button
-                    onClick={() => socket.emit("startGame")}
-                    style={{
-                      pointerEvents: "auto",
-                      padding: "10px 18px",
-                      borderRadius: 12,
-                      fontWeight: 800,
-                      border: "1px solid rgba(0,0,0,.15)",
-                      boxShadow: "0 8px 18px rgba(0,0,0,.25)",
-                      background: "#86efac",
-                    }}
-                  >
-                    Spiel starten
-                  </button>
-                </div>
-              )}
 
               {/* Spieler oben/unten/links/rechts mit Prozent-Abständen,
         damit es auch auf kleinen Screens passt */}
