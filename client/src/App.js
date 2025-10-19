@@ -1,7 +1,9 @@
 import React, { useEffect, useState, useRef } from "react";
-import { io } from "socket.io-client";
 
-const socket = io(`http://${window.location.hostname}:3001`);
+import { io } from "socket.io-client";
+const socket = io(`http://${window.location.hostname}:3001`, {
+  autoConnect: false,
+});
 
 // simple, crisp crown
 const CrownIcon = ({ size = 40 }) => (
@@ -356,16 +358,166 @@ const styles = {
     marginTop: "8px",
   },
   hudRoundFire: {
-    position: "absolute",
-    top: "38px", // etwas unter Gesamt Fire
-    left: "12px",
+    gridColumn: "1",
+    gridRow: "2",
+    justifySelf: "start",
+    alignSelf: "center",
   },
   hudRoundStorm: {
-    position: "absolute",
-    top: "38px",
-    right: "12px",
+    gridColumn: "3",
+    gridRow: "2",
+    justifySelf: "end",
+    alignSelf: "center",
   },
 };
+// --- Simple Auth-Gate (Login / Register) ---
+function AuthGate({ onAuthed }) {
+  const [mode, setMode] = React.useState("login"); // 'login' | 'register'
+  const [form, setForm] = React.useState({
+    name: "",
+    usernameOrEmail: "",
+    username: "",
+    email: "",
+    password: "",
+    phone: "",
+    avatarUrl: "",
+  });
+  const host = `http://${window.location.hostname}:3001`;
+
+  const saveAuth = ({ token, profile }) => {
+    localStorage.setItem("shelem_token", token);
+    localStorage.setItem("shelem_profile", JSON.stringify(profile));
+    onAuthed({ token, profile });
+  };
+
+  const login = async () => {
+    const res = await fetch(`${host}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        usernameOrEmail: form.usernameOrEmail,
+        password: form.password,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) return alert(data?.error || "Login fehlgeschlagen");
+    saveAuth(data);
+  };
+
+  const register = async () => {
+    const body = {
+      name: form.name,
+      username: form.username,
+      email: form.email,
+      password: form.password,
+      phone: form.phone || undefined,
+      avatarUrl: form.avatarUrl || undefined,
+    };
+    const res = await fetch(`${host}/api/auth/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (!res.ok) return alert(data?.error || "Registrierung fehlgeschlagen");
+    saveAuth(data); // Auto-Login
+  };
+
+  return (
+    <div style={{ ...styles.card, maxWidth: 420, margin: "40px auto" }}>
+      <h3 style={{ marginTop: 0, textAlign: "center" }}>
+        {mode === "login" ? "Anmelden" : "Registrieren"}
+      </h3>
+      <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
+        <button
+          style={styles.btn}
+          onClick={() => setMode("login")}
+          disabled={mode === "login"}
+        >
+          Login
+        </button>
+        <button
+          style={styles.btn}
+          onClick={() => setMode("register")}
+          disabled={mode === "register"}
+        >
+          Register
+        </button>
+      </div>
+      {mode === "login" ? (
+        <div style={{ marginTop: 12, display: "grid", gap: 8 }}>
+          <input
+            placeholder="Benutzername oder E-Mail"
+            value={form.usernameOrEmail}
+            onChange={(e) =>
+              setForm((f) => ({ ...f, usernameOrEmail: e.target.value }))
+            }
+          />
+          <input
+            placeholder="Passwort"
+            type="password"
+            value={form.password}
+            onChange={(e) =>
+              setForm((f) => ({ ...f, password: e.target.value }))
+            }
+          />
+          <button
+            style={{ ...styles.btn, background: "#86efac", fontWeight: 800 }}
+            onClick={login}
+          >
+            Anmelden
+          </button>
+        </div>
+      ) : (
+        <div style={{ marginTop: 12, display: "grid", gap: 8 }}>
+          <input
+            placeholder="Name (Anzeige)"
+            value={form.name}
+            onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+          />
+          <input
+            placeholder="Benutzername"
+            value={form.username}
+            onChange={(e) =>
+              setForm((f) => ({ ...f, username: e.target.value }))
+            }
+          />
+          <input
+            placeholder="E-Mail"
+            value={form.email}
+            onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+          />
+          <input
+            placeholder="Passwort (min. 6)"
+            type="password"
+            value={form.password}
+            onChange={(e) =>
+              setForm((f) => ({ ...f, password: e.target.value }))
+            }
+          />
+          <input
+            placeholder="Telefon (optional)"
+            value={form.phone}
+            onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
+          />
+          <input
+            placeholder="Avatar URL (optional)"
+            value={form.avatarUrl}
+            onChange={(e) =>
+              setForm((f) => ({ ...f, avatarUrl: e.target.value }))
+            }
+          />
+          <button
+            style={{ ...styles.btn, background: "#86efac", fontWeight: 800 }}
+            onClick={register}
+          >
+            Konto erstellen
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function App() {
   const [hand, setHand] = useState([]);
@@ -395,6 +547,26 @@ function App() {
   const trickClearTimer = useRef(null);
   const nextTrickFresh = useRef(false);
   const [paused, setPaused] = useState(false);
+  const [biddingActive, setBiddingActive] = useState(false);
+
+  // --- Auth State ---
+  const [auth, setAuth] = useState({
+    token: localStorage.getItem("shelem_token"),
+    profile: (() => {
+      try {
+        return JSON.parse(localStorage.getItem("shelem_profile") || "null");
+      } catch {
+        return null;
+      }
+    })(),
+  });
+  // Abgeleitete Flags
+  const seatedCount = (players || []).filter((p) => p?.seatPosition).length;
+  const seatsFullClient = seatedCount === 4;
+
+  // Runde noch nicht gestartet = keine Hand verteilt & keine Auktion/Discard aktiv
+  const canStart =
+    seatsFullClient && !biddingActive && !hand.length && !discardPhase;
   // nur der erste (players[0]) darf "Random" sehen/auslösen
   const isFirstPlayer = !!me && players[0] && players[0].id === me.id;
 
@@ -455,21 +627,15 @@ function App() {
 
   useEffect(() => {
     socket.on("connect", () => {
-      // stabile Client-ID + Name aus localStorage
-      let clientId = localStorage.getItem("shelem_clientId");
-      if (!clientId) {
-        clientId =
-          crypto?.randomUUID?.() || Math.random().toString(36).slice(2);
-        localStorage.setItem("shelem_clientId", clientId);
+      // Token wurde vor connect gesetzt (socket.auth)
+      const profRaw = localStorage.getItem("shelem_profile");
+      const prof = profRaw ? JSON.parse(profRaw) : null;
+      if (!prof) {
+        alert("Nicht eingeloggt.");
+        return;
       }
-      let name = localStorage.getItem("shelem_name");
-      if (!name) {
-        name = prompt("Bitte gib deinen Namen ein:") || "";
-        if (name.trim()) localStorage.setItem("shelem_name", name.trim());
-      }
-      if (name.trim()) {
-        socket.emit("register", { name: name.trim(), clientId });
-      }
+      // stabile ID & Name kommen vom Profil (server-side verifiziert)
+      socket.emit("register", { clientId: prof.id, name: prof.name });
       socket.emit("getRoundsHistory");
       socket.emit("requestState");
     });
@@ -535,6 +701,7 @@ function App() {
     socket.on("bottomCards", (cards) => console.log("Boden:", cards));
 
     socket.on("yourTurn", (data) => {
+      setBiddingActive(true);
       setIsMyTurn(true);
       setCurrentBid(data.currentBid);
       setMustBid(!!data.mustBid);
@@ -544,6 +711,8 @@ function App() {
     });
 
     socket.on("turnUpdate", ({ currentPlayer }) => {
+      // falls zu Beginn der Auktion nur turnUpdate kommt
+      setBiddingActive(true);
       setCurrentPlayer(currentPlayer);
       setIsMyTurn(!!currentPlayer && currentPlayer.id === socket.id);
     });
@@ -551,6 +720,7 @@ function App() {
     socket.on("biddingResult", ({ winner, bid }) => {
       setBiddingWinner({ winner, bid });
       setIsMyTurn(false);
+      setBiddingActive(false);
     });
 
     socket.on("showBottomCards", ({ bottomCards }) => {
@@ -705,6 +875,8 @@ function App() {
       if (Array.isArray(s?.players)) setPlayers(s.players);
       if (s?.trumpf) setTrumpf(s.trumpf);
       if (s?.roundVariant) setRoundVariant(s.roundVariant); // <— vom Server übernehmen
+      if (typeof s?.biddingActive === "boolean")
+        setBiddingActive(s.biddingActive);
     });
 
     socket.on("gameOver", ({ winner, teamScores }) => {
@@ -719,6 +891,14 @@ function App() {
       if (trickTimer.current) clearTimeout(trickTimer.current);
     };
   }, []); // Events nur einmal registrieren
+
+  // Wenn Auth vorhanden → Socket mit Token verbinden
+  useEffect(() => {
+    if (auth?.token) {
+      socket.auth = { token: auth.token };
+      if (!socket.connected) socket.connect();
+    }
+  }, [auth?.token]);
   useEffect(() => {
     setTabTitle({ me, isMyTurn });
   }, [me]);
@@ -1106,7 +1286,7 @@ function App() {
   }
   // === Sitzplatzauswahl vorbereiten ===
   const seatSelect =
-    !biddingWinner && !discardPhase && !hand.length
+    !biddingWinner && !discardPhase && !hand.length && !me?.seatPosition
       ? (() => {
           const seatMap = { 1: null, 2: null, 3: null, 4: null };
           players.forEach((p) => {
@@ -1115,6 +1295,7 @@ function App() {
           const seatsAllFilled =
             !!seatMap[1] && !!seatMap[2] && !!seatMap[3] && !!seatMap[4];
           const mySeat = me?.seatPosition || null;
+
           const seatsAllEmpty =
             !seatMap[1] && !seatMap[2] && !seatMap[3] && !seatMap[4];
 
@@ -1256,678 +1437,740 @@ function App() {
 
   return (
     <div style={styles.page}>
-      {/* Popup Boden-Karten */}
-      {showBottom && (
-        <div style={styles.modalBackdrop}>
-          <div style={styles.modal}>
-            <h3 style={{ margin: 0, fontWeight: 800 }}>Boden-Karten</h3>
+      {!auth?.token ? (
+        <AuthGate onAuthed={setAuth} />
+      ) : (
+        <>
+          {/* Popup Boden-Karten */}
+          {showBottom && (
+            <div style={styles.modalBackdrop}>
+              <div style={styles.modal}>
+                <h3 style={{ margin: 0, fontWeight: 800 }}>Boden-Karten</h3>
 
-            {/* Karten als Bilder im neuen Layout */}
-            <div
-              style={{
-                display: "flex",
-                gap: 10,
-                flexWrap: "wrap",
-                justifyContent: "center",
-                alignItems: "center",
-                marginTop: 12,
-              }}
-            >
-              {bottomCards.map((c, i) => (
-                <SpriteCard
-                  key={`${c}-${i}`}
-                  code={c}
-                  size="lg"
+                {/* Karten als Bilder im neuen Layout */}
+                <div
                   style={{
-                    boxShadow: "0 8px 18px rgba(0,0,0,.35)",
-                    border: "1px solid rgba(0,0,0,.12)",
+                    display: "flex",
+                    gap: 10,
+                    flexWrap: "wrap",
+                    justifyContent: "center",
+                    alignItems: "center",
+                    marginTop: 12,
                   }}
-                />
-              ))}
+                >
+                  {bottomCards.map((c, i) => (
+                    <SpriteCard
+                      key={`${c}-${i}`}
+                      code={c}
+                      size="lg"
+                      style={{
+                        boxShadow: "0 8px 18px rgba(0,0,0,.35)",
+                        border: "1px solid rgba(0,0,0,.12)",
+                      }}
+                    />
+                  ))}
+                </div>
+
+                <div style={{ marginTop: 16, textAlign: "right" }}>
+                  <button
+                    style={{ ...styles.btn, background: "#86efac" }}
+                    onClick={() => {
+                      socket.emit("takeBottomCards");
+                      setShowBottom(false);
+                    }}
+                  >
+                    Übernehmen
+                  </button>
+                </div>
+              </div>
             </div>
+          )}
 
-            <div style={{ marginTop: 16, textAlign: "right" }}>
-              <button
-                style={{ ...styles.btn, background: "#86efac" }}
-                onClick={() => {
-                  socket.emit("takeBottomCards");
-                  setShowBottom(false);
-                }}
-              >
-                Übernehmen
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+          {/* Team Auswahl */}
+          {seatSelect}
+          {/* Spielfeld */}
+          {players.length === 4 && (
+            <div style={styles.tableWrap}>
+              {/* HUD Gesamt- und Rundenpunkte */}
+              <div style={styles.hudGrid}>
+                <div style={{ ...styles.hudTL }}>
+                  <div
+                    style={{ display: "flex", flexDirection: "column", gap: 6 }}
+                  >
+                    <span style={styles.hudPill}>
+                      Gesamt Fire: {scores.Fire}
+                    </span>
+                    <span style={styles.hudPill}>
+                      Runde Fire: {roundPointsLive.Fire}
+                    </span>
+                  </div>
+                </div>
 
-      {/* Team Auswahl */}
-      {seatSelect}
-      {/* Spielfeld */}
-      {players.length === 4 && (
-        <div style={styles.tableWrap}>
-          {/* HUD Gesamtpunkte */}
-          <div style={styles.hudGrid}>
-            <div style={{ ...styles.hudTL }}>
-              <span style={styles.hudPill}>Gesamt Fire: {scores.Fire}</span>
-            </div>
-            <div style={styles.hudTR}>
-              <span style={styles.hudPill}>Gesamt Storm: {scores.Storm}</span>
-            </div>
+                <div style={{ ...styles.hudTR }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 6,
+                      alignItems: "flex-end",
+                    }}
+                  >
+                    <span style={styles.hudPill}>
+                      Gesamt Storm: {scores.Storm}
+                    </span>
+                    <span style={styles.hudPill}>
+                      Runde Storm: {roundPointsLive.Storm}
+                    </span>
+                  </div>
+                </div>
 
-            <div style={styles.hudBL}>
-              <span style={styles.hudPill}>Gebot: {currentBid}</span>
-            </div>
-            <div style={styles.hudButtonWrap}>
-              <button
-                style={styles.hudButton}
-                onClick={() => setShowStats(true)}
-              >
-                آمار
-              </button>
-            </div>
-          </div>
+                <div style={styles.hudBL}>
+                  <span style={styles.hudPill}>Gebot: {currentBid}</span>
+                </div>
 
-          {/* Rundenpunkte explizit platziert */}
-          <div style={styles.hudRoundFire}>
-            <span style={styles.hudPill}>
-              Runde Fire: {roundPointsLive.Fire}
-            </span>
-          </div>
-          <div style={styles.hudRoundStorm}>
-            <span style={styles.hudPill}>
-              Runde Storm: {roundPointsLive.Storm}
-            </span>
-          </div>
-
-          {/* Karten-Mitte */}
-          <div
-            style={{
-              ...styles.tableCenter,
-              position: "absolute",
-              top: "50%",
-              left: "50%",
-              transform: "translate(-50%, -50%)",
-            }}
-          >
-            <div
-              style={{
-                position: "relative",
-                width: "80%",
-                height: "70%",
-                left: "6%",
-              }}
-            >
-              {(() => {
-                // Karten werden in der Reihenfolge dargestellt, wie sie im Stich liegen:
-                // currentTrick[0] = zuerst gespielt, ... [3] = zuletzt gespielt (liegt oben)
-                const order = currentTrick;
-
-                // Versetzte Slots rund um die Mitte (sehr nah beieinander → Überlappung)
-                // Du kannst die translate-Werte fein-tunen (z.B. -36%/-18%/12% etc.)
-                const slots = [
-                  {
-                    top: "50%",
-                    left: "50%",
-                    transform: "translate(-50%, -72%) rotate(-6deg)",
-                  }, // 1. Karte (oben/unten Gefühl)
-                  {
-                    top: "50%",
-                    left: "50%",
-                    transform: "translate(-78%, -50%) rotate(-2deg)",
-                  }, // 2. Karte (links)
-                  {
-                    top: "50%",
-                    left: "50%",
-                    transform: "translate(-50%, -28%) rotate(2deg)",
-                  }, // 3. Karte (unten)
-                  {
-                    top: "50%",
-                    left: "50%",
-                    transform: "translate(-22%, -50%) rotate(6deg)",
-                  }, // 4. Karte (rechts)
-                ];
-
-                return (
-                  <>
-                    {order.map((t, i) => (
-                      <div
-                        key={`${t.playerId}-${t.card}-${i}`}
-                        style={{
-                          position: "absolute",
-                          zIndex: 10 + i, // später gespielt = höher
-                          ...slots[i], // sanfte Überlappung + Mini-Rotation
-                        }}
-                        title={`#${i + 1} gespielt`}
-                      >
-                        <SpriteCard code={t.card} />
-                      </div>
-                    ))}
-
-                    {currentTrick.length === 0 && (
-                      <div
-                        style={{
-                          position: "absolute",
-                          top: "50%",
-                          left: "50%",
-                          transform: "translate(-50%, -50%)",
-                          opacity: 0.6,
-                          fontSize: 12,
-                        }}
-                      >
-                        Warte auf Karten…
-                      </div>
-                    )}
-                  </>
-                );
-              })()}
-            </div>
-          </div>
-
-          {/* Spieler oben/unten/links/rechts mit Prozent-Abständen,
-        damit es auch auf kleinen Screens passt */}
-          <div
-            style={{
-              position: "absolute",
-              top: "-1%",
-              left: "50%",
-              transform: "translateX(-50%)",
-              zIndex: 30,
-            }}
-          >
-            <PlayerBox p={seated[2]} />
-          </div>
-
-          <div
-            style={{
-              position: "absolute",
-              bottom: "-1%",
-              left: "50%",
-              transform: "translateX(-50%)",
-              zIndex: 30,
-            }}
-          >
-            <PlayerBox p={seated[0]} youLabel />
-          </div>
-
-          <div
-            style={{
-              position: "absolute",
-              top: "50%",
-              left: "-1%",
-              transform: "translateY(-50%)",
-              zIndex: 30,
-            }}
-          >
-            <PlayerBox p={seated[3]} />
-          </div>
-
-          <div
-            style={{
-              position: "absolute",
-              top: "50%",
-              right: "-1%",
-              transform: "translateY(-50%)",
-              zIndex: 30,
-            }}
-          >
-            <PlayerBox p={seated[1]} />
-          </div>
-        </div>
-      )}
-      {/* Discard-Hinweis + Bestätigen */}
-      {discardPhase && (
-        <div style={styles.card}>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: 12,
-              flexWrap: "wrap",
-            }}
-          >
-            <h3 style={{ margin: 0 }}>
-              Wähle 4 Karten zum Abwerfen (Tippen/Clicken){" "}
-            </h3>
-            <div style={{ fontWeight: 800 }}>
-              Ausgewählt: {selectedDiscard.length} / 4
-            </div>
-          </div>
-          <div style={{ marginTop: 8 }}>
-            <button
-              style={{ ...styles.btn, background: "#22c55e", color: "white" }}
-              onClick={confirmDiscard}
-              disabled={selectedDiscard.length !== 4}
-            >
-              Abwerfen bestätigen
-            </button>
-          </div>
-        </div>
-      )}
-      {variantModal.open && (
-        <div style={styles.modalBackdrop}>
-          <div style={styles.modal}>
-            <h3 style={{ margin: 0, fontWeight: 800, textAlign: "center" }}>
-              Runde: Normal oder Flip?
-            </h3>
-            <p style={{ textAlign: "center", marginTop: 8 }}>
-              Entscheidung nach der ersten Karte des Startspielers.
-            </p>
-            <div
-              style={{
-                display: "flex",
-                gap: 10,
-                justifyContent: "center",
-                marginTop: 16,
-              }}
-            >
-              <button
-                style={{
-                  ...styles.btn,
-                  background: "#dbeafe",
-                  fontWeight: 800,
-                }}
-                onClick={() => socket.emit("setVariant", { variant: "NORMAL" })}
-              >
-                Normal
-              </button>
-              <button
-                style={{
-                  ...styles.btn,
-                  background: "#fde68a",
-                  fontWeight: 800,
-                }}
-                onClick={() => socket.emit("setVariant", { variant: "FLIP" })}
-              >
-                Flip
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-      {/* Bieten */}
-      {isMyTurn && !biddingWinner && (
-        <div style={styles.modalBackdrop}>
-          <div style={styles.modal}>
-            <h3
-              style={{
-                margin: 0,
-                fontWeight: 800,
-                color: "#000000",
-                textAlign: "center",
-              }}
-            >
-              امتیاز پیشنهادی شما{" "}
-            </h3>
-            <p
-              style={{
-                color: "#000000",
-                textAlign: "center",
-              }}
-            >
-              آخرین امتیاز پیشنهاد شده: {currentBid}
-            </p>
-
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: 20,
-                margin: "20px 0",
-              }}
-            >
-              <button
-                style={{ ...styles.btn, fontSize: 24 }}
-                onClick={() => {
-                  const minAllowed = Math.max(100, currentBid + 5);
-                  setMyBid((prev) => Math.max(prev - 5, minAllowed));
-                }}
-                disabled={myBid <= Math.max(100, currentBid + 5)}
-              >
-                –
-              </button>
-
-              <div
-                style={{
-                  fontSize: 36,
-                  fontWeight: 900,
-                  minWidth: 80,
-                  textAlign: "center",
-                  color: "black",
-                }}
-              >
-                {myBid || 100}
+                <div style={styles.hudButtonWrap}>
+                  <button
+                    style={styles.hudButton}
+                    onClick={() => setShowStats(true)}
+                  >
+                    آمار
+                  </button>
+                </div>
               </div>
 
-              <button
-                style={{ ...styles.btn, fontSize: 24 }}
-                onClick={() => setMyBid((prev) => Math.min(prev + 5, 165))}
-                disabled={myBid >= 165}
-              >
-                +
-              </button>
-            </div>
-
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                marginTop: 20,
-              }}
-            >
-              <button
+              {/* Karten-Mitte */}
+              <div
                 style={{
-                  ...styles.btn,
-                  background: "#fbbf24",
-                  color: "#000",
-                  padding: "16px 60px",
-                  fontWeight: 800,
-                  fontSize: 15,
-                }}
-                onClick={() => makeBid(0)}
-                disabled={mustBid}
-              >
-                پاس
-              </button>
-              <button
-                style={{
-                  ...styles.btn,
-                  background: "#22c55e",
-                  color: "#000000ff",
-                  padding: "16px 60px",
-                  fontWeight: 800,
-                  fontSize: 15,
-                }}
-                onClick={() => makeBid(myBid)}
-              >
-                تایید
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-      {/* Hand */}
-      <div style={styles.card}>
-        {/* leichtes Overlap-Layout für ein Kartenband */}
-        <div
-          style={{
-            display: "flex",
-            gap: 8,
-            flexWrap: "wrap",
-            alignItems: "flex-end",
-            paddingBottom: 8,
-            justifyContent: "center",
-          }}
-        >
-          {hand.map((card) => {
-            const isSelected = selectedDiscard.includes(card);
-            const canSelectMore = selectedDiscard.length < 4;
-            const inDiscard = discardPhase;
-
-            // Click-Verhalten:
-            // - in DiscardPhase: toggleDiscard
-            // - sonst (normal): playCard, wenn erlaubt
-            const clickable =
-              inDiscard || (biddingWinner && isMyTurn && !discardPhase);
-            const onClick = () => {
-              if (inDiscard) {
-                if (isSelected) {
-                  toggleDiscard(card); // immer abwählbar
-                } else if (canSelectMore) {
-                  toggleDiscard(card); // nur bis 4
-                }
-              } else if (biddingWinner && isMyTurn) {
-                playCard(card);
-              }
-            };
-
-            // Stil der Karte/Schaltfläche
-            const disabled =
-              // im Abwurfmodus nur sperren, wenn schon 4 gewählt und diese Karte nicht gewählt ist
-              (inDiscard && !isSelected && !canSelectMore) ||
-              // im Spielmodus sperren, wenn nicht am Zug
-              (!inDiscard && (!biddingWinner || !isMyTurn));
-
-            return (
-              <button
-                key={card}
-                onClick={onClick}
-                disabled={disabled}
-                aria-pressed={isSelected}
-                title={
-                  inDiscard
-                    ? isSelected
-                      ? "Abwurf entfernen"
-                      : "Zum Abwurf auswählen"
-                    : card
-                }
-                style={{
-                  // Button-Hülle möglichst „unsichtbar“
-                  padding: 0,
-                  background: "transparent",
-                  border: "none",
-                  position: "relative",
-                  cursor: disabled ? "not-allowed" : "pointer",
-                  // für kleine Overlap-Optik kann man hier z.B. marginLeft: -12 setzen,
-                  // wir lassen es neutral
+                  ...styles.tableCenter,
+                  position: "absolute",
+                  top: "50%",
+                  left: "50%",
+                  transform: "translate(-50%, -50%)",
                 }}
               >
                 <div
                   style={{
-                    // der Wrapper bewegt die Karte nach oben, wenn ausgewählt
-                    transform: isSelected
-                      ? "translateY(-10px)"
-                      : "translateY(0px)",
-                    transition: "transform 140ms ease",
-                    // optische Auswahl-Markierung
-                    outline: isSelected ? "3px solid #ef4444" : "none",
-                    borderRadius: 12,
-                    // leichter „Hover“ (nur wenn klickbar)
-                    filter: !disabled ? "brightness(1)" : "grayscale(0.2)",
+                    position: "relative",
+                    width: "80%",
+                    height: "70%",
+                    left: "6%",
                   }}
                 >
-                  <SpriteCard
-                    code={card}
-                    size="sm"
-                    // extra Schlagschatten je nach Status
-                    style={{
-                      boxShadow: isSelected
-                        ? "0 12px 24px rgba(0,0,0,.35)"
-                        : "0 6px 14px rgba(0,0,0,.25)",
-                    }}
-                  />
+                  {(() => {
+                    // Karten werden in der Reihenfolge dargestellt, wie sie im Stich liegen:
+                    // currentTrick[0] = zuerst gespielt, ... [3] = zuletzt gespielt (liegt oben)
+                    const order = currentTrick;
+
+                    // Versetzte Slots rund um die Mitte (sehr nah beieinander → Überlappung)
+                    // Du kannst die translate-Werte fein-tunen (z.B. -36%/-18%/12% etc.)
+                    const slots = [
+                      {
+                        top: "50%",
+                        left: "50%",
+                        transform: "translate(-50%, -72%) rotate(-6deg)",
+                      }, // 1. Karte (oben/unten Gefühl)
+                      {
+                        top: "50%",
+                        left: "50%",
+                        transform: "translate(-78%, -50%) rotate(-2deg)",
+                      }, // 2. Karte (links)
+                      {
+                        top: "50%",
+                        left: "50%",
+                        transform: "translate(-50%, -28%) rotate(2deg)",
+                      }, // 3. Karte (unten)
+                      {
+                        top: "50%",
+                        left: "50%",
+                        transform: "translate(-22%, -50%) rotate(6deg)",
+                      }, // 4. Karte (rechts)
+                    ];
+
+                    return (
+                      <>
+                        {order.map((t, i) => (
+                          <div
+                            key={`${t.playerId}-${t.card}-${i}`}
+                            style={{
+                              position: "absolute",
+                              zIndex: 10 + i, // später gespielt = höher
+                              ...slots[i], // sanfte Überlappung + Mini-Rotation
+                            }}
+                            title={`#${i + 1} gespielt`}
+                          >
+                            <SpriteCard code={t.card} />
+                          </div>
+                        ))}
+
+                        {currentTrick.length === 0 && (
+                          <div
+                            style={{
+                              position: "absolute",
+                              top: "50%",
+                              left: "50%",
+                              transform: "translate(-50%, -50%)",
+                              opacity: 0.6,
+                              fontSize: 12,
+                            }}
+                          >
+                            Warte auf Karten…
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
                 </div>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-      {showStats && (
-        <div style={styles.modalBackdrop}>
-          <div
-            style={{
-              ...styles.modal,
-              width: 800,
-              maxWidth: "95vw",
-              maxHeight: "85vh",
-              overflow: "auto",
-            }}
-          >
+              </div>
+              {/* Start Button */}
+              {canStart && (
+                <div
+                  style={{
+                    position: "fixed",
+                    left: 0,
+                    right: 0,
+                    bottom: 20,
+                    display: "flex",
+                    justifyContent: "center",
+                    pointerEvents: "none",
+                  }}
+                >
+                  <button
+                    onClick={() => socket.emit("startGame")}
+                    style={{
+                      pointerEvents: "auto",
+                      padding: "10px 18px",
+                      borderRadius: 12,
+                      fontWeight: 800,
+                      border: "1px solid rgba(0,0,0,.15)",
+                      boxShadow: "0 8px 18px rgba(0,0,0,.25)",
+                      background: "#86efac",
+                    }}
+                  >
+                    Spiel starten
+                  </button>
+                </div>
+              )}
+
+              {/* Spieler oben/unten/links/rechts mit Prozent-Abständen,
+        damit es auch auf kleinen Screens passt */}
+              <div
+                style={{
+                  position: "absolute",
+                  top: "-1%",
+                  left: "50%",
+                  transform: "translateX(-50%)",
+                  zIndex: 30,
+                }}
+              >
+                <PlayerBox p={seated[2]} />
+              </div>
+
+              <div
+                style={{
+                  position: "absolute",
+                  bottom: "-1%",
+                  left: "50%",
+                  transform: "translateX(-50%)",
+                  zIndex: 30,
+                }}
+              >
+                <PlayerBox p={seated[0]} youLabel />
+              </div>
+
+              <div
+                style={{
+                  position: "absolute",
+                  top: "50%",
+                  left: "-1%",
+                  transform: "translateY(-50%)",
+                  zIndex: 30,
+                }}
+              >
+                <PlayerBox p={seated[3]} />
+              </div>
+
+              <div
+                style={{
+                  position: "absolute",
+                  top: "50%",
+                  right: "-1%",
+                  transform: "translateY(-50%)",
+                  zIndex: 30,
+                }}
+              >
+                <PlayerBox p={seated[1]} />
+              </div>
+            </div>
+          )}
+          {/* Discard-Hinweis + Bestätigen */}
+          {discardPhase && (
+            <div style={styles.card}>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 12,
+                  flexWrap: "wrap",
+                }}
+              >
+                <h3 style={{ margin: 0 }}>
+                  Wähle 4 Karten zum Abwerfen (Tippen/Clicken){" "}
+                </h3>
+                <div style={{ fontWeight: 800 }}>
+                  Ausgewählt: {selectedDiscard.length} / 4
+                </div>
+              </div>
+              <div style={{ marginTop: 8 }}>
+                <button
+                  style={{
+                    ...styles.btn,
+                    background: "#22c55e",
+                    color: "white",
+                  }}
+                  onClick={confirmDiscard}
+                  disabled={selectedDiscard.length !== 4}
+                >
+                  Abwerfen bestätigen
+                </button>
+              </div>
+            </div>
+          )}
+          {variantModal.open && (
+            <div style={styles.modalBackdrop}>
+              <div style={styles.modal}>
+                <h3 style={{ margin: 0, fontWeight: 800, textAlign: "center" }}>
+                  Runde: Normal oder Flip?
+                </h3>
+                <p style={{ textAlign: "center", marginTop: 8 }}>
+                  Entscheidung nach der ersten Karte des Startspielers.
+                </p>
+                <div
+                  style={{
+                    display: "flex",
+                    gap: 10,
+                    justifyContent: "center",
+                    marginTop: 16,
+                  }}
+                >
+                  <button
+                    style={{
+                      ...styles.btn,
+                      background: "#dbeafe",
+                      fontWeight: 800,
+                    }}
+                    onClick={() =>
+                      socket.emit("setVariant", { variant: "NORMAL" })
+                    }
+                  >
+                    Normal
+                  </button>
+                  <button
+                    style={{
+                      ...styles.btn,
+                      background: "#fde68a",
+                      fontWeight: 800,
+                    }}
+                    onClick={() =>
+                      socket.emit("setVariant", { variant: "FLIP" })
+                    }
+                  >
+                    Flip
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+          {/* Bieten */}
+          {isMyTurn && !biddingWinner && (
+            <div style={styles.modalBackdrop}>
+              <div style={styles.modal}>
+                <h3
+                  style={{
+                    margin: 0,
+                    fontWeight: 800,
+                    color: "#000000",
+                    textAlign: "center",
+                  }}
+                >
+                  امتیاز پیشنهادی شما{" "}
+                </h3>
+                <p
+                  style={{
+                    color: "#000000",
+                    textAlign: "center",
+                  }}
+                >
+                  آخرین امتیاز پیشنهاد شده: {currentBid}
+                </p>
+
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 20,
+                    margin: "20px 0",
+                  }}
+                >
+                  <button
+                    style={{ ...styles.btn, fontSize: 24 }}
+                    onClick={() => {
+                      const minAllowed = Math.max(100, currentBid + 5);
+                      setMyBid((prev) => Math.max(prev - 5, minAllowed));
+                    }}
+                    disabled={myBid <= Math.max(100, currentBid + 5)}
+                  >
+                    –
+                  </button>
+
+                  <div
+                    style={{
+                      fontSize: 36,
+                      fontWeight: 900,
+                      minWidth: 80,
+                      textAlign: "center",
+                      color: "black",
+                    }}
+                  >
+                    {myBid || 100}
+                  </div>
+
+                  <button
+                    style={{ ...styles.btn, fontSize: 24 }}
+                    onClick={() => setMyBid((prev) => Math.min(prev + 5, 165))}
+                    disabled={myBid >= 165}
+                  >
+                    +
+                  </button>
+                </div>
+
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    marginTop: 20,
+                  }}
+                >
+                  <button
+                    style={{
+                      ...styles.btn,
+                      background: "#fbbf24",
+                      color: "#000",
+                      padding: "16px 60px",
+                      fontWeight: 800,
+                      fontSize: 15,
+                    }}
+                    onClick={() => makeBid(0)}
+                    disabled={mustBid}
+                  >
+                    پاس
+                  </button>
+                  <button
+                    style={{
+                      ...styles.btn,
+                      background: "#22c55e",
+                      color: "#000000ff",
+                      padding: "16px 60px",
+                      fontWeight: 800,
+                      fontSize: 15,
+                    }}
+                    onClick={() => makeBid(myBid)}
+                  >
+                    تایید
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+          {/* Hand */}
+          <div style={styles.card}>
+            {/* leichtes Overlap-Layout für ein Kartenband */}
             <div
               style={{
                 display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                gap: 12,
+                gap: 8,
+                flexWrap: "wrap",
+                alignItems: "flex-end",
+                paddingBottom: 8,
+                justifyContent: "center",
               }}
             >
-              <h3 style={{ margin: 0, fontWeight: 800 }}>Statistik</h3>
-              <button
-                className="close"
-                style={styles.btn}
-                onClick={() => setShowStats(false)}
-              >
-                Schließen
-              </button>
-            </div>
+              {hand.map((card) => {
+                const isSelected = selectedDiscard.includes(card);
+                const canSelectMore = selectedDiscard.length < 4;
+                const inDiscard = discardPhase;
 
-            {!roundsHistory || roundsHistory.length === 0 ? (
-              <div style={{ marginTop: 12 }}>
-                Noch keine Rundendaten vorhanden.
-              </div>
-            ) : (
-              <div style={{ display: "grid", gap: 12, marginTop: 12 }}>
-                {roundsHistory.map((r) => {
-                  const isOpen = !!expandedRounds[r.round];
-                  return (
+                // Click-Verhalten:
+                // - in DiscardPhase: toggleDiscard
+                // - sonst (normal): playCard, wenn erlaubt
+                const clickable =
+                  inDiscard || (biddingWinner && isMyTurn && !discardPhase);
+                const onClick = () => {
+                  if (inDiscard) {
+                    if (isSelected) {
+                      toggleDiscard(card); // immer abwählbar
+                    } else if (canSelectMore) {
+                      toggleDiscard(card); // nur bis 4
+                    }
+                  } else if (biddingWinner && isMyTurn) {
+                    playCard(card);
+                  }
+                };
+
+                // Stil der Karte/Schaltfläche
+                const disabled =
+                  // im Abwurfmodus nur sperren, wenn schon 4 gewählt und diese Karte nicht gewählt ist
+                  (inDiscard && !isSelected && !canSelectMore) ||
+                  // im Spielmodus sperren, wenn nicht am Zug
+                  (!inDiscard && (!biddingWinner || !isMyTurn));
+
+                return (
+                  <button
+                    key={card}
+                    onClick={onClick}
+                    disabled={disabled}
+                    aria-pressed={isSelected}
+                    title={
+                      inDiscard
+                        ? isSelected
+                          ? "Abwurf entfernen"
+                          : "Zum Abwurf auswählen"
+                        : card
+                    }
+                    style={{
+                      // Button-Hülle möglichst „unsichtbar“
+                      padding: 0,
+                      background: "transparent",
+                      border: "none",
+                      position: "relative",
+                      cursor: disabled ? "not-allowed" : "pointer",
+                      // für kleine Overlap-Optik kann man hier z.B. marginLeft: -12 setzen,
+                      // wir lassen es neutral
+                    }}
+                  >
                     <div
-                      key={r.round}
                       style={{
-                        border: "1px solid #e5e7eb",
-                        borderRadius: 10,
-                        background: "#fafafa",
+                        // der Wrapper bewegt die Karte nach oben, wenn ausgewählt
+                        transform: isSelected
+                          ? "translateY(-10px)"
+                          : "translateY(0px)",
+                        transition: "transform 140ms ease",
+                        // optische Auswahl-Markierung
+                        outline: isSelected ? "3px solid #ef4444" : "none",
+                        borderRadius: 12,
+                        // leichter „Hover“ (nur wenn klickbar)
+                        filter: !disabled ? "brightness(1)" : "grayscale(0.2)",
                       }}
                     >
-                      {/* Kopfzeile einer Runde */}
-                      <button
-                        onClick={() =>
-                          setExpandedRounds((prev) => ({
-                            ...prev,
-                            [r.round]: !prev[r.round],
-                          }))
-                        }
+                      <SpriteCard
+                        code={card}
+                        size="sm"
+                        // extra Schlagschatten je nach Status
                         style={{
-                          display: "flex",
-                          width: "100%",
-                          textAlign: "left",
-                          justifyContent: "space-between",
-                          gap: 10,
-                          alignItems: "center",
-                          padding: 10,
-                          background: "transparent",
-                          border: "none",
-                          cursor: "pointer",
-                          borderBottom: isOpen ? "1px solid #e5e7eb" : "none",
-                          borderRadius: "10px 10px 0 0",
+                          boxShadow: isSelected
+                            ? "0 12px 24px rgba(0,0,0,.35)"
+                            : "0 6px 14px rgba(0,0,0,.25)",
                         }}
-                        title="Details ein-/ausklappen"
-                      >
-                        <div style={{ fontWeight: 800 }}>
-                          Runde {r.round}
-                          {r.trumpf ? ` · Trumpf: ${r.trumpf}` : ""}
-                        </div>
+                      />
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          {showStats && (
+            <div style={styles.modalBackdrop}>
+              <div
+                style={{
+                  ...styles.modal,
+                  width: 800,
+                  maxWidth: "95vw",
+                  maxHeight: "85vh",
+                  overflow: "auto",
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: 12,
+                  }}
+                >
+                  <h3 style={{ margin: 0, fontWeight: 800 }}>Statistik</h3>
+                  <button
+                    className="close"
+                    style={styles.btn}
+                    onClick={() => setShowStats(false)}
+                  >
+                    Schließen
+                  </button>
+                </div>
+
+                {!roundsHistory || roundsHistory.length === 0 ? (
+                  <div style={{ marginTop: 12 }}>
+                    Noch keine Rundendaten vorhanden.
+                  </div>
+                ) : (
+                  <div style={{ display: "grid", gap: 12, marginTop: 12 }}>
+                    {roundsHistory.map((r) => {
+                      const isOpen = !!expandedRounds[r.round];
+                      return (
                         <div
+                          key={r.round}
                           style={{
-                            display: "flex",
-                            gap: 10,
-                            flexWrap: "wrap",
-                            alignItems: "center",
+                            border: "1px solid #e5e7eb",
+                            borderRadius: 10,
+                            background: "#fafafa",
                           }}
                         >
-                          <span className="pill" style={styles.pill}>
-                            Bieter: {r.bidderName || "-"} ({r.bidderTeam || "?"}
-                            )
-                          </span>
-                          <span className="pill" style={styles.pill}>
-                            Gebot: {r.bid || 0}
-                          </span>
-                          <span className="pill" style={styles.pill}>
-                            Runde Fire: {r.roundPoints?.Fire ?? 0}
-                          </span>
-                          <span className="pill" style={styles.pill}>
-                            Runde Storm: {r.roundPoints?.Storm ?? 0}
-                          </span>
-                          {r.ruleApplied === "doublePositive" && (
-                            <span className="pill" style={styles.pill}>
-                              Doppel-Positiv (+{r.bid * 2})
-                            </span>
-                          )}
-                          {r.ruleApplied === "doubleNegative" && (
-                            <span className="pill" style={styles.pill}>
-                              Doppel-Negativ (−{r.bid * 2})
-                            </span>
-                          )}
-
-                          <span className="pill" style={styles.pill}>
-                            Gesamt Fire: {r.teamScoresAfter?.Fire ?? "-"}
-                          </span>
-                          <span className="pill" style={styles.pill}>
-                            Gesamt Storm: {r.teamScoresAfter?.Storm ?? "-"}
-                          </span>
-                        </div>
-                      </button>
-
-                      {/* Details: 12 Stiche mit Kartenanzeige */}
-                      {isOpen && (
-                        <div style={{ padding: 10 }}>
-                          {/* Header – Richter & Trumpf */}
-                          <div
+                          {/* Kopfzeile einer Runde */}
+                          <button
+                            onClick={() =>
+                              setExpandedRounds((prev) => ({
+                                ...prev,
+                                [r.round]: !prev[r.round],
+                              }))
+                            }
                             style={{
                               display: "flex",
-                              gap: 12,
-                              alignItems: "center",
-                              flexWrap: "wrap",
-                              marginBottom: 10,
-                            }}
-                          >
-                            <div className="pill" style={styles.pill}>
-                              Richter: {r.bidderName || "-"}
-                            </div>
-                            {r.trumpf && (
-                              <span className="pill" style={styles.pill}>
-                                Trumpf: {r.trumpf}
-                              </span>
-                            )}
-                            <span className="pill" style={styles.pill}>
-                              Gebot: {r.bid || 0}
-                            </span>
-                          </div>
-
-                          {/* Chronologische Liste der 12 Stiche */}
-                          <div style={{ display: "grid", gap: 8 }}>
-                            {(r.tricks || [])
-                              .slice()
-                              .sort((a, b) => a.no - b.no) // sicher chronologisch
-                              .map((t) => (
-                                <TrickRow key={t.no} t={t} />
-                              ))}
-                          </div>
-
-                          {/* Summen / Footer */}
-                          <div
-                            style={{
-                              display: "flex",
+                              width: "100%",
+                              textAlign: "left",
+                              justifyContent: "space-between",
                               gap: 10,
-                              flexWrap: "wrap",
                               alignItems: "center",
-                              justifyContent: "flex-end",
-                              marginTop: 10,
+                              padding: 10,
+                              background: "transparent",
+                              border: "none",
+                              cursor: "pointer",
+                              borderBottom: isOpen
+                                ? "1px solid #e5e7eb"
+                                : "none",
+                              borderRadius: "10px 10px 0 0",
                             }}
+                            title="Details ein-/ausklappen"
                           >
-                            <span className="pill" style={styles.pill}>
-                              Round Punkte – Storm: {r.roundPoints?.Storm ?? 0}
-                            </span>
-                            <span className="pill" style={styles.pill}>
-                              Round Punkte – Fire: {r.roundPoints?.Fire ?? 0}
-                            </span>
-                            <span className="pill" style={styles.pill}>
-                              Gesamt – Storm: {r.teamScoresAfter?.Storm ?? "-"}
-                            </span>
-                            <span className="pill" style={styles.pill}>
-                              Gesamt – Fire: {r.teamScoresAfter?.Fire ?? "-"}
-                            </span>
-                          </div>
+                            <div style={{ fontWeight: 800 }}>
+                              Runde {r.round}
+                              {r.trumpf ? ` · Trumpf: ${r.trumpf}` : ""}
+                            </div>
+                            <div
+                              style={{
+                                display: "flex",
+                                gap: 10,
+                                flexWrap: "wrap",
+                                alignItems: "center",
+                              }}
+                            >
+                              <span className="pill" style={styles.pill}>
+                                Bieter: {r.bidderName || "-"} (
+                                {r.bidderTeam || "?"})
+                              </span>
+                              <span className="pill" style={styles.pill}>
+                                Gebot: {r.bid || 0}
+                              </span>
+                              <span className="pill" style={styles.pill}>
+                                Runde Fire: {r.roundPoints?.Fire ?? 0}
+                              </span>
+                              <span className="pill" style={styles.pill}>
+                                Runde Storm: {r.roundPoints?.Storm ?? 0}
+                              </span>
+                              {r.ruleApplied === "doublePositive" && (
+                                <span className="pill" style={styles.pill}>
+                                  Doppel-Positiv (+{r.bid * 2})
+                                </span>
+                              )}
+                              {r.ruleApplied === "doubleNegative" && (
+                                <span className="pill" style={styles.pill}>
+                                  Doppel-Negativ (−{r.bid * 2})
+                                </span>
+                              )}
+
+                              <span className="pill" style={styles.pill}>
+                                Gesamt Fire: {r.teamScoresAfter?.Fire ?? "-"}
+                              </span>
+                              <span className="pill" style={styles.pill}>
+                                Gesamt Storm: {r.teamScoresAfter?.Storm ?? "-"}
+                              </span>
+                            </div>
+                          </button>
+
+                          {/* Details: 12 Stiche mit Kartenanzeige */}
+                          {isOpen && (
+                            <div style={{ padding: 10 }}>
+                              {/* Header – Richter & Trumpf */}
+                              <div
+                                style={{
+                                  display: "flex",
+                                  gap: 12,
+                                  alignItems: "center",
+                                  flexWrap: "wrap",
+                                  marginBottom: 10,
+                                }}
+                              >
+                                <div className="pill" style={styles.pill}>
+                                  Richter: {r.bidderName || "-"}
+                                </div>
+                                {r.trumpf && (
+                                  <span className="pill" style={styles.pill}>
+                                    Trumpf: {r.trumpf}
+                                  </span>
+                                )}
+                                <span className="pill" style={styles.pill}>
+                                  Gebot: {r.bid || 0}
+                                </span>
+                              </div>
+
+                              {/* Chronologische Liste der 12 Stiche */}
+                              <div style={{ display: "grid", gap: 8 }}>
+                                {(r.tricks || [])
+                                  .slice()
+                                  .sort((a, b) => a.no - b.no) // sicher chronologisch
+                                  .map((t) => (
+                                    <TrickRow key={t.no} t={t} />
+                                  ))}
+                              </div>
+
+                              {/* Summen / Footer */}
+                              <div
+                                style={{
+                                  display: "flex",
+                                  gap: 10,
+                                  flexWrap: "wrap",
+                                  alignItems: "center",
+                                  justifyContent: "flex-end",
+                                  marginTop: 10,
+                                }}
+                              >
+                                <span className="pill" style={styles.pill}>
+                                  Round Punkte – Storm:{" "}
+                                  {r.roundPoints?.Storm ?? 0}
+                                </span>
+                                <span className="pill" style={styles.pill}>
+                                  Round Punkte – Fire:{" "}
+                                  {r.roundPoints?.Fire ?? 0}
+                                </span>
+                                <span className="pill" style={styles.pill}>
+                                  Gesamt – Storm:{" "}
+                                  {r.teamScoresAfter?.Storm ?? "-"}
+                                </span>
+                                <span className="pill" style={styles.pill}>
+                                  Gesamt – Fire:{" "}
+                                  {r.teamScoresAfter?.Fire ?? "-"}
+                                </span>
+                              </div>
+                            </div>
+                          )}
                         </div>
-                      )}
-                    </div>
-                  );
-                })}
+                      );
+                    })}
+                  </div>
+                )}
               </div>
-            )}
-          </div>
-        </div>
+            </div>
+          )}
+        </>
       )}
     </div>
   );

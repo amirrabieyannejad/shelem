@@ -1,10 +1,148 @@
 // backend/server.js
 const { Server } = require("socket.io");
 const http = require("http");
+const express = require("express");
+const cors = require("cors");
+const bcrypt = require("bcryptjs");
+const jwt = require("jsonwebtoken");
+const fs = require("fs");
+const path = require("path");
+const multer = require("multer");
+const { randomUUID } = require("crypto");
 
-const server = http.createServer();
-const io = new Server(server, {
-  cors: { origin: "*" },
+// --- Express  HTTP  IO ---
+const app = express();
+app.use(cors({ origin: "*" }));
+app.use(express.json({ limit: "2mb" }));
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+const upload = multer({ dest: path.join(__dirname, "uploads") });
+
+const server = http.createServer(app);
+const io = new Server(server, { cors: { origin: "*" } });
+
+// --- Simple user store (dev) ---
+const USERS_FILE = path.join(__dirname, "users.json");
+function loadUsers() {
+  try {
+    return JSON.parse(fs.readFileSync(USERS_FILE, "utf8"));
+  } catch {
+    return [];
+  }
+}
+function saveUsers(list) {
+  fs.writeFileSync(USERS_FILE, JSON.stringify(list, null, 2));
+}
+let users = loadUsers();
+const JWT_SECRET = process.env.JWT_SECRET || "dev_change_me";
+
+// --- Helpers ---
+const publicUser = (u) => ({
+  id: u.id,
+  name: u.name,
+  username: u.username,
+  email: u.email,
+  phone: u.phone || null,
+  avatarUrl: u.avatarUrl || null,
+  createdAt: u.createdAt,
+});
+
+// --- Auth API ---
+app.post("/api/auth/register", async (req, res) => {
+  const {
+    name,
+    username,
+    email,
+    password,
+    phone = null,
+    avatarUrl = null,
+  } = req.body || {};
+  if (!name || !username || !email || !password) {
+    return res
+      .status(400)
+      .json({ error: "name, username, email, password sind erforderlich" });
+  }
+  const uname = String(username).trim().toLowerCase();
+  const mail = String(email).trim().toLowerCase();
+  if (users.find((u) => u.username === uname))
+    return res.status(409).json({ error: "Benutzername belegt" });
+  if (users.find((u) => u.email === mail))
+    return res.status(409).json({ error: "E-Mail belegt" });
+  if (String(password).length < 6)
+    return res.status(400).json({ error: "Passwort min. 6 Zeichen" });
+
+  const hash = await bcrypt.hash(String(password), 10);
+  const user = {
+    id: randomUUID(),
+    name: String(name).trim(),
+    username: uname,
+    email: mail,
+    passwordHash: hash,
+    phone,
+    avatarUrl,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    emailVerified: false, // später erweiterbar
+    role: "player",
+  };
+  users.push(user);
+  saveUsers(users);
+  const token = jwt.sign(
+    {
+      sub: user.id,
+      name: user.name,
+      username: user.username,
+      email: user.email,
+    },
+    JWT_SECRET,
+    { expiresIn: "30d" }
+  );
+  return res.json({ token, profile: publicUser(user) });
+});
+
+app.post("/api/auth/login", async (req, res) => {
+  const { usernameOrEmail, password } = req.body || {};
+  if (!usernameOrEmail || !password)
+    return res
+      .status(400)
+      .json({ error: "usernameOrEmail & password erforderlich" });
+  const key = String(usernameOrEmail).trim().toLowerCase();
+  const user = users.find((u) => u.username === key || u.email === key);
+  if (!user) return res.status(401).json({ error: "Ungültige Zugangsdaten" });
+  const ok = await bcrypt.compare(String(password), user.passwordHash);
+  if (!ok) return res.status(401).json({ error: "Ungültige Zugangsdaten" });
+  const token = jwt.sign(
+    {
+      sub: user.id,
+      name: user.name,
+      username: user.username,
+      email: user.email,
+    },
+    JWT_SECRET,
+    { expiresIn: "30d" }
+  );
+  return res.json({ token, profile: publicUser(user) });
+});
+
+// optional: Avatar-Upload (multipart/form-data, Feldname "avatar")
+app.post("/api/upload-avatar", upload.single("avatar"), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: "Keine Datei" });
+  const url = `/uploads/${req.file.filename}`;
+  return res.json({ url });
+});
+
+// Token prüfen / Profil holen
+app.get("/api/me", (req, res) => {
+  const hdr = req.headers.authorization || "";
+  const token = hdr.startsWith("Bearer ") ? hdr.slice(7) : null;
+  try {
+    const payload = token ? jwt.verify(token, JWT_SECRET) : null;
+    if (!payload) return res.status(401).json({ error: "Unauthorized" });
+    const user = users.find((u) => u.id === payload.sub);
+    if (!user) return res.status(401).json({ error: "Unauthorized" });
+    return res.json({ profile: publicUser(user) });
+  } catch {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
 });
 
 // --- Globale Variablen ---
@@ -35,7 +173,7 @@ let gamePaused = false;
 const SEAT_TEAMS = { 1: "Fire", 2: "Storm", 3: "Fire", 4: "Storm" };
 // null = frei, sonst direkt Player-Objekt (Referenz)
 let seats = { 1: null, 2: null, 3: null, 4: null };
-
+const disconnectTimers = new Map(); // clientId -> Timeout
 function seatsEmpty() {
   return !seats[1] && !seats[2] && !seats[3] && !seats[4];
 }
@@ -357,7 +495,24 @@ function startNewRound() {
   io.to(next.id).emit("yourTurn", { currentBid, currentPlayer: next });
   io.emit("turnUpdate", { currentPlayer: next });
 }
-
+// JWT im Handshake auswerten (optional, aber empfohlen)
+io.use((socket, next) => {
+  try {
+    const token = socket.handshake.auth?.token || socket.handshake.query?.token;
+    if (token) {
+      const p = jwt.verify(token, JWT_SECRET);
+      socket.user = {
+        id: p.sub,
+        name: p.name,
+        username: p.username,
+        email: p.email,
+      };
+    }
+  } catch (e) {
+    // ungültiges Token → ohne user; Frontend darf dann nicht ins Spiel
+  }
+  next();
+});
 // === Socket.io Events ===
 io.on("connection", (socket) => {
   console.log("Player connected:", socket.id);
@@ -367,21 +522,66 @@ io.on("connection", (socket) => {
       typeof payload === "string"
         ? { name: payload, clientId: null }
         : payload || {};
-    console.log("Player gave a name:", name, "clientId:", clientId);
+    // Bevorzugt die geprüften Werte aus JWT
+    const authName = socket.user?.name || null;
+    const authId = socket.user?.id || null;
+    const finalName = (authName || name || "").trim();
+    const finalClientId = authId || clientId || null;
+    if (!finalName || !finalClientId) {
+      socket.emit("invalidAction", { msg: "Bitte zuerst anmelden." });
+      return;
+    }
+    console.log("Register:", finalName, "clientId:", finalClientId);
 
     // 1) Rebind: existiert schon ein Spieler mit gleicher clientId (bevorzugt) oder gleichem Namen?
     let existing =
-      (clientId && players.find((p) => p.clientId === clientId)) ||
-      (name && players.find((p) => p.name === name));
+      (finalClientId && players.find((p) => p.clientId === finalClientId)) ||
+      (finalName && players.find((p) => p.name === finalName));
 
     if (existing) {
+      const oldId = existing.id; // ★ bisherige Socket-ID merken
+      // falls Grace-Timer aktiv: abbrechen
+      if (existing.clientId && disconnectTimers.has(existing.clientId)) {
+        clearTimeout(disconnectTimers.get(existing.clientId));
+        disconnectTimers.delete(existing.clientId);
+      }
       // socket.id aktualisieren, evtl. Namen updaten
       existing.id = socket.id;
-      if (name) existing.name = name;
-      if (clientId) existing.clientId = clientId;
+      if (finalName) existing.name = finalName;
+      if (finalClientId) existing.clientId = finalClientId;
       // Seats-Referenz sicherstellen
       if (existing.seatPosition) seats[existing.seatPosition] = existing;
+      // ★ Hand auf neue Socket-ID migrieren
+      if (hands[oldId]) {
+        hands[socket.id] = hands[oldId];
+        delete hands[oldId];
+        // Hand sofort an den Spieler schicken, damit seatSelect NICHT erscheint
+        io.to(socket.id).emit("hand", hands[socket.id]);
+      }
 
+      // ★ Gebotseinträge umziehen (falls in Auktion)
+      if (bids[oldId] != null) {
+        bids[socket.id] = bids[oldId];
+        delete bids[oldId];
+      }
+
+      // ★ Falls er der Biet-Gewinner war: Status aktualisieren
+      if (winnerPlayerId === oldId) {
+        winnerPlayerId = socket.id;
+        // falls Bottom-Cards noch beim Richter liegen, erneut schicken
+        if (bottomCards && bottomCards.length) {
+          io.to(socket.id).emit("showBottomCards", { bottomCards });
+        }
+      }
+
+      // ★ Wenn er gerade am Zug ist, „yourTurn“ erneut senden
+      if (biddingActive && players[currentPlayerIndex]?.id === socket.id) {
+        io.to(socket.id).emit("yourTurn", {
+          currentBid,
+          currentPlayer: players[currentPlayerIndex],
+          mustBid: forceBidPlayerId === socket.id,
+        });
+      }
       socket.emit("stateSync", stateSnapshot());
       socket.emit("roundsHistoryUpdate", { roundsHistory });
       io.emit("playersUpdate", players);
@@ -396,8 +596,8 @@ io.on("connection", (socket) => {
 
     const player = {
       id: socket.id,
-      clientId: clientId || null,
-      name,
+      clientId: finalClientId,
+      name: finalName,
       team: null,
       passed: false,
       seatPosition: null,
@@ -909,22 +1109,39 @@ io.on("connection", (socket) => {
     console.log("Player disconnected:", socket.id);
 
     const leaving = players.find((p) => p.id === socket.id);
-    if (
-      leaving &&
-      leaving.seatPosition &&
-      seats[leaving.seatPosition]?.id === socket.id
-    ) {
-      seats[leaving.seatPosition] = null;
-    }
+    if (!leaving) return;
+    // Sitz NICHT sofort freigeben – Chance für Reconnect!
+    const cid = leaving.clientId || leaving.name; // Fallback
+    if (!cid) return;
+    // Falls schon ein Timer läuft, nicht doppeln
+    if (disconnectTimers.has(cid)) return;
 
-    players = players.filter((p) => p.id !== socket.id);
+    disconnectTimers.set(
+      cid,
+      setTimeout(() => {
+        // nach 15s wirklich entfernen
+        const idx = players.findIndex(
+          (p) => p.clientId === cid || p.name === cid
+        );
+        if (idx !== -1) {
+          const p = players[idx];
+          if (p.seatPosition && seats[p.seatPosition]?.id === p.id) {
+            seats[p.seatPosition] = null; // jetzt Platz freigeben
+          }
+          players.splice(idx, 1);
+        }
+        disconnectTimers.delete(cid);
+        if (players.length < 4) {
+          gamePaused = true;
+          io.emit("gamePaused", { reason: "player_left" });
+        }
+        broadcastSeats();
+        io.emit("playersUpdate", players);
+      }, 15000)
+    ); // 15 Sekunden
 
-    if (players.length < 4) {
-      gamePaused = true;
-      io.emit("gamePaused", { reason: "player_left" });
-    }
-    broadcastSeats();
-    io.emit("playersUpdate", players);
+    // optional: Clients informieren, dass Reconnect-Fenster läuft
+    io.emit("playerMaybeBackSoon", { clientId: cid, timeoutSec: 15 });
   });
 
   socket.on("getRoundsHistory", () => {
@@ -933,6 +1150,20 @@ io.on("connection", (socket) => {
   socket.on("requestState", () => {
     socket.emit("stateSync", stateSnapshot());
     socket.emit("roundsHistoryUpdate", { roundsHistory });
+    // ► Falls der Client das 'hand'-Event verpasst hatte:
+    if (hands[socket.id]) {
+      io.to(socket.id).emit("hand", hands[socket.id]);
+    }
+
+    // ► Safety: wenn er (wieder) am Zug ist, Turn erneut schicken
+    const isHisTurn = players[currentPlayerIndex]?.id === socket.id;
+    if (biddingActive && isHisTurn) {
+      io.to(socket.id).emit("yourTurn", {
+        currentBid,
+        currentPlayer: players[currentPlayerIndex],
+        mustBid: forceBidPlayerId === socket.id,
+      });
+    }
   });
 });
 

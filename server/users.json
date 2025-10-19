@@ -1,0 +1,54 @@
+[
+  {
+    "id": "b664267b-7a67-4d91-8a40-6fece671ea0c",
+    "name": "a",
+    "username": "a",
+    "email": "a@gmail.com",
+    "passwordHash": "$2b$10$5gbYoxIrAczJKCbyiH3nO.3eW3AqHVplom/5L3naEXoNPjdTzF6gq",
+    "phone": null,
+    "avatarUrl": null,
+    "createdAt": "2025-10-19T19:37:30.699Z",
+    "updatedAt": "2025-10-19T19:37:30.699Z",
+    "emailVerified": false,
+    "role": "player"
+  },
+  {
+    "id": "43f1bc52-2459-4f4d-a7c1-11e58ce2b78c",
+    "name": "c",
+    "username": "c",
+    "email": "c@gmail.com",
+    "passwordHash": "$2b$10$GRyPGbsGMV8FpErsMHMlxuILOe1slOzW0SRTehh7GDpsN6BC2fVXW",
+    "phone": null,
+    "avatarUrl": null,
+    "createdAt": "2025-10-19T19:38:49.726Z",
+    "updatedAt": "2025-10-19T19:38:49.726Z",
+    "emailVerified": false,
+    "role": "player"
+  },
+  {
+    "id": "88992f15-f4c0-4aad-8f15-458776d5ea0b",
+    "name": "b",
+    "username": "b",
+    "email": "b@gmail.com",
+    "passwordHash": "$2b$10$mmKTmX5TyMhb/HNeAw/ZEuesYq/Tlfv3Vk8CCqpUU2qSkEkOGzdxa",
+    "phone": null,
+    "avatarUrl": null,
+    "createdAt": "2025-10-19T19:39:14.225Z",
+    "updatedAt": "2025-10-19T19:39:14.225Z",
+    "emailVerified": false,
+    "role": "player"
+  },
+  {
+    "id": "52c6796d-1f89-4a91-9519-3e4a41c40b6a",
+    "name": "d",
+    "username": "d",
+    "email": "d@gmail.com",
+    "passwordHash": "$2b$10$seIp8dFtNPNodV8a4d/S3OY0Pl7By7YkTPc0vSUs.1W.Kzg9u/Ssi",
+    "phone": null,
+    "avatarUrl": null,
+    "createdAt": "2025-10-19T19:39:37.634Z",
+    "updatedAt": "2025-10-19T19:39:37.634Z",
+    "emailVerified": false,
+    "role": "player"
+  }
+]
