@@ -211,6 +211,38 @@ function stateSnapshot() {
   };
 }
 
+function resetGameState() {
+  // Hände/Bottom
+  hands = {};
+  bottomCards = [];
+  bids = {};
+  currentBid = 0;
+  currentPlayerIndex = 0;
+  biddingActive = false;
+  trumpf = null;
+  winnerPlayerId = null;
+  forceBidPlayerId = null;
+  consecutivePasses = 0;
+
+  // Stich-Status
+  currentTrick = [];
+  trickLeader = null;
+  tricksPlayed = 0;
+  trickHistory = [];
+
+  // Punkte/Zähler
+  teamScores = { Fire: 0, Storm: 0 };
+  roundPoints = { Fire: 0, Storm: 0 };
+  roundsHistory = [];
+  roundCounter = 0;
+
+  // Varianten
+  roundVariant = VARIANTS.UNDECIDED;
+  variantPending = false;
+
+  // Seats/Players bleiben bewusst erhalten
+}
+
 // Mindestens 80, oder die (aufgerundete) Hälfte des Maximalgebots
 const DOUBLE_NEGATIVE_MIN = Math.max(80, Math.ceil(MAX_BID / 2));
 
@@ -725,6 +757,22 @@ io.on("connection", (socket) => {
     io.emit("playersUpdate", players);
   });
 
+  // Spiel hart zurücksetzen (Spieler/Seats bleiben)
+  socket.on("resetGame", () => {
+    // Optional: nur der erste Spieler darf resetten
+    // const isFirst = players[0] && players[0].id === socket.id;
+    // if (!isFirst) {
+    //   socket.emit("invalidAction", { msg: "Nur der erste Spieler darf Reset ausführen." });
+    //   return;
+    // }
+
+    resetGameState();
+    // allen sofort den neuen Grundzustand schicken
+    io.emit("gameReset", stateSnapshot());
+    io.emit("roundsHistoryUpdate", { roundsHistory });
+    broadcastSeats(); // falls UI sich darauf verlässt
+  });
+
   socket.on("setVariant", ({ variant }) => {
     // Nur der Startspieler (Richter) darf wählen
     if (socket.id !== winnerPlayerId) return;
@@ -881,9 +929,7 @@ io.on("connection", (socket) => {
       const leadSuit = currentTrick[0].card.slice(-1);
       const hasLead = hands[socket.id].some((c) => c.slice(-1) === leadSuit);
       if (card.slice(-1) !== leadSuit && hasLead) {
-        socket.emit("invalidAction", {
-          msg: "Du musst die angespielte Farbe bedienen!",
-        });
+        // Falsche Farbe gewählt, obwohl bedienbar → Anfrage ignorieren (keine Meldung)
         return;
       }
     }

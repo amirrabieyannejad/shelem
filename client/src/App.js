@@ -831,22 +831,6 @@ function App() {
           roundWinnerTeam ??
           (rp.Fire === rp.Storm ? null : rp.Fire > rp.Storm ? "Fire" : "Storm");
 
-        const lines = [
-          `Runde beendet (${ruleTxt})`,
-          `**Sieger nach Abrechnung:** ${
-            winnerByDelta ? `Team ${winnerByDelta}` : "—"
-          }`,
-          `Rundenpunkte (Stiche): Fire ${rp.Fire} | Storm ${rp.Storm}${
-            winnerByTricks ? `  → Sieger: Team ${winnerByTricks}` : ""
-          }`,
-          `Abrechnung (Δ auf Gesamt): Fire ${sign(delta.Fire)} | Storm ${sign(
-            delta.Storm
-          )}`,
-          `Gesamt danach: Fire ${after.Fire} | Storm ${after.Storm}`,
-        ];
-
-        alert(lines.join("\n"));
-
         // States aktualisieren (danach kann die neue Runde direkt 0:0 senden)
         setScores(after);
         setRoundPointsLive(rp);
@@ -885,6 +869,37 @@ function App() {
         `Spielende! Gewinner: Team ${winner}\nFire: ${teamScores.Fire}, Storm: ${teamScores.Storm}`
       );
     });
+    socket.on("gameReset", (s) => {
+      // Zustand aus dem Snapshot
+      setPlayers(s.players || []);
+      setScores(s.teamScores || { Fire: 0, Storm: 0 });
+      setRoundPointsLive(s.roundPoints || { Fire: 0, Storm: 0 });
+      setCurrentBid(s.currentBid || 0);
+      setTrumpf(s.trumpf || null);
+      setRandomTeams(!!s.randomTeams);
+      setCurrentPlayer(s.currentPlayer || null);
+
+      // WICHTIG: Auktion/“Runde läuft”-Flag zurücksetzen, sonst bleibt die UI ‘aktiv’
+      if (typeof s.biddingActive === "boolean")
+        setBiddingActive(s.biddingActive);
+      else setBiddingActive(false);
+
+      // rein UI-lokale Felder leeren
+      setHand([]);
+      setIsMyTurn(false);
+      setBiddingWinner(null);
+      setDiscardPhase(false);
+      setSelectedDiscard([]);
+      setShowBottom(false);
+      setBottomCards([]);
+      setMustBid(false);
+      setLastTrick(0);
+      setCurrentTrick([]); // falls du diesen State hast
+      setTrumpfSetter(null); // falls vorhanden
+      // sicherheitshalber Variant-Modal schließen
+      setVariantModal({ open: false, options: [] });
+    });
+
     return () => {
       socket.off();
       socket.off("invalidAction", onInvalidAction);
@@ -1427,6 +1442,7 @@ function App() {
                 >
                   Spiel starten
                 </button>
+
                 <div style={{ marginTop: 6, fontSize: 12, color: "#111" }}>
                   Alle sehen diesen Button – jeder darf starten.
                 </div>
@@ -1536,6 +1552,18 @@ function App() {
                     onClick={() => setShowStats(true)}
                   >
                     آمار
+                  </button>
+                  <button
+                    style={{
+                      ...styles.btn,
+                      marginLeft: 8,
+                      background: "#fca5a5",
+                      fontWeight: 900,
+                    }}
+                    onClick={() => socket.emit("resetGame")}
+                    title="Spiel komplett zurücksetzen (ohne Spieler zu entfernen)"
+                  >
+                    Reset
                   </button>
                 </div>
               </div>
