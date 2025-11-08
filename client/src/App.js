@@ -1132,7 +1132,7 @@ function App() {
               }}
               title="Pass"
             >
-              Pass
+              پاس
             </div>
           ) : p.lastBid ? (
             <div
@@ -2091,8 +2091,9 @@ function App() {
                 gap: 0,
                 flexWrap: "wrap",
                 alignItems: "flex-end",
-                paddingBottom: 8,
+                paddingBottom: "8px 16px",
                 justifyContent: "center",
+                overflow: "visible",
               }}
             >
               {hand.map((card, idx) => {
@@ -2143,8 +2144,9 @@ function App() {
                       padding: 0,
                       background: "transparent",
                       border: "none",
-                      marginLeft: idx ? "-14px" : "0px",
-                      zIndex: isSelected ? 100 + idx : idx,
+                      overflow: "visible",
+                      marginLeft: idx ? "-12px" : "0px",
+                      zIndex: isSelected ? 1000 + idx : idx,
                       cursor: disabled ? "not-allowed" : "pointer",
                       // für kleine Overlap-Optik kann man hier z.B. marginLeft: -12 setzen,
                       // wir lassen es neutral
@@ -2154,21 +2156,19 @@ function App() {
                       style={{
                         // der Wrapper bewegt die Karte nach oben, wenn ausgewählt
                         transform: showSelected
-                          ? "translateY(-10px)"
+                          ? "translateY(-8px)"
                           : "translateY(0px)",
                         transition: "transform 140ms ease",
-                        // optische Auswahl-Markierung
-                        outline: showSelected ? "3px solid #ef4444" : "none",
-                        // leichter „Hover“ (nur wenn klickbar)
+                        // keine rote Outline mehr
                         filter: !disabled ? "brightness(1)" : "grayscale(0.2)",
                       }}
                     >
                       <SpriteCard
                         code={card}
                         size="sm"
-                        // extra Schlagschatten je nach Status
                         style={{
-                          boxShadow: isSelected
+                          // dezenter Auswahl-Effekt nur über Schatten
+                          boxShadow: showSelected
                             ? "0 12px 24px rgba(0,0,0,.35)"
                             : "0 6px 14px rgba(0,0,0,.25)",
                         }}
