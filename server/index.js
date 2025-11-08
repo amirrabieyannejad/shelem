@@ -1,4 +1,5 @@
 // backend/server.js
+
 const { Server } = require("socket.io");
 const http = require("http");
 const express = require("express");
@@ -18,8 +19,8 @@ app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 const upload = multer({ dest: path.join(__dirname, "uploads") });
 
 const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: "*" } });
-
+const allowed = process.env.CORS_ORIGIN?.split(",") ?? ["*"];
+const io = new Server(server, { cors: { origin: allowed } });
 // --- Simple user store (dev) ---
 const USERS_FILE = path.join(__dirname, "users.json");
 function loadUsers() {
@@ -1214,7 +1215,7 @@ io.on("connection", (socket) => {
 });
 
 // === Server Start ===
-const PORT = 3001;
+const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {
   console.log(`Server läuft auf Port ${PORT}`);
 });
