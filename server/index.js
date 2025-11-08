@@ -13,13 +13,13 @@ const { randomUUID } = require("crypto");
 
 // --- Express  HTTP  IO ---
 const app = express();
-app.use(cors({ origin: "*" }));
 app.use(express.json({ limit: "2mb" }));
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 const upload = multer({ dest: path.join(__dirname, "uploads") });
 
 const server = http.createServer(app);
 const allowed = process.env.CORS_ORIGIN?.split(",") ?? ["*"];
+app.use(cors({ origin: allowed })); 
 const io = new Server(server, { cors: { origin: allowed } });
 // --- Simple user store (dev) ---
 const USERS_FILE = path.join(__dirname, "users.json");

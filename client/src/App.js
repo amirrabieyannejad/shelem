@@ -740,6 +740,7 @@ function App() {
 
     socket.on("discardDone", () => {
       setDiscardPhase(false);
+      setSelectedDiscard([]);
       setHand((h) => sortHand(h));
     });
 
@@ -1903,6 +1904,7 @@ function App() {
                 const isSelected = selectedDiscard.includes(card);
                 const canSelectMore = selectedDiscard.length < 4;
                 const inDiscard = discardPhase;
+                const showSelected = inDiscard && isSelected;
 
                 // Click-Verhalten:
                 // - in DiscardPhase: toggleDiscard
@@ -1955,13 +1957,12 @@ function App() {
                     <div
                       style={{
                         // der Wrapper bewegt die Karte nach oben, wenn ausgewählt
-                        transform: isSelected
+                        transform: showSelected
                           ? "translateY(-10px)"
                           : "translateY(0px)",
                         transition: "transform 140ms ease",
                         // optische Auswahl-Markierung
-                        outline: isSelected ? "3px solid #ef4444" : "none",
-                        borderRadius: 12,
+                        outline: showSelected ? "3px solid #ef4444" : "none",
                         // leichter „Hover“ (nur wenn klickbar)
                         filter: !disabled ? "brightness(1)" : "grayscale(0.2)",
                       }}
