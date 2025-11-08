@@ -1,5 +1,10 @@
 // backend/server.js
-
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker
+    .getRegistrations()
+    .then((regs) => regs.forEach((r) => r.unregister()))
+    .catch(() => {});
+}
 const { Server } = require("socket.io");
 const http = require("http");
 const express = require("express");
@@ -19,7 +24,7 @@ const upload = multer({ dest: path.join(__dirname, "uploads") });
 
 const server = http.createServer(app);
 const allowed = process.env.CORS_ORIGIN?.split(",") ?? ["*"];
-app.use(cors({ origin: allowed })); 
+app.use(cors({ origin: allowed }));
 const io = new Server(server, { cors: { origin: allowed } });
 // --- Simple user store (dev) ---
 const USERS_FILE = path.join(__dirname, "users.json");

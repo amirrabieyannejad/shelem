@@ -4,7 +4,7 @@ import { io } from "socket.io-client";
 const API_BASE =
   process.env.REACT_APP_BACKEND_URL ||
   `http://${window.location.hostname}:3001`;
-const socket = io(API_BASE);
+const socket = io(API_BASE, { autoConnect: false });
 
 // simple, crisp crown
 const CrownIcon = ({ size = 40 }) => (
@@ -914,7 +914,19 @@ function App() {
   useEffect(() => {
     if (auth?.token) {
       socket.auth = { token: auth.token };
+      // (Re)connect falls nötig
       if (!socket.connected) socket.connect();
+
+      // ⇨ WICHTIG: immer registrieren (auch wenn connect-Event verpasst wurde)
+      try {
+        const profRaw = localStorage.getItem("shelem_profile");
+        const prof = profRaw ? JSON.parse(profRaw) : null;
+        if (prof?.id && prof?.name) {
+          socket.emit("register", { clientId: prof.id, name: prof.name });
+          socket.emit("getRoundsHistory");
+          socket.emit("requestState");
+        }
+      } catch {}
     }
   }, [auth?.token]);
   useEffect(() => {
@@ -1318,11 +1330,12 @@ function App() {
 
         const seatsAllEmpty =
           !seatMap[1] && !seatMap[2] && !seatMap[3] && !seatMap[4];
-
-        const SEAT_TEAMS = { 1: "Fire", 2: "Storm", 3: "Fire", 4: "Storm" };
+        // erster Spieler in der Liste?
+        const isFirstPlayer = players[0]?.id === me?.id;
+        const SEAT_TEAMS = { 1: "آتش", 2: "طوفان", 3: "آتش", 4: "طوفان" };
         const seatLabel = (i) =>
-          `(${i}) Team ${SEAT_TEAMS[i]}${
-            SEAT_TEAMS[i] === "Fire" ? " (rot)" : ""
+          `(${i}) تیم ${SEAT_TEAMS[i]}${
+            SEAT_TEAMS[i] === "Fire" ? " قرمز" : ""
           }`;
 
         const seatStyle = (i) => ({
@@ -1331,7 +1344,7 @@ function App() {
           borderRadius: 12,
           padding: 12,
           border: "2px solid #e5e7eb",
-          background: SEAT_TEAMS[i] === "Fire" ? "#ffe4e6" : "#eff6ff",
+          background: SEAT_TEAMS[i] === "آتش" ? "#ffe4e6" : "#eff6ff",
         });
 
         const seatButtonStyle = (disabled) => ({
@@ -1344,7 +1357,7 @@ function App() {
 
         return (
           <div style={styles.card}>
-            <h3 style={{ margin: 0 }}>Sitzplätze wählen</h3>
+            <h3 style={{ margin: 0 }}>انتخاب تیم</h3>
 
             {/* Random nur für ersten Spieler und nur wenn alle Plätze leer */}
             {isFirstPlayer && seatsAllEmpty && (
@@ -1354,7 +1367,7 @@ function App() {
                   onClick={() => socket.emit("chooseTeam", "Random")}
                   title="Zufällig und balanciert auf freie Plätze verteilen"
                 >
-                  Random Teams
+                  انتخاب تیم تصادفی
                 </button>
               </div>
             )}
@@ -1390,7 +1403,7 @@ function App() {
                         fontWeight: 800,
                       }}
                     >
-                      {occupant ? occupant.name : "— frei —"}
+                      {occupant ? occupant.name : "— آزاد —"}
                     </div>
 
                     <div style={{ marginTop: 8, display: "flex", gap: 8 }}>
@@ -1402,14 +1415,14 @@ function App() {
                         title={
                           occupiedByOther
                             ? "Platz ist belegt."
-                            : "Hier sitzen / wechseln"
+                            : "اینجا بنشین / تغییر مکان"
                         }
                       >
                         {occupiedByOther
                           ? "Belegt"
                           : mine
-                          ? "Hier bleiben"
-                          : "Hier sitzen"}
+                          ? "اینجا نشسته ام"
+                          : "اینجا بنشین"}
                       </button>
 
                       {/* Zusatz: nur wenn du hier sitzt → Platz freigeben */}
@@ -1423,7 +1436,7 @@ function App() {
                           onClick={() => socket.emit("leaveSeat")}
                           title="Diesen Platz freigeben"
                         >
-                          Platz freigeben
+                          آزاد کردن مکان
                         </button>
                       )}
                     </div>
@@ -1443,7 +1456,7 @@ function App() {
                   onClick={() => socket.emit("startGame")}
                   title="Spiel starten"
                 >
-                  Spiel starten
+                  شروع بازی
                 </button>
 
                 <div style={{ marginTop: 6, fontSize: 12, color: "#111" }}>
@@ -1500,7 +1513,7 @@ function App() {
                       setShowBottom(false);
                     }}
                   >
-                    Übernehmen
+                    برگ های زمین را دیدم!
                   </button>
                 </div>
               </div>
@@ -1519,10 +1532,10 @@ function App() {
                     style={{ display: "flex", flexDirection: "column", gap: 6 }}
                   >
                     <span style={styles.hudPill}>
-                      Gesamt Fire: {scores.Fire}
+                      امتیاز کل تیم آتش: {scores.Fire}
                     </span>
                     <span style={styles.hudPill}>
-                      Runde Fire: {roundPointsLive.Fire}
+                      امتیاز دست تیم آتش: {roundPointsLive.Fire}
                     </span>
                   </div>
                 </div>
@@ -1537,10 +1550,10 @@ function App() {
                     }}
                   >
                     <span style={styles.hudPill}>
-                      Gesamt Storm: {scores.Storm}
+                      امتیاز کل تیم طوفان: {scores.Storm}
                     </span>
                     <span style={styles.hudPill}>
-                      Runde Storm: {roundPointsLive.Storm}
+                      امتیاز دست تیم طوفان: {roundPointsLive.Storm}
                     </span>
                   </div>
                 </div>
@@ -1566,7 +1579,7 @@ function App() {
                     onClick={() => socket.emit("resetGame")}
                     title="Spiel komplett zurücksetzen (ohne Spieler zu entfernen)"
                   >
-                    Reset
+                    شروع بازی جدید
                   </button>
                 </div>
               </div>
@@ -1646,7 +1659,7 @@ function App() {
                               fontSize: 12,
                             }}
                           >
-                            Warte auf Karten…
+                            در انتظار کارت ها
                           </div>
                         )}
                       </>
@@ -1767,7 +1780,7 @@ function App() {
                       socket.emit("setVariant", { variant: "NORMAL" })
                     }
                   >
-                    Normal
+                    معمولی
                   </button>
                   <button
                     style={{
@@ -1779,7 +1792,7 @@ function App() {
                       socket.emit("setVariant", { variant: "FLIP" })
                     }
                   >
-                    Flip
+                    نرس
                   </button>
                 </div>
               </div>
@@ -2008,7 +2021,7 @@ function App() {
                     style={styles.btn}
                     onClick={() => setShowStats(false)}
                   >
-                    Schließen
+                    بستن
                   </button>
                 </div>
 
