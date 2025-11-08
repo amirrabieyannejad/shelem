@@ -1,6 +1,10 @@
 import React, { useEffect, useState, useRef } from "react";
 import { io } from "socket.io-client";
-const socket = io(import.meta.env.REACT_APP_BACKEND_URL);
+// CRA liest nur process.env.REACT_APP_*
+const API_BASE =
+  process.env.REACT_APP_BACKEND_URL ||
+  `http://${window.location.hostname}:3001`;
+const socket = io(API_BASE);
 
 // simple, crisp crown
 const CrownIcon = ({ size = 40 }) => (
@@ -379,7 +383,8 @@ function AuthGate({ onAuthed }) {
     phone: "",
     avatarUrl: "",
   });
-  const host = `http://${window.location.hostname}:3001`;
+  // Gleiche Basis wie oben, damit Login/Register in Dev & Prod funktioniert
+  const host = API_BASE;
 
   const saveAuth = ({ token, profile }) => {
     localStorage.setItem("shelem_token", token);
