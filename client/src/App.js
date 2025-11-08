@@ -550,6 +550,10 @@ function App() {
   const nextTrickFresh = useRef(false);
   const [paused, setPaused] = useState(false);
   const [biddingActive, setBiddingActive] = useState(false);
+  const [serverFlags, setServerFlags] = useState({
+    tricksPlayed: 0,
+    winnerId: null,
+  });
 
   // --- Auth State ---
   const [auth, setAuth] = useState({
@@ -864,6 +868,12 @@ function App() {
       if (s?.roundVariant) setRoundVariant(s.roundVariant); // <— vom Server übernehmen
       if (typeof s?.biddingActive === "boolean")
         setBiddingActive(s.biddingActive);
+      if (typeof s?.tricksPlayed === "number" || "winnerPlayerId" in s) {
+        setServerFlags({
+          tricksPlayed: s?.tricksPlayed || 0,
+          winnerId: s?.winnerPlayerId || null,
+        });
+      }
     });
 
     socket.on("gameOver", ({ winner, teamScores }) => {
@@ -1316,7 +1326,9 @@ function App() {
   }
   // === Sitzplatzauswahl vorbereiten ===
   // sichtbar bis das Spiel wirklich startet (keine Hand, keine Auktion, keine Discard-Phase)
-  const roundNotStarted = !biddingActive && !discardPhase && !hand.length;
+  const roundActiveServer =
+    biddingActive || serverFlags.tricksPlayed > 0 || !!serverFlags.winnerId;
+  const roundNotStarted = !discardPhase && !hand.length && !roundActiveServer;
 
   const seatSelect = roundNotStarted
     ? (() => {

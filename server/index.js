@@ -623,6 +623,7 @@ io.on("connection", (socket) => {
       socket.emit("stateSync", stateSnapshot());
       socket.emit("roundsHistoryUpdate", { roundsHistory });
       io.emit("playersUpdate", players);
+      maybeResumeGame();
       return;
     }
 
@@ -645,6 +646,7 @@ io.on("connection", (socket) => {
     socket.emit("stateSync", stateSnapshot());
     socket.emit("roundsHistoryUpdate", { roundsHistory });
     io.emit("playersUpdate", players);
+    maybeResumeGame();
   });
   socket.on("chooseSeat", ({ seat }) => {
     const player = players.find((p) => p.id === socket.id);
@@ -1195,6 +1197,13 @@ io.on("connection", (socket) => {
     // optional: Clients informieren, dass Reconnect-Fenster läuft
     io.emit("playerMaybeBackSoon", { clientId: cid, timeoutSec: 15 });
   });
+
+  function maybeResumeGame() {
+    if (players.length === 4 && gamePaused) {
+      gamePaused = false;
+      io.emit("gameResumed");
+    }
+  }
 
   socket.on("getRoundsHistory", () => {
     socket.emit("roundsHistoryUpdate", { roundsHistory });
