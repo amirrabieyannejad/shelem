@@ -1,10 +1,3 @@
-// backend/server.js
-if ("serviceWorker" in navigator) {
-  navigator.serviceWorker
-    .getRegistrations()
-    .then((regs) => regs.forEach((r) => r.unregister()))
-    .catch(() => {});
-}
 const { Server } = require("socket.io");
 const http = require("http");
 const express = require("express");
@@ -170,6 +163,8 @@ let trickLeader = null; // Spieler, der die Farbe vorgibt
 let tricksPlayed = 0;
 let teamScores = { Fire: 0, Storm: 0 };
 let roundPoints = { Fire: 0, Storm: 0 };
+let roundBottomCards = [];
+let roundDiscarded = [];
 let MAX_BID = 165;
 //let MAX_POINTS = 1165;
 let MAX_POINTS = 300;
@@ -388,6 +383,8 @@ function deal() {
   hands = {};
 
   bottomCards = deck.slice(48); // letzte 4 Karten als "Bottom Cards"
+  roundBottomCards = bottomCards.slice();
+  roundDiscarded = [];
 
   players.forEach((p, idx) => {
     hands[p.id] = sortCards(deck.slice(idx * 12, idx * 12 + 12));
@@ -511,7 +508,10 @@ function compareCards(cardA, cardB, leadSuit, trumpSuit, isFlip = false) {
 
 function startNewRound() {
   // Reset
-  players.forEach((p) => (p.passed = false));
+  players.forEach((p) => {
+    p.passed = false;
+    p.lastBid = null;
+  });
   consecutivePasses = 0;
   forceBidPlayerId = null;
   bids = {};
@@ -586,6 +586,7 @@ io.on("connection", (socket) => {
       // socket.id aktualisieren, evtl. Namen updaten
       existing.id = socket.id;
       if (finalName) existing.name = finalName;
+      if (socket.user?.username) existing.username = socket.user.username;
       if (finalClientId) existing.clientId = finalClientId;
       // Seats-Referenz sicherstellen
       if (existing.seatPosition) seats[existing.seatPosition] = existing;
@@ -637,8 +638,10 @@ io.on("connection", (socket) => {
       id: socket.id,
       clientId: finalClientId,
       name: finalName,
+      username: socket.user?.username || null,
       team: null,
       passed: false,
+      lastBid: null,
       seatPosition: null,
     };
     players.push(player);
@@ -749,7 +752,10 @@ io.on("connection", (socket) => {
     }
 
     assignSeats(); // Sitzreihenfolge aus 1..4
-    players.forEach((p) => (p.passed = false));
+    players.forEach((p) => {
+      p.passed = false;
+      p.lastBid = null;
+    });
     consecutivePasses = 0;
     forceBidPlayerId = null;
     bids = {};
@@ -850,10 +856,12 @@ io.on("connection", (socket) => {
 
     if (bid === 0) {
       player.passed = true;
+      player.lastBid = null;
       consecutivePasses++;
     } else {
       currentBid = bid;
       bids[player.id] = bid;
+      player.lastBid = bid;
       consecutivePasses = 0;
       forceBidPlayerId = null;
       // ✅ Sofortiger Zuschlag bei Maximalgebot
@@ -906,6 +914,7 @@ io.on("connection", (socket) => {
     hands[socket.id] = sortCards(
       hands[socket.id].filter((c) => !selected.includes(c))
     );
+    roundDiscarded = selected.slice();
     io.to(socket.id).emit("hand", hands[socket.id]);
 
     // NEU: Discard-Phase ist vorbei
@@ -1103,14 +1112,19 @@ io.on("connection", (socket) => {
     roundCounter += 1;
     const roundEntry = {
       round: roundCounter,
+      bidderName: biddingWinner?.name || null,
+      bidderTeam: biddingWinner?.team || null,
+      bid: Number(currentBid || 0),
+      trumpf: trumpf || null,
       bid,
       bidderId: winnerPlayerId,
       bidderName: bidder.name || "",
       bidderTeam,
-      trumpf, // letzter bekannter Trumpf dieser Runde
       roundPoints: { ...roundPoints },
       teamScoresAfter: { ...teamScores },
       tricks: trickHistory.map((t) => ({ ...t })),
+      bottomCards: roundBottomCards.slice(),
+      discarded: roundDiscarded.slice(),
       fireTrickCount,
       stormTrickCount,
       ruleApplied, // <-- welche Regel wir angewendet haben
@@ -1131,7 +1145,13 @@ io.on("connection", (socket) => {
       roundPoints,
       teamScores,
       roundWinnerTeam,
+      bidderName: roundEntry.bidderName,
+      bidderTeam: roundEntry.bidderTeam,
+      bid: roundEntry.bid,
+      trumpf: roundEntry.trumpf,
       tricks: trickHistory,
+      bottomCards: roundEntry.bottomCards,
+      discarded: roundEntry.discarded,
       ruleApplied,
       deltaApplied: delta,
       doubleNegativeThreshold: DOUBLE_NEGATIVE_MIN,

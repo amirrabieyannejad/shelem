@@ -543,6 +543,8 @@ function App() {
   const trickTimer = useRef(null);
   const [roundPointsLive, setRoundPointsLive] = useState({ Fire: 0, Storm: 0 });
   const [showStats, setShowStats] = useState(false);
+  const [showRecap, setShowRecap] = useState(false);
+  const [recap, setRecap] = useState(null);
   const [roundsHistory, setRoundsHistory] = useState([]);
   const [expandedRounds, setExpandedRounds] = useState({}); // round -> true/false
   const [myBid, setMyBid] = useState(100);
@@ -620,7 +622,8 @@ function App() {
     }
     const team = me.team ? `Team ${me.team}` : "ohne Team";
     const turn = isMyTurn ? " ⏳" : "";
-    document.title = `${turn} ${me.name} — ${team}`;
+    const label = me.username || me.name;
+    document.title = `${turn} ${label} — ${team}`;
   }
   function setThemeColor(team) {
     const meta =
@@ -801,6 +804,13 @@ function App() {
         roundWinnerTeam, // Sieger nach Stichpunkten
         ruleApplied, // "doublePositive" | "doubleNegative" | "normal"
         deltaApplied, // { Fire: +/-X, Storm: +/-Y }  <-- NEU nutzen!
+        tricks,
+        bottomCards,
+        discarded,
+        bidderName,
+        bidderTeam,
+        bid,
+        trumpf,
       }) => {
         // Sicher kopieren, damit spätere Updates (neue Runde) die Anzeige nicht beeinflussen
         const rp = {
@@ -850,6 +860,27 @@ function App() {
         setIsMyTurn(false);
         setMustBid(false);
         setRoundVariant(VARIANTS.UNDECIDED);
+        // Nur fertige Runden-Ansicht (Stiche, Boden, Abwurf)
+
+        setRecap({
+          tricks: tricks || [],
+          bottomCards: bottomCards || [],
+          discarded: discarded || [],
+          bidderName: bidderName || "-",
+          bidderTeam: bidderTeam || "?",
+          bid: Number(bid || 0),
+          trumpf: trumpf || null,
+          ruleApplied: ruleApplied || "normal",
+          roundPoints: {
+            Fire: roundPoints?.Fire ?? 0,
+            Storm: roundPoints?.Storm ?? 0,
+          },
+          teamScoresAfter: {
+            Fire: teamScores?.Fire ?? 0,
+            Storm: teamScores?.Storm ?? 0,
+          },
+        });
+        setShowRecap(true);
       }
     );
 
@@ -868,7 +899,7 @@ function App() {
       if (s?.roundVariant) setRoundVariant(s.roundVariant); // <— vom Server übernehmen
       if (typeof s?.biddingActive === "boolean")
         setBiddingActive(s.biddingActive);
-      if (typeof s?.tricksPlayed === "number" || "winnerPlayerId" in s) {
+      if (typeof s?.tricksPlayed === "number" || s?.winnerPlayerId != null) {
         setServerFlags({
           tricksPlayed: s?.tricksPlayed || 0,
           winnerId: s?.winnerPlayerId || null,
@@ -1077,11 +1108,51 @@ function App() {
 
         {/* Name + (Du) */}
         <div style={{ fontWeight: 900, fontSize: 12 }}>
-          {p.name} {youLabel ? "(Du)" : ""}
+          {p.username || p.name} {youLabel ? "(Du)" : ""}
         </div>
+        {p.username && p.name && p.username !== p.name && (
+          <div style={{ fontSize: 11, opacity: 0.85 }}>{p.name}</div>
+        )}
 
-        {/* Pass-Hinweis */}
-        {p.passed && <div style={{ fontSize: 12 }}>(Pass)</div>}
+        {/* Bietindikatoren nur während Auktion */}
+        {biddingActive &&
+          (p.passed ? (
+            <div
+              style={{
+                position: "absolute",
+                top: "-10px",
+                right: "-10px",
+                background: "#ef4444",
+                color: "#fff",
+                fontWeight: 900,
+                fontSize: 11,
+                padding: "2px 6px",
+                borderRadius: 8,
+                boxShadow: "0 2px 6px rgba(0,0,0,.25)",
+              }}
+              title="Pass"
+            >
+              Pass
+            </div>
+          ) : p.lastBid ? (
+            <div
+              style={{
+                position: "absolute",
+                top: "-10px",
+                right: "-10px",
+                background: "#22c55e",
+                color: "#052e12",
+                fontWeight: 900,
+                fontSize: 11,
+                padding: "2px 6px",
+                borderRadius: 8,
+                boxShadow: "0 2px 6px rgba(0,0,0,.25)",
+              }}
+              title="Letztes Gebot"
+            >
+              {p.lastBid}
+            </div>
+          ) : null)}
       </div>
     );
   };
@@ -1345,11 +1416,7 @@ function App() {
         // erster Spieler in der Liste?
         const isFirstPlayer = players[0]?.id === me?.id;
         const SEAT_TEAMS = { 1: "آتش", 2: "طوفان", 3: "آتش", 4: "طوفان" };
-        const seatLabel = (i) =>
-          `(${i}) تیم ${SEAT_TEAMS[i]}${
-            SEAT_TEAMS[i] === "Fire" ? " قرمز" : ""
-          }`;
-
+        const seatLabel = (i) => `(${i}) تیم ${SEAT_TEAMS[i]}`;
         const seatStyle = (i) => ({
           flex: "1 1 220px",
           minWidth: 220,
@@ -1525,7 +1592,112 @@ function App() {
                       setShowBottom(false);
                     }}
                   >
-                    برگ های زمین را دیدم!
+                    برگ های زمین را دیدم
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+          {/* Recap der beendeten Runde */}
+          {showRecap && recap && (
+            <div style={styles.modalBackdrop}>
+              <div
+                style={{
+                  ...styles.modal,
+                  width: 820,
+                  maxWidth: "95vw",
+                  maxHeight: "85vh",
+                  overflow: "auto",
+                }}
+              >
+                <h3 style={{ margin: 0, fontWeight: 800, textAlign: "center" }}>
+                  Runden-Recap
+                </h3>
+                {/* META wie in Statistik */}
+                <div style={{ marginTop: 10 }}>
+                  <div style={{ fontWeight: 800 }}>
+                    {`Runde ${roundsHistory.length} `}
+                    {recap.trumpf ? `· Trumpf: ${recap.trumpf}` : ""}
+                  </div>
+
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: 10,
+                      flexWrap: "wrap",
+                      alignItems: "center",
+                      marginTop: 6,
+                    }}
+                  >
+                    <span className="pill" style={styles.pill}>
+                      Bieter: {recap.bidderName} ({recap.bidderTeam})
+                    </span>
+                    <span className="pill" style={styles.pill}>
+                      Gebot: {recap.bid}
+                    </span>
+
+                    <span className="pill" style={styles.pill}>
+                      Runde Fire: {recap.roundPoints.Fire}
+                    </span>
+                    <span className="pill" style={styles.pill}>
+                      Runde Storm: {recap.roundPoints.Storm}
+                    </span>
+
+                    {recap.ruleApplied === "doublePositive" && (
+                      <span className="pill" style={styles.pill}>
+                        Doppel-Positiv (+{recap.bid * 2})
+                      </span>
+                    )}
+                    {recap.ruleApplied === "doubleNegative" && (
+                      <span className="pill" style={styles.pill}>
+                        Doppel-Negativ (−{recap.bid * 2})
+                      </span>
+                    )}
+
+                    <span className="pill" style={styles.pill}>
+                      Gesamt Fire: {recap.teamScoresAfter.Fire}
+                    </span>
+                    <span className="pill" style={styles.pill}>
+                      Gesamt Storm: {recap.teamScoresAfter.Storm}
+                    </span>
+                  </div>
+                </div>
+
+                <div style={{ marginTop: 12 }}>
+                  <div style={{ fontWeight: 800, marginBottom: 6 }}>Boden</div>
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                    {recap.bottomCards.map((c, i) => (
+                      <SpriteCard key={`b-${i}`} code={c} size="sm" />
+                    ))}
+                  </div>
+                </div>
+
+                <div style={{ marginTop: 12 }}>
+                  <div style={{ fontWeight: 800, marginBottom: 6 }}>
+                    Abgeworfen
+                  </div>
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                    {recap.discarded.map((c, i) => (
+                      <SpriteCard key={`d-${i}`} code={c} size="sm" />
+                    ))}
+                  </div>
+                </div>
+
+                <div style={{ marginTop: 16 }}>
+                  <div style={{ fontWeight: 800, marginBottom: 6 }}>Stiche</div>
+                  <div style={{ display: "grid", gap: 8 }}>
+                    {recap.tricks.map((t) => (
+                      <TrickRow key={t.no} t={t} />
+                    ))}
+                  </div>
+                </div>
+
+                <div style={{ textAlign: "right", marginTop: 16 }}>
+                  <button
+                    style={styles.btn}
+                    onClick={() => setShowRecap(false)}
+                  >
+                    Schließen
                   </button>
                 </div>
               </div>
@@ -1591,7 +1763,7 @@ function App() {
                     onClick={() => socket.emit("resetGame")}
                     title="Spiel komplett zurücksetzen (ohne Spieler zu entfernen)"
                   >
-                    شروع بازی جدید
+                    بازی جدید
                   </button>
                 </div>
               </div>
@@ -1743,11 +1915,9 @@ function App() {
                   flexWrap: "wrap",
                 }}
               >
-                <h3 style={{ margin: 0 }}>
-                  Wähle 4 Karten zum Abwerfen (Tippen/Clicken){" "}
-                </h3>
+                <h3 style={{ margin: 0 }}>چهار برگ انتخاب کن </h3>
                 <div style={{ fontWeight: 800 }}>
-                  Ausgewählt: {selectedDiscard.length} / 4
+                  برگ های انتخاب شده: {selectedDiscard.length} / 4
                 </div>
               </div>
               <div style={{ marginTop: 8 }}>
@@ -1760,7 +1930,7 @@ function App() {
                   onClick={confirmDiscard}
                   disabled={selectedDiscard.length !== 4}
                 >
-                  Abwerfen bestätigen
+                  شروع بازی
                 </button>
               </div>
             </div>
@@ -1918,14 +2088,14 @@ function App() {
             <div
               style={{
                 display: "flex",
-                gap: 8,
+                gap: 0,
                 flexWrap: "wrap",
                 alignItems: "flex-end",
                 paddingBottom: 8,
                 justifyContent: "center",
               }}
             >
-              {hand.map((card) => {
+              {hand.map((card, idx) => {
                 const isSelected = selectedDiscard.includes(card);
                 const canSelectMore = selectedDiscard.length < 4;
                 const inDiscard = discardPhase;
@@ -1973,7 +2143,8 @@ function App() {
                       padding: 0,
                       background: "transparent",
                       border: "none",
-                      position: "relative",
+                      marginLeft: idx ? "-14px" : "0px",
+                      zIndex: isSelected ? 100 + idx : idx,
                       cursor: disabled ? "not-allowed" : "pointer",
                       // für kleine Overlap-Optik kann man hier z.B. marginLeft: -12 setzen,
                       // wir lassen es neutral
