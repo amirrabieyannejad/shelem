@@ -1111,29 +1111,32 @@ io.on("connection", (socket) => {
 
     // Chronik-Eintrag
     roundCounter += 1;
+
     const roundEntry = {
       round: roundCounter,
-      bidderName: biddingWinner?.name || null,
-      bidderTeam: biddingWinner?.team || null,
-      bid: Number(currentBid || 0),
+      bidderId: winnerPlayerId || null,
+      bidderName: bidder.name || null,
+      bidderTeam: bidderTeam || null,
+      bid, // kommt von: const bid = bids[winnerPlayerId] || 0;
       trumpf: trumpf || null,
-      bid,
-      bidderId: winnerPlayerId,
-      bidderName: bidder.name || "",
-      bidderTeam,
+
+      // Punkte & Verlauf
       roundPoints: { ...roundPoints },
       teamScoresAfter: { ...teamScores },
       tricks: trickHistory.map((t) => ({ ...t })),
       bottomCards: roundBottomCards.slice(),
       discarded: roundDiscarded.slice(),
+
+      // Zusatzinfos
       fireTrickCount,
       stormTrickCount,
-      ruleApplied, // <-- welche Regel wir angewendet haben
+      ruleApplied,
       doubleNegativeThreshold: DOUBLE_NEGATIVE_MIN,
-      deltaApplied: { ...delta }, // <-- was addiert/abgezogen wurde
+      deltaApplied: { ...delta },
     };
-    roundsHistory.push(roundEntry);
-    // schickt den Sieger mit
+    oundsHistory.push(roundEntry);
+
+    // Sieger nach Stichpunkten
     const roundWinnerTeam =
       roundPoints.Fire === roundPoints.Storm
         ? null
@@ -1150,11 +1153,11 @@ io.on("connection", (socket) => {
       bidderTeam: roundEntry.bidderTeam,
       bid: roundEntry.bid,
       trumpf: roundEntry.trumpf,
-      tricks: trickHistory,
+      tricks: roundEntry.tricks,
       bottomCards: roundEntry.bottomCards,
       discarded: roundEntry.discarded,
       ruleApplied,
-      deltaApplied: delta,
+      deltaApplied: roundEntry.deltaApplied,
       doubleNegativeThreshold: DOUBLE_NEGATIVE_MIN,
     });
     io.emit("roundsHistoryUpdate", { roundsHistory });
