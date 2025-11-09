@@ -7,6 +7,7 @@ const API_BASE = (
     ? "https://shelem.onrender.com"
     : `http://${window.location.hostname}:3001`)
 ).trim();
+const socket = io(API_BASE, { autoConnect: false });
 
 // simple, crisp crown
 const CrownIcon = ({ size = 40 }) => (
@@ -1264,8 +1265,8 @@ function App() {
     "A♥": [6, 4],
   };
 
-  // Dateien liegen in /public/cards_jpg_clean/ mit Namen card_rXX_cYY.jpg
-  const CARD_BASE = "/cards_jpg_clean";
+  // Dateien liegen in /public/cards_png_clean/ mit Namen card_rXX_cYY.png
+  const CARD_BASE = "/cards_png_clean";
 
   function cardPathFor(code) {
     const pos =
