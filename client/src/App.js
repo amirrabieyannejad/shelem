@@ -449,7 +449,7 @@ function AuthGate({ onAuthed }) {
       {mode === "login" ? (
         <div style={{ marginTop: 12, display: "grid", gap: 8 }}>
           <input
-            placeholder="نام مستعار یاآدرس ایمیل"
+            placeholder="نام مستعار یا آدرس ایمیل"
             value={form.usernameOrEmail}
             onChange={(e) =>
               setForm((f) => ({ ...f, usernameOrEmail: e.target.value }))
@@ -1922,8 +1922,8 @@ function App() {
                   flexWrap: "wrap",
                 }}
               >
-                <h3 style={{ margin: 0 }}>چهار برگ انتخاب کن </h3>
-                <div style={{ fontWeight: 800 }}>
+                <h4 style={{ margin: 0 }}>چهار برگ انتخاب کن </h4>
+                <div style={{ fontWeight: 400 }}>
                   برگ های انتخاب شده: {selectedDiscard.length} / 4
                 </div>
               </div>
