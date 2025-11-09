@@ -428,7 +428,7 @@ function AuthGate({ onAuthed }) {
   return (
     <div style={{ ...styles.card, maxWidth: 420, margin: "40px auto" }}>
       <h3 style={{ marginTop: 0, textAlign: "center" }}>
-        {mode === "login" ? "Anmelden" : "Registrieren"}
+        {mode === "login" ? "ورود" : "ثبت نام"}
       </h3>
       <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
         <button
@@ -449,14 +449,14 @@ function AuthGate({ onAuthed }) {
       {mode === "login" ? (
         <div style={{ marginTop: 12, display: "grid", gap: 8 }}>
           <input
-            placeholder="Benutzername oder E-Mail"
+            placeholder="نام مستعار یاآدرس ایمیل"
             value={form.usernameOrEmail}
             onChange={(e) =>
               setForm((f) => ({ ...f, usernameOrEmail: e.target.value }))
             }
           />
           <input
-            placeholder="Passwort"
+            placeholder="رمز عبور"
             type="password"
             value={form.password}
             onChange={(e) =>
@@ -473,24 +473,24 @@ function AuthGate({ onAuthed }) {
       ) : (
         <div style={{ marginTop: 12, display: "grid", gap: 8 }}>
           <input
-            placeholder="Name (Anzeige)"
+            placeholder="نام"
             value={form.name}
             onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
           />
           <input
-            placeholder="Benutzername"
+            placeholder="نام مستعار در بازی"
             value={form.username}
             onChange={(e) =>
               setForm((f) => ({ ...f, username: e.target.value }))
             }
           />
           <input
-            placeholder="E-Mail"
+            placeholder="ایمیل"
             value={form.email}
             onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
           />
           <input
-            placeholder="Passwort (min. 6)"
+            placeholder="رمز عبور (حداقل 6 کاراکتر)"
             type="password"
             value={form.password}
             onChange={(e) =>
@@ -498,12 +498,12 @@ function AuthGate({ onAuthed }) {
             }
           />
           <input
-            placeholder="Telefon (optional)"
+            placeholder="موبایل (اختیاری)"
             value={form.phone}
             onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
           />
           <input
-            placeholder="Avatar URL (optional)"
+            placeholder="آواتار (اختیاری)"
             value={form.avatarUrl}
             onChange={(e) =>
               setForm((f) => ({ ...f, avatarUrl: e.target.value }))
@@ -922,6 +922,15 @@ function App() {
       setTrumpf(s.trumpf || null);
       setRandomTeams(!!s.randomTeams);
       setCurrentPlayer(s.currentPlayer || null);
+
+      //  Variante aus dem Snapshot übernehmen/auf Startwert setzen
+      setRoundVariant(s?.roundVariant || VARIANTS.UNDECIDED);
+
+      // Server-Flags auf Reset-Zustand setzen
+      setServerFlags({
+        tricksPlayed: s?.tricksPlayed || 0,
+        winnerId: s?.winnerPlayerId || null,
+      });
 
       // WICHTIG: Auktion/“Runde läuft”-Flag zurücksetzen, sonst bleibt die UI ‘aktiv’
       if (typeof s.biddingActive === "boolean")
