@@ -552,6 +552,8 @@ function App() {
   const nextTrickFresh = useRef(false);
   const [paused, setPaused] = useState(false);
   const [biddingActive, setBiddingActive] = useState(false);
+  const CARD_RADIUS = 10; // Standard (Hand, Boden etc.)
+  const CARD_RADIUS_PLAYED = 6; // Mitte + Stichliste (etwas eckiger)
   const [serverFlags, setServerFlags] = useState({
     tricksPlayed: 0,
     winnerId: null,
@@ -1347,7 +1349,7 @@ function App() {
       <div style={rowStyle}>
         {/* links: Stich + angespielte Farbe */}
         <div style={leftStyle}>
-          <span>Stich {t.no}</span>
+          <span>{t.no} دست</span>
           <span style={suitBadge}>{leadSuit || "?"}</span>
         </div>
 
@@ -1363,7 +1365,11 @@ function App() {
         >
           {(t.plays || []).map((p, i) => (
             <div key={i} title={`#${i + 1} · ${p.name} (${p.team})`}>
-              <SpriteCard code={p.card} size="xxs" />
+              <SpriteCard
+                code={p.card}
+                size="xxs"
+                radius={CARD_RADIUS_PLAYED}
+              />
             </div>
           ))}
         </div>
@@ -1374,7 +1380,7 @@ function App() {
     );
   }
 
-  function SpriteCard({ code, size = "md", style = {} }) {
+  function SpriteCard({ code, size = "md", style = {}, radius = CARD_RADIUS }) {
     if (!code) return null;
 
     const src = cardPathFor(code);
@@ -1391,23 +1397,21 @@ function App() {
     if (!src) {
       // Fallback, falls ein Code nicht gemappt ist
       return (
-        <div
+        <img
+          src={src}
+          alt={code}
+          draggable="false"
           style={{
             width,
-            aspectRatio: "63 / 88",
-            display: "grid",
-            placeItems: "center",
-            background: "#fff",
-            color: "#000",
-            borderRadius: 10,
+            height: "auto",
+            display: "block",
+            borderRadius: radius,
             border: "1px solid rgba(0,0,0,.15)",
             boxShadow: "0 4px 10px rgba(0,0,0,.25)",
-            fontWeight: 700,
+            userSelect: "none",
             ...style,
           }}
-        >
-          {code}
-        </div>
+        />
       );
     }
 
@@ -1649,7 +1653,7 @@ function App() {
                     style={styles.btn}
                     onClick={() => setShowRecap(false)}
                   >
-                    Schließen
+                    بستن
                   </button>
                 </div>
                 <h3 style={{ margin: 0, fontWeight: 800, textAlign: "center" }}>
@@ -1797,7 +1801,7 @@ function App() {
                     style={styles.btn}
                     onClick={() => setShowRecap(false)}
                   >
-                    Schließen
+                    بستن
                   </button>
                 </div>
               </div>
@@ -1923,12 +1927,12 @@ function App() {
                                 <SpriteCard
                                   code={t.card}
                                   // Größe direkt setzen → wirklich responsive
+                                  radius={CARD_RADIUS_PLAYED}
                                   style={{
                                     width: `${cardSize.w}px`,
                                     height: "auto",
                                     boxShadow: "0 6px 14px rgba(0,0,0,.25)",
                                     border: "1px solid rgba(0,0,0,.15)",
-                                    borderRadius: 10,
                                   }}
                                 />
                               </div>
