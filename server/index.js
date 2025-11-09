@@ -1134,7 +1134,7 @@ io.on("connection", (socket) => {
       doubleNegativeThreshold: DOUBLE_NEGATIVE_MIN,
       deltaApplied: { ...delta },
     };
-    oundsHistory.push(roundEntry);
+    roundsHistory.push(roundEntry);
 
     // Sieger nach Stichpunkten
     const roundWinnerTeam =
