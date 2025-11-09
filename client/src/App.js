@@ -1694,22 +1694,80 @@ function App() {
                   </div>
                 </div>
 
-                <div style={{ marginTop: 12 }}>
-                  <div style={{ fontWeight: 800, marginBottom: 6 }}>Boden</div>
-                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {/* Boden- und Abwurfkarten klar getrennt mit Titeln links */}
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "120px 1fr",
+                    rowGap: 12,
+                    columnGap: 12,
+                    marginTop: 16,
+                    alignItems: "start",
+                  }}
+                >
+                  {/* Boden-Karten */}
+                  <div
+                    style={{
+                      fontWeight: 900,
+                      fontSize: 15,
+                      color: "#111",
+                      textAlign: "right",
+                      paddingTop: 6,
+                    }}
+                  >
+                    🌿 Boden
+                  </div>
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: 8,
+                      flexWrap: "wrap",
+                      background: "rgba(0,0,0,.05)",
+                      padding: 8,
+                      borderRadius: 10,
+                      minHeight: 70,
+                    }}
+                  >
+                    {recap.bottomCards.length === 0 && (
+                      <div style={{ opacity: 0.5 }}>Keine Karten</div>
+                    )}
                     {recap.bottomCards.map((c, i) => (
-                      <SpriteCard key={`b-${i}`} code={c} size="sm" />
+                      <div key={`b-${i}`} title={`Bodenkarte ${i + 1}`}>
+                        <SpriteCard code={c} size="sm" />
+                      </div>
                     ))}
                   </div>
-                </div>
 
-                <div style={{ marginTop: 12 }}>
-                  <div style={{ fontWeight: 800, marginBottom: 6 }}>
-                    Abgeworfen
+                  {/* Abgeworfene Karten */}
+                  <div
+                    style={{
+                      fontWeight: 900,
+                      fontSize: 15,
+                      color: "#111",
+                      textAlign: "right",
+                      paddingTop: 6,
+                    }}
+                  >
+                    🗑️ Abwurf
                   </div>
-                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: 8,
+                      flexWrap: "wrap",
+                      background: "rgba(0,0,0,.05)",
+                      padding: 8,
+                      borderRadius: 10,
+                      minHeight: 70,
+                    }}
+                  >
+                    {recap.discarded.length === 0 && (
+                      <div style={{ opacity: 0.5 }}>Keine Karten</div>
+                    )}
                     {recap.discarded.map((c, i) => (
-                      <SpriteCard key={`d-${i}`} code={c} size="sm" />
+                      <div key={`d-${i}`} title={`Abwurfkarte ${i + 1}`}>
+                        <SpriteCard code={c} size="sm" />
+                      </div>
                     ))}
                   </div>
                 </div>
