@@ -436,14 +436,14 @@ function AuthGate({ onAuthed }) {
           onClick={() => setMode("login")}
           disabled={mode === "login"}
         >
-          Login
+          ورود
         </button>
         <button
           style={styles.btn}
           onClick={() => setMode("register")}
           disabled={mode === "register"}
         >
-          Register
+          ثبت نام
         </button>
       </div>
       {mode === "login" ? (
@@ -467,7 +467,7 @@ function AuthGate({ onAuthed }) {
             style={{ ...styles.btn, background: "#86efac", fontWeight: 800 }}
             onClick={login}
           >
-            Anmelden
+            ورود
           </button>
         </div>
       ) : (
@@ -513,7 +513,7 @@ function AuthGate({ onAuthed }) {
             style={{ ...styles.btn, background: "#86efac", fontWeight: 800 }}
             onClick={register}
           >
-            Konto erstellen
+            ثبت نام
           </button>
         </div>
       )}

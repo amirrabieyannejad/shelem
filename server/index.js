@@ -523,7 +523,7 @@ function startNewRound() {
   io.emit("playersUpdate", players);
 
   // Startspieler rotiert gegen Uhrzeigersinn
-  currentPlayerIndex = (currentPlayerIndex + 3) % players.length;
+  currentPlayerIndex = (currentPlayerIndex + 1) % players.length;
   biddingActive = true;
 
   deal(); // schickt auch roundPoints=0
@@ -810,7 +810,7 @@ io.on("connection", (socket) => {
 
     // Falls genau 1 Karte liegt (wir hatten pausiert): jetzt weiterspielen lassen
     if (currentTrick.length === 1) {
-      currentPlayerIndex = (currentPlayerIndex + 3) % players.length;
+      currentPlayerIndex = (currentPlayerIndex + 1) % players.length;
       const next = players[currentPlayerIndex];
       io.to(next.id).emit("yourTurn", { currentBid, currentPlayer: next });
       io.emit("turnUpdate", { currentPlayer: next });
@@ -881,7 +881,7 @@ io.on("connection", (socket) => {
 
     // Nächsten Spieler (gegen Uhrzeigersinn) suchen, der noch nicht gepasst hat
     do {
-      currentPlayerIndex = (currentPlayerIndex + 3) % players.length;
+      currentPlayerIndex = (currentPlayerIndex + 1) % players.length;
     } while (players[currentPlayerIndex].passed);
 
     // Falls wir gerade jemanden zum Bieten zwingen müssen, wurde das in maybeEndAuction()
@@ -1045,7 +1045,7 @@ io.on("connection", (socket) => {
         // Solange die Wahl "Normal/Flip" offen ist, NICHT weitergeben
       } else {
         // Nächster Spieler gegen Uhrzeigersinn
-        currentPlayerIndex = (currentPlayerIndex + 3) % players.length;
+        currentPlayerIndex = (currentPlayerIndex + 1) % players.length;
         const next = players[currentPlayerIndex];
         io.to(next.id).emit("yourTurn", { currentBid, currentPlayer: next });
         io.emit("turnUpdate", { currentPlayer: next });
