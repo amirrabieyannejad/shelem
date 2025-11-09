@@ -1794,66 +1794,42 @@ function App() {
                   }}
                 >
                   {(() => {
-                    // Karten werden in der Reihenfolge dargestellt, wie sie im Stich liegen:
-                    // currentTrick[0] = zuerst gespielt, ... [3] = zuletzt gespielt (liegt oben)
-                    const order = currentTrick;
+                    const CARDS_W = 96;
+                    const OVERLAP = 0.33;
+                    const STEP = CARDS_W * (1 - OVERLAP);
 
-                    // Versetzte Slots rund um die Mitte (sehr nah beieinander → Überlappung)
-                    // Du kannst die translate-Werte fein-tunen (z.B. -36%/-18%/12% etc.)
-                    const slots = [
-                      {
-                        top: "50%",
-                        left: "50%",
-                        transform: "translate(-50%, -72%) rotate(-6deg)",
-                      }, // 1. Karte (oben/unten Gefühl)
-                      {
-                        top: "50%",
-                        left: "50%",
-                        transform: "translate(-78%, -50%) rotate(-2deg)",
-                      }, // 2. Karte (links)
-                      {
-                        top: "50%",
-                        left: "50%",
-                        transform: "translate(-50%, -28%) rotate(2deg)",
-                      }, // 3. Karte (unten)
-                      {
-                        top: "50%",
-                        left: "50%",
-                        transform: "translate(-22%, -50%) rotate(6deg)",
-                      }, // 4. Karte (rechts)
-                    ];
+                    const order = currentTrick || [];
+                    const width = CARDS_W + (order.length - 1) * STEP;
 
                     return (
-                      <>
+                      <div
+                        style={{
+                          position: "relative",
+                          width,
+                          height: "140px",
+                          margin: "0 auto",
+                        }}
+                      >
                         {order.map((t, i) => (
-                          <div
+                          <img
                             key={`${t.playerId}-${t.card}-${i}`}
+                            src={cardPathFor(t.card)}
+                            alt={t.card}
+                            draggable={false}
                             style={{
                               position: "absolute",
-                              zIndex: 10 + i, // später gespielt = höher
-                              ...slots[i], // sanfte Überlappung + Mini-Rotation
+                              top: 0,
+                              left: i * STEP,
+                              width: CARDS_W,
+                              height: "auto",
+                              borderRadius: 10,
+                              border: "1px solid rgba(0,0,0,.15)",
+                              boxShadow: "0 4px 10px rgba(0,0,0,.25)",
+                              zIndex: 10 + i,
                             }}
-                            title={`#${i + 1} gespielt`}
-                          >
-                            <SpriteCard code={t.card} />
-                          </div>
+                          />
                         ))}
-
-                        {currentTrick.length === 0 && (
-                          <div
-                            style={{
-                              position: "absolute",
-                              top: "50%",
-                              left: "50%",
-                              transform: "translate(-50%, -50%)",
-                              opacity: 0.6,
-                              fontSize: 12,
-                            }}
-                          >
-                            در انتظار کارت ها
-                          </div>
-                        )}
-                      </>
+                      </div>
                     );
                   })()}
                 </div>
