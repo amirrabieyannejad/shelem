@@ -1,10 +1,12 @@
 import React, { useEffect, useState, useRef } from "react";
 import { io } from "socket.io-client";
 // CRA liest nur process.env.REACT_APP_*
-const API_BASE =
+const API_BASE = (
   process.env.REACT_APP_BACKEND_URL ||
-  `https://${window.location.hostname}:3001`;
-const socket = io(API_BASE, { autoConnect: false });
+  (window.location.hostname.endsWith("vercel.app")
+    ? "https://shelem.onrender.com"
+    : `http://${window.location.hostname}:3001`)
+).trim();
 
 // simple, crisp crown
 const CrownIcon = ({ size = 40 }) => (
@@ -1262,7 +1264,7 @@ function App() {
   };
 
   // Dateien liegen in /public/cards_jpg_clean/ mit Namen card_rXX_cYY.jpg
-  const CARD_BASE = "/cards_png_round";
+  const CARD_BASE = "/cards_jpg_clean";
 
   function cardPathFor(code) {
     const pos =

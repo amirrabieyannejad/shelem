@@ -16,10 +16,9 @@ app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 const upload = multer({ dest: path.join(__dirname, "uploads") });
 
 const server = http.createServer(app);
-const allowed = [
-  "https://shelem-ruby.vercel.app",
-  "https://shelem.onrender.com",
-];
+const allowed = process.env.CORS_ORIGIN
+  ? process.env.CORS_ORIGIN.split(",").map((s) => s.trim())
+  : ["https://shelem-ruby.vercel.app", "https://shelem.onrender.com"];
 app.use(cors({ origin: allowed, credentials: true }));
 const io = new Server(server, { cors: { origin: allowed } });
 // --- Simple user store (dev) ---
