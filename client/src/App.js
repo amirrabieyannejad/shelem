@@ -583,6 +583,9 @@ function App() {
   );
   const canStartRandom = !randomTeams && !anyChosen && isFirstPlayer;
 
+  const anyModalOpen =
+    showStats || showRecap || showBottom || variantModal.open;
+
   // responsive Kartengröße für den Tisch (63:88 Verhältnis)
   const trickAreaRef = useRef(null);
   const [cardSize, setCardSize] = useState({ w: 72, h: 100 });
@@ -1641,6 +1644,14 @@ function App() {
                   overflow: "auto",
                 }}
               >
+                <div style={{ textAlign: "right", marginTop: 16 }}>
+                  <button
+                    style={styles.btn}
+                    onClick={() => setShowRecap(false)}
+                  >
+                    Schließen
+                  </button>
+                </div>
                 <h3 style={{ margin: 0, fontWeight: 800, textAlign: "center" }}>
                   Runden-Recap
                 </h3>
@@ -1661,35 +1672,35 @@ function App() {
                     }}
                   >
                     <span className="pill" style={styles.pill}>
-                      Bieter: {recap.bidderName} ({recap.bidderTeam})
+                      حاکم: {recap.bidderName} ({recap.bidderTeam})
                     </span>
                     <span className="pill" style={styles.pill}>
                       هدف {recap.bid}
                     </span>
 
                     <span className="pill" style={styles.pill}>
-                      Runde Fire: {recap.roundPoints.Fire}
+                      امتیاز این دست آتش: {recap.roundPoints.Fire}
                     </span>
                     <span className="pill" style={styles.pill}>
-                      Runde Storm: {recap.roundPoints.Storm}
+                      امتیاز این دست طوفان: {recap.roundPoints.Storm}
                     </span>
 
                     {recap.ruleApplied === "doublePositive" && (
                       <span className="pill" style={styles.pill}>
-                        Doppel-Positiv (+{recap.bid * 2})
+                        دوبل 🤓 (+{recap.bid * 2})
                       </span>
                     )}
                     {recap.ruleApplied === "doubleNegative" && (
                       <span className="pill" style={styles.pill}>
-                        Doppel-Negativ (−{recap.bid * 2})
+                        دوبل منفی (−{recap.bid * 2})
                       </span>
                     )}
 
                     <span className="pill" style={styles.pill}>
-                      Gesamt Fire: {recap.teamScoresAfter.Fire}
+                      امتیاز کل آتش: {recap.teamScoresAfter.Fire}
                     </span>
                     <span className="pill" style={styles.pill}>
-                      Gesamt Storm: {recap.teamScoresAfter.Storm}
+                      امتیاز کل طوفان: {recap.teamScoresAfter.Storm}
                     </span>
                   </div>
                 </div>
@@ -1711,19 +1722,19 @@ function App() {
                       fontWeight: 900,
                       fontSize: 15,
                       color: "#111",
-                      textAlign: "right",
+                      textAlign: "left",
                       paddingTop: 6,
                     }}
                   >
-                    🌿 Boden
+                    📤 زمین
                   </div>
                   <div
                     style={{
                       display: "flex",
-                      gap: 8,
+                      gap: 0,
                       flexWrap: "wrap",
                       background: "rgba(0,0,0,.05)",
-                      padding: 8,
+                      padding: 4,
                       borderRadius: 10,
                       minHeight: 70,
                     }}
@@ -1744,19 +1755,19 @@ function App() {
                       fontWeight: 900,
                       fontSize: 15,
                       color: "#111",
-                      textAlign: "right",
+                      textAlign: "left",
                       paddingTop: 6,
                     }}
                   >
-                    🗑️ Abwurf
+                    🗑️ خوابانده
                   </div>
                   <div
                     style={{
                       display: "flex",
-                      gap: 8,
+                      gap: 0,
                       flexWrap: "wrap",
                       background: "rgba(0,0,0,.05)",
-                      padding: 8,
+                      padding: 4,
                       borderRadius: 10,
                       minHeight: 70,
                     }}
@@ -2074,7 +2085,7 @@ function App() {
             </div>
           )}
           {/* Bieten */}
-          {isMyTurn && !biddingWinner && (
+          {isMyTurn && !biddingWinner && !anyModalOpen && (
             <div style={styles.modalBackdrop}>
               <div style={styles.modal}>
                 <h3
