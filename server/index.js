@@ -565,6 +565,7 @@ io.on("connection", (socket) => {
     const authId = socket.user?.id || null;
     const finalName = (authName || name || "").trim();
     const finalClientId = authId || clientId || null;
+    console.log("DEBUG register payload:", payload, socket.user);
     if (!finalName || !finalClientId) {
       socket.emit("invalidAction", { msg: "Bitte zuerst anmelden." });
       return;

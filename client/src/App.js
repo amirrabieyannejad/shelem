@@ -962,12 +962,17 @@ function App() {
 
   // Wenn Auth vorhanden → Socket mit Token verbinden
   useEffect(() => {
-    if (auth?.token) {
-      socket.auth = { token: auth.token };
-      // (Re)connect falls nötig
-      if (!socket.connected) socket.connect();
+    if (!auth?.token) return;
 
-      // ⇨ WICHTIG: immer registrieren (auch wenn connect-Event verpasst wurde)
+    // Token zuerst setzen
+    socket.auth = { token: auth.token };
+
+    // sauberen Connect erzwingen
+    socket.disconnect();
+    socket.connect();
+
+    // Registrierung nur, wenn verbunden
+    socket.once("connect", () => {
       try {
         const profRaw = localStorage.getItem("shelem_profile");
         const prof = profRaw ? JSON.parse(profRaw) : null;
@@ -977,8 +982,9 @@ function App() {
           socket.emit("requestState");
         }
       } catch {}
-    }
+    });
   }, [auth?.token]);
+
   useEffect(() => {
     setTabTitle({ me, isMyTurn });
   }, [me]);
