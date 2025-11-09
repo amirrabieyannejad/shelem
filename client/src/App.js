@@ -710,7 +710,7 @@ function App() {
     socket.on("bottomCards", (cards) => console.log("Boden:", cards));
 
     socket.on("yourTurn", (data) => {
-      setBiddingActive(true);
+      if (!biddingWinner) setBiddingActive(true);
       setIsMyTurn(true);
       setCurrentBid(data.currentBid);
       setMustBid(!!data.mustBid);
@@ -721,7 +721,7 @@ function App() {
 
     socket.on("turnUpdate", ({ currentPlayer }) => {
       // falls zu Beginn der Auktion nur turnUpdate kommt
-      setBiddingActive(true);
+      if (!biddingWinner) setBiddingActive(true);
       setCurrentPlayer(currentPlayer);
       setIsMyTurn(!!currentPlayer && currentPlayer.id === socket.id);
     });
@@ -1108,14 +1108,12 @@ function App() {
 
         {/* Name + (Du) */}
         <div style={{ fontWeight: 900, fontSize: 12 }}>
-          {p.username || p.name} {youLabel ? "(Du)" : ""}
+          {p.username || p.name}
         </div>
-        {p.username && p.name && p.username !== p.name && (
-          <div style={{ fontSize: 11, opacity: 0.85 }}>{p.name}</div>
-        )}
 
         {/* Bietindikatoren nur während Auktion */}
         {biddingActive &&
+          !biddingWinner &&
           (p.passed ? (
             <div
               style={{
@@ -1633,7 +1631,7 @@ function App() {
                       Bieter: {recap.bidderName} ({recap.bidderTeam})
                     </span>
                     <span className="pill" style={styles.pill}>
-                      Gebot: {recap.bid}
+                      هدف {recap.bid}
                     </span>
 
                     <span className="pill" style={styles.pill}>
