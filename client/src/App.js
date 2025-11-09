@@ -3,7 +3,7 @@ import { io } from "socket.io-client";
 // CRA liest nur process.env.REACT_APP_*
 const API_BASE =
   process.env.REACT_APP_BACKEND_URL ||
-  `http://${window.location.hostname}:3001`;
+  `https://${window.location.hostname}:3001`;
 const socket = io(API_BASE, { autoConnect: false });
 
 // simple, crisp crown
