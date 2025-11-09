@@ -1158,31 +1158,31 @@ io.on("connection", (socket) => {
     });
     io.emit("roundsHistoryUpdate", { roundsHistory });
 
-biddingActive = true;           // signalisiert „Runde aktiv/Übergang“
-io.emit("stateSync", stateSnapshot());
+    biddingActive = true; // signalisiert „Runde aktiv/Übergang“
+    io.emit("stateSync", stateSnapshot());
     // ► kurze Pause, damit 'trickResult' & Recap sichtbar bleiben
-setTimeout(() => {
-  // Reset erst jetzt – oder direkt in startNewRound/deal kapseln
-  tricksPlayed = 0;
-  roundPoints = { Fire: 0, Storm: 0 };
-  trumpf = null;
-  hands = {};
-  bottomCards = [];
-  bids = {};
-  winnerPlayerId = null;
-  trickHistory = [];
+    setTimeout(() => {
+      // Reset erst jetzt – oder direkt in startNewRound/deal kapseln
+      tricksPlayed = 0;
+      roundPoints = { Fire: 0, Storm: 0 };
+      trumpf = null;
+      hands = {};
+      bottomCards = [];
+      bids = {};
+      winnerPlayerId = null;
+      trickHistory = [];
 
-  // Spielende?
-  if (teamScores.Fire >= MAX_POINTS || teamScores.Storm >= MAX_POINTS) {
-    const winner = teamScores.Fire >= MAX_POINTS ? "Fire" : "Storm";
-    io.emit("gameOver", { winner, teamScores });
-    return;
+      // Spielende?
+      if (teamScores.Fire >= MAX_POINTS || teamScores.Storm >= MAX_POINTS) {
+        const winner = teamScores.Fire >= MAX_POINTS ? "Fire" : "Storm";
+        io.emit("gameOver", { winner, teamScores });
+        return;
+      }
+
+      // Nächste Runde
+      startNewRound();
+    }, 1800); // 2s passt zu Client-Animation
   }
-
-    // Nächste Runde
-    startNewRound();
-  }, 1800); // 2s passt zu Client-Animation
-
   socket.on("disconnect", () => {
     console.log("Player disconnected:", socket.id);
 
