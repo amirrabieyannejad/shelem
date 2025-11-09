@@ -583,6 +583,24 @@ function App() {
   );
   const canStartRandom = !randomTeams && !anyChosen && isFirstPlayer;
 
+  // responsive Kartengröße für den Tisch (63:88 Verhältnis)
+  const trickAreaRef = useRef(null);
+  const [cardSize, setCardSize] = useState({ w: 72, h: 100 });
+
+  useEffect(() => {
+    const el = trickAreaRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(([entry]) => {
+      const { width, height } = entry.contentRect;
+      const base = Math.min(width, height); // an Tisch-Mitte ausrichten
+      const w = Math.round(Math.max(48, Math.min(110, base * 0.22))); // clamp
+      const h = Math.round(w * (88 / 63));
+      setCardSize({ w, h });
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   // Varianten wie am Server
   const VARIANTS = { UNDECIDED: "UNDECIDED", NORMAL: "NORMAL", FLIP: "FLIP" };
 
@@ -1780,7 +1798,6 @@ function App() {
                   </button>
                 </div>
               </div>
-
               {/* Karten-Mitte */}
               <div
                 style={{
@@ -1792,50 +1809,79 @@ function App() {
                 }}
               >
                 <div
-                  style={{
-                    position: "relative",
-                    width: "80%",
-                    height: "70%",
-                    left: "6%",
-                  }}
+                  ref={trickAreaRef}
+                  style={{ position: "relative", width: "80%", height: "70%" }}
                 >
                   {(() => {
-                    const CARDS_W = 96;
-                    const OVERLAP = 0.33;
-                    const STEP = CARDS_W * (1 - OVERLAP);
-
                     const order = currentTrick || [];
-                    const width = CARDS_W + (order.length - 1) * STEP;
+
+                    // Sitz-Index relativ zu dir: 0=unten (du), 1=rechts, 2=oben, 3=links
+                    const id2seat = new Map(
+                      seated.filter(Boolean).map((p, i) => [p.id, i])
+                    );
+
+                    // ~1/3 Überlappung: Versatz pro Sitz (keine Rotation)
+                    const O = 0.33;
+                    const slots = [
+                      { dx: 0, dy: cardSize.h * O }, // unten (du)
+                      { dx: cardSize.w * O, dy: 0 }, // rechts
+                      { dx: 0, dy: -cardSize.h * O }, // oben
+                      { dx: -cardSize.w * O, dy: 0 }, // links
+                    ];
 
                     return (
-                      <div
-                        style={{
-                          position: "relative",
-                          width,
-                          height: "140px",
-                          margin: "0 auto",
-                        }}
-                      >
-                        {order.map((t, i) => (
-                          <img
-                            key={`${t.playerId}-${t.card}-${i}`}
-                            src={cardPathFor(t.card)}
-                            alt={t.card}
-                            draggable={false}
+                      <>
+                        {order.map((t, i) => {
+                          const seat = id2seat.get(t.playerId) ?? 0;
+                          const { dx, dy } = slots[seat];
+                          return (
+                            <div
+                              key={`${t.playerId}-${t.card}-${i}`}
+                              style={{
+                                position: "absolute",
+                                left: "50%",
+                                top: "50%",
+                                transform: "translate(-50%, -50%)",
+                                zIndex: 100 + i, // später gespielt liegt OBEN
+                              }}
+                              title={`#${i + 1} gespielt`}
+                            >
+                              <div
+                                style={{
+                                  transform: `translate(${dx}px, ${dy}px)`,
+                                }}
+                              >
+                                <SpriteCard
+                                  code={t.card}
+                                  // Größe direkt setzen → wirklich responsive
+                                  style={{
+                                    width: `${cardSize.w}px`,
+                                    height: "auto",
+                                    boxShadow: "0 6px 14px rgba(0,0,0,.25)",
+                                    border: "1px solid rgba(0,0,0,.15)",
+                                    borderRadius: 10,
+                                  }}
+                                />
+                              </div>
+                            </div>
+                          );
+                        })}
+
+                        {currentTrick.length === 0 && (
+                          <div
                             style={{
                               position: "absolute",
-                              top: 0,
-                              left: i * STEP,
-                              width: CARDS_W,
-                              height: "auto",
-                              borderRadius: 10,
-                              border: "1px solid rgba(0,0,0,.15)",
-                              boxShadow: "0 4px 10px rgba(0,0,0,.25)",
-                              zIndex: 10 + i,
+                              top: "50%",
+                              left: "50%",
+                              transform: "translate(-50%, -50%)",
+                              opacity: 0.6,
+                              fontSize: 12,
                             }}
-                          />
-                        ))}
-                      </div>
+                          >
+                            در انتظار کارت ها
+                          </div>
+                        )}
+                      </>
                     );
                   })()}
                 </div>
