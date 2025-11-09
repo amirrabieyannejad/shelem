@@ -546,6 +546,14 @@ function App() {
   const [roundPointsLive, setRoundPointsLive] = useState({ Fire: 0, Storm: 0 });
   const [showStats, setShowStats] = useState(false);
   const [showRecap, setShowRecap] = useState(false);
+  const [variantModal, setVariantModal] = useState({
+    open: false,
+    trigger: null,
+    options: [],
+  });
+
+  const anyModalOpen =
+    showStats || showRecap || showBottom || variantModal.open;
   const [recap, setRecap] = useState(null);
   const [roundsHistory, setRoundsHistory] = useState([]);
   const [expandedRounds, setExpandedRounds] = useState({}); // round -> true/false
@@ -587,9 +595,6 @@ function App() {
   );
   const canStartRandom = !randomTeams && !anyChosen && isFirstPlayer;
 
-  const anyModalOpen =
-    showStats || showRecap || showBottom || variantModal.open;
-
   // responsive Kartengröße für den Tisch (63:88 Verhältnis)
   const trickAreaRef = useRef(null);
   const [cardSize, setCardSize] = useState({ w: 72, h: 100 });
@@ -613,10 +618,6 @@ function App() {
 
   const [roundVariant, setRoundVariant] = useState(VARIANTS.UNDECIDED);
 
-  const [variantModal, setVariantModal] = useState({
-    open: false,
-    options: [],
-  });
   const judgeId =
     (trumpfSetter && trumpfSetter.id) ||
     (biddingWinner && biddingWinner.winner && biddingWinner.winner.id) ||
