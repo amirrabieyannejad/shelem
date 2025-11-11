@@ -1266,7 +1266,7 @@ function App() {
   };
 
   // Dateien liegen in /public/cards_png_clean/ mit Namen card_rXX_cYY.png
-  const CARD_BASE = "/cards_png_clean";
+  const CARD_BASE = "/cards_jpg_clean";
 
   function cardPathFor(code) {
     const pos =
@@ -1276,7 +1276,7 @@ function App() {
     const [r0, c0] = pos; // 0-basiert -> 1-basiert
     const r = String(r0 + 1).padStart(2, "0");
     const c = String(c0 + 1).padStart(2, "0");
-    return `${CARD_BASE}/card_r${r}_c${c}.png`;
+    return `${CARD_BASE}/card_r${r}_c${c}.jpg`;
   }
 
   // Fallback: Punktewert einer Karte (wie Server)
