@@ -1581,7 +1581,7 @@ function App() {
                 </button>
 
                 <div style={{ marginTop: 6, fontSize: 12, color: "#111" }}>
-                  Alle sehen diesen Button – jeder darf starten.
+                  ناخدا⚓ : بادبان ها را بکشید
                 </div>
               </div>
             )}
@@ -1824,10 +1824,10 @@ function App() {
                     style={{ display: "flex", flexDirection: "column", gap: 6 }}
                   >
                     <span style={styles.hudPill}>
-                      امتیاز کل تیم آتش: {scores.Fire}
+                      امتیاز کل آتش: {scores.Fire}
                     </span>
                     <span style={styles.hudPill}>
-                      امتیاز دست تیم آتش: {roundPointsLive.Fire}
+                      امتیاز دست آتش: {roundPointsLive.Fire}
                     </span>
                   </div>
                 </div>
@@ -1842,16 +1842,16 @@ function App() {
                     }}
                   >
                     <span style={styles.hudPill}>
-                      امتیاز کل تیم طوفان: {scores.Storm}
+                      امتیاز کل طوفان: {scores.Storm}
                     </span>
                     <span style={styles.hudPill}>
-                      امتیاز دست تیم طوفان: {roundPointsLive.Storm}
+                      امتیاز دست طوفان: {roundPointsLive.Storm}
                     </span>
                   </div>
                 </div>
 
                 <div style={styles.hudBL}>
-                  <span style={styles.hudPill}>Gebot: {currentBid}</span>
+                  <span style={styles.hudPill}>:هدف {currentBid}</span>
                 </div>
 
                 <div style={styles.hudButtonWrap}>
@@ -2376,34 +2376,34 @@ function App() {
                               }}
                             >
                               <span className="pill" style={styles.pill}>
-                                Bieter: {r.bidderName || "-"} (
+                                حاکم: {r.bidderName || "-"} (
                                 {r.bidderTeam || "?"})
                               </span>
                               <span className="pill" style={styles.pill}>
-                                Gebot: {r.bid || 0}
+                                هدف: {r.bid || 0}
                               </span>
                               <span className="pill" style={styles.pill}>
-                                Runde Fire: {r.roundPoints?.Fire ?? 0}
+                                امتیاز دست آتش: {r.roundPoints?.Fire ?? 0}
                               </span>
                               <span className="pill" style={styles.pill}>
-                                Runde Storm: {r.roundPoints?.Storm ?? 0}
+                                امتیاز دست طوفان: {r.roundPoints?.Storm ?? 0}
                               </span>
                               {r.ruleApplied === "doublePositive" && (
                                 <span className="pill" style={styles.pill}>
-                                  Doppel-Positiv (+{r.bid * 2})
+                                  🤓دوبل مثبت 🥸 (+{r.bid * 2})
                                 </span>
                               )}
                               {r.ruleApplied === "doubleNegative" && (
                                 <span className="pill" style={styles.pill}>
-                                  Doppel-Negativ (−{r.bid * 2})
+                                  دوبل منفی (−{r.bid * 2})
                                 </span>
                               )}
 
                               <span className="pill" style={styles.pill}>
-                                Gesamt Fire: {r.teamScoresAfter?.Fire ?? "-"}
+                                امتیاز کل آتش: {r.teamScoresAfter?.Fire ?? "-"}
                               </span>
                               <span className="pill" style={styles.pill}>
-                                Gesamt Storm: {r.teamScoresAfter?.Storm ?? "-"}
+                                امتیاز کل طوفان: {r.teamScoresAfter?.Storm ?? "-"}
                               </span>
                             </div>
                           </button>
@@ -2422,15 +2422,15 @@ function App() {
                                 }}
                               >
                                 <div className="pill" style={styles.pill}>
-                                  Richter: {r.bidderName || "-"}
+                                  حاکم: {r.bidderName || "-"}
                                 </div>
                                 {r.trumpf && (
                                   <span className="pill" style={styles.pill}>
-                                    Trumpf: {r.trumpf}
+                                    حکم: {r.trumpf}
                                   </span>
                                 )}
                                 <span className="pill" style={styles.pill}>
-                                  Gebot: {r.bid || 0}
+                                  هدف: {r.bid || 0}
                                 </span>
                               </div>
 
@@ -2464,11 +2464,11 @@ function App() {
                                   {r.roundPoints?.Fire ?? 0}
                                 </span>
                                 <span className="pill" style={styles.pill}>
-                                  Gesamt – Storm:{" "}
+                                  امتیاز کل طوفان – Storm:{" "}
                                   {r.teamScoresAfter?.Storm ?? "-"}
                                 </span>
                                 <span className="pill" style={styles.pill}>
-                                  Gesamt – Fire:{" "}
+                                  امتیاز کل آتش – Fire:{" "}
                                   {r.teamScoresAfter?.Fire ?? "-"}
                                 </span>
                               </div>
