@@ -107,7 +107,9 @@ app.post("/api/auth/login", async (req, res) => {
       .status(400)
       .json({ error: "usernameOrEmail & password erforderlich" });
   const key = String(usernameOrEmail).trim().toLowerCase();
-  const user = users.find((u) => u.username === key || u.email === key);
+  const user = users.find(
+    (u) => u.username?.toLowerCase() === key || u.email?.toLowerCase() === key
+  );
   if (!user) return res.status(401).json({ error: "Ungültige Zugangsdaten" });
   const ok = await bcrypt.compare(String(password), user.passwordHash);
   if (!ok) return res.status(401).json({ error: "Ungültige Zugangsdaten" });
