@@ -754,6 +754,10 @@ function App() {
     });
 
     socket.on("biddingResult", ({ winner, bid }) => {
+      // Gebot sofort überall sichtbar machen (HUD "هدف", etc.)
+      setCurrentBid(bid);
+
+      // Gewinner/Status der Auktion setzen
       setBiddingWinner({ winner, bid });
       setIsMyTurn(false);
       setBiddingActive(false);
@@ -1851,7 +1855,7 @@ function App() {
                 </div>
 
                 <div style={styles.hudBL}>
-                  <span style={styles.hudPill}>:هدف {currentBid}</span>
+                  <span style={styles.hudPill}>هدف: {currentBid}</span>
                 </div>
 
                 <div style={styles.hudButtonWrap}>
@@ -2403,7 +2407,8 @@ function App() {
                                 امتیاز کل آتش: {r.teamScoresAfter?.Fire ?? "-"}
                               </span>
                               <span className="pill" style={styles.pill}>
-                                امتیاز کل طوفان: {r.teamScoresAfter?.Storm ?? "-"}
+                                امتیاز کل طوفان:{" "}
+                                {r.teamScoresAfter?.Storm ?? "-"}
                               </span>
                             </div>
                           </button>
