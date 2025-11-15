@@ -581,6 +581,22 @@ function App() {
       }
     })(),
   });
+
+  const handleLogout = () => {
+    // Token/Profile aus dem Storage entfernen
+    localStorage.removeItem("shelem_token");
+    localStorage.removeItem("shelem_profile");
+
+    // Auth-State leeren → zeigt wieder <AuthGate />
+    setAuth({ token: null, profile: null });
+
+    // Socket sauber trennen
+    try {
+      socket.disconnect();
+    } catch (e) {
+      console.warn("Socket disconnect error:", e);
+    }
+  };
   // Abgeleitete Flags
   const seatedCount = (players || []).filter((p) => p?.seatPosition).length;
   const seatsFullClient = seatedCount === 4;
@@ -1600,7 +1616,34 @@ function App() {
         <AuthGate onAuthed={setAuth} />
       ) : (
         <>
-          {/* Popup Boden-Karten */}
+          {/* 🔽 NEUE TOP-BAR MIT LOGOUT OBEN RECHTS */}
+          <div
+            style={{
+              maxWidth: "min(92vw, 900px)",
+              margin: "0 auto 8px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 0,
+            }}
+          >
+            <div style={{ fontSize: 14 }}>
+              👤 {auth.profile?.username || auth.profile?.name || "?"}
+            </div>
+            <button
+              onClick={handleLogout}
+              title="خروج از حساب"
+              style={{
+                ...styles.btn,
+                padding: "6px 10px",
+                borderRadius: 999,
+                fontWeight: 800,
+              }}
+            >
+              ⎋ خروج
+            </button>
+          </div>
+          ){/* Popup Boden-Karten */}
           {showBottom && (
             <div style={styles.modalBackdrop}>
               <div style={styles.modal}>
@@ -1815,7 +1858,6 @@ function App() {
               </div>
             </div>
           )}
-
           {/* Team Auswahl */}
           {seatSelect}
           {/* Spielfeld */}
