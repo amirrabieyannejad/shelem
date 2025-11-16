@@ -925,23 +925,51 @@ io.on("connection", (socket) => {
     broadcastSeats(); // falls UI sich darauf verlässt
   });
 
-  socket.on("setVariant", ({ variant }) => {
+   socket.on("setVariant", ({ variant }) => {
     // Nur der Startspieler (Richter) darf wählen
     if (socket.id !== winnerPlayerId) return;
-    if (variant !== "NORMAL" && variant !== "FLIP") return;
+    if (!variant) return;
 
-    roundVariant = variant === "NORMAL" ? VARIANTS.NORMAL : VARIANTS.FLIP;
+    // Erlaubte Werte:
+    const isSuitChoice = suits.includes(variant); // ["♠","♥","♣","♦"]
+    const isFlipChoice = variant === "FLIP";
+    const isNormalChoice = variant === "NORMAL";
+
+    if (!isSuitChoice && !isFlipChoice && !isNormalChoice) return;
+
     variantPending = false;
-
-    // Bei NORMAL: Trumpf = Farbe der ERSTEN Karte im aktuellen Stich
     let justSetTrump = null;
-    if (roundVariant === VARIANTS.NORMAL && !trumpf && currentTrick[0]) {
-      justSetTrump = currentTrick[0].card.slice(-1);
-      trumpf = justSetTrump;
-      io.emit("trumpChosen", {
-        trumpf,
-        winner: players.find((p) => p.id === winnerPlayerId),
-      });
+
+    if (isFlipChoice) {
+      // Flip: kein Trumpf
+      roundVariant = VARIANTS.FLIP;
+      trumpf = null;
+    } else {
+      // Alles andere ist eine Normal-Runde
+      roundVariant = VARIANTS.NORMAL;
+
+      if (isSuitChoice) {
+        // Joker als erste Karte → Spieler wählt explizite Trumpf-Farbe
+        trumpf = variant;
+        justSetTrump = trumpf;
+        io.emit("trumpChosen", {
+          trumpf,
+          winner: players.find((p) => p.id === winnerPlayerId),
+        });
+      } else if (!trumpf && currentTrick[0]) {
+        // "NORMAL" wie bisher: Trumpf = Farbe der ersten Karte,
+        // aber nur wenn diese Karte kein Joker ist
+        const firstCard = currentTrick[0].card;
+        if (firstCard !== "JOKER" && firstCard !== "JOKER_BW") {
+          justSetTrump = firstCard.slice(-1);
+          trumpf = justSetTrump;
+          io.emit("trumpChosen", {
+            trumpf,
+            winner: players.find((p) => p.id === winnerPlayerId),
+          });
+        }
+        // Falls doch Joker + "NORMAL" geschickt wird -> kein auto-Trumpf
+      }
     }
 
     io.emit("variantChosen", { variant: roundVariant, trumpf: justSetTrump });
@@ -954,6 +982,7 @@ io.on("connection", (socket) => {
       io.emit("turnUpdate", { currentPlayer: next });
     }
   });
+
 
   socket.on("makeBid", (bid) => {
     if (!biddingActive) return;
@@ -1110,11 +1139,27 @@ io.on("connection", (socket) => {
       if (player.id === winnerPlayerId) {
         if (roundVariant === VARIANTS.UNDECIDED) {
           variantPending = true;
-          io.to(player.id).emit("askVariant", { options: ["NORMAL", "FLIP"] });
+
+          const isJokerStart = card === "JOKER" || card === "JOKER_BW";
+
+          if (isJokerStart) {
+            // Joker als erste Karte: direkt Trumpf-Farbe ODER Flip wählen
+            io.to(player.id).emit("askVariant", {
+              options: ["♠", "♥", "♣", "♦", "FLIP"],
+            });
+          } else {
+            // normale Karte: Nur Normal/Flip entscheiden
+            io.to(player.id).emit("askVariant", {
+              options: ["NORMAL", "FLIP"],
+            });
+          }
         } else if (roundVariant === VARIANTS.NORMAL && !trumpf) {
-          // Falls Runde bereits auf NORMAL stand (z. B. spätere Anpassungen), setze Trumpf jetzt
-          trumpf = card.slice(-1);
-          io.emit("trumpChosen", { trumpf, winner: player });
+          // Runde ist bereits NORMAL (z.B. vorkonfiguriert):
+          // Trumpf = Farbe der ersten Karte – aber NICHT bei Joker
+          if (card !== "JOKER" && card !== "JOKER_BW") {
+            trumpf = card.slice(-1);
+            io.emit("trumpChosen", { trumpf, winner: player });
+          }
         }
       }
     }

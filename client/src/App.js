@@ -1703,7 +1703,7 @@ function App() {
               ⎋ خروج
             </button>
           </div>
-          ){/* Popup Boden-Karten */}
+          {/* Popup Boden-Karten */}
           {showBottom && (
             <div style={styles.modalBackdrop}>
               <div style={styles.modal}>
@@ -2218,48 +2218,162 @@ function App() {
           {variantModal.open && (
             <div style={styles.modalBackdrop}>
               <div style={styles.modal}>
-                <h3 style={{ margin: 0, fontWeight: 800, textAlign: "center" }}>
-                  Runde: Normal oder Flip?
-                </h3>
-                <p style={{ textAlign: "center", marginTop: 8 }}>
-                  Entscheidung nach der ersten Karte des Startspielers.
-                </p>
-                <div
-                  style={{
-                    display: "flex",
-                    gap: 10,
-                    justifyContent: "center",
-                    marginTop: 16,
-                  }}
-                >
-                  <button
-                    style={{
-                      ...styles.btn,
-                      background: "#dbeafe",
-                      fontWeight: 800,
-                    }}
-                    onClick={() =>
-                      socket.emit("setVariant", { variant: "NORMAL" })
-                    }
-                  >
-                    معمولی
-                  </button>
-                  <button
-                    style={{
-                      ...styles.btn,
-                      background: "#fde68a",
-                      fontWeight: 800,
-                    }}
-                    onClick={() =>
-                      socket.emit("setVariant", { variant: "FLIP" })
-                    }
-                  >
-                    نرس
-                  </button>
-                </div>
+                {(() => {
+                  const opts =
+                    variantModal.options && variantModal.options.length
+                      ? variantModal.options
+                      : ["NORMAL", "FLIP"];
+
+                  const suitOpts = ["♠", "♥", "♣", "♦"].filter((s) =>
+                    opts.includes(s)
+                  );
+                  const hasSuitChoice = suitOpts.length > 0;
+                  const hasFlipChoice = opts.includes("FLIP");
+                  const hasNormalChoice = opts.includes("NORMAL");
+
+                  if (hasSuitChoice) {
+                    // Joker war erste Karte → Trumpf-Farbe oder Flip wählen
+                    return (
+                      <>
+                        <h3
+                          style={{
+                            margin: 0,
+                            fontWeight: 800,
+                            textAlign: "center",
+                          }}
+                        >
+                          حکم را انتخاب کن یا نرس بازی کن
+                        </h3>
+                        <p
+                          style={{
+                            textAlign: "center",
+                            marginTop: 8,
+                            fontSize: 13,
+                          }}
+                        >
+                          با جوکر شروع کردی – یک خال را به عنوان حکم انتخاب کن
+                          یا &quot;نرس&quot; (Flip) بازی کن.
+                        </p>
+
+                        <div
+                          style={{
+                            display: "flex",
+                            gap: 10,
+                            justifyContent: "center",
+                            marginTop: 16,
+                            flexWrap: "wrap",
+                          }}
+                        >
+                          {suitOpts.map((suit) => (
+                            <button
+                              key={suit}
+                              style={{
+                                ...styles.btn,
+                                padding: "10px 14px",
+                                borderRadius: 12,
+                                background: "#e5e7eb",
+                                minWidth: 70,
+                                display: "flex",
+                                flexDirection: "column",
+                                alignItems: "center",
+                                justifyContent: "center",
+                              }}
+                              onClick={() =>
+                                socket.emit("setVariant", { variant: suit })
+                              }
+                            >
+                              <SuitIcon suit={suit} size={32} />
+                            </button>
+                          ))}
+                        </div>
+
+                        {hasFlipChoice && (
+                          <div
+                            style={{
+                              marginTop: 16,
+                              textAlign: "center",
+                            }}
+                          >
+                            <button
+                              style={{
+                                ...styles.btn,
+                                background: "#fde68a",
+                                fontWeight: 800,
+                                padding: "10px 24px",
+                              }}
+                              onClick={() =>
+                                socket.emit("setVariant", { variant: "FLIP" })
+                              }
+                            >
+                              نرس (Flip)
+                            </button>
+                          </div>
+                        )}
+                      </>
+                    );
+                  }
+
+                  // Standard: Normal / Flip
+                  return (
+                    <>
+                      <h3
+                        style={{
+                          margin: 0,
+                          fontWeight: 800,
+                          textAlign: "center",
+                        }}
+                      >
+                        Runde: Normal oder Flip?
+                      </h3>
+                      <p style={{ textAlign: "center", marginTop: 8 }}>
+                        Entscheidung nach der ersten Karte des Startspielers.
+                      </p>
+                      <div
+                        style={{
+                          display: "flex",
+                          gap: 10,
+                          justifyContent: "center",
+                          marginTop: 16,
+                        }}
+                      >
+                        {hasNormalChoice && (
+                          <button
+                            style={{
+                              ...styles.btn,
+                              background: "#dbeafe",
+                              fontWeight: 800,
+                            }}
+                            onClick={() =>
+                              socket.emit("setVariant", {
+                                variant: "NORMAL",
+                              })
+                            }
+                          >
+                            معمولی
+                          </button>
+                        )}
+                        {hasFlipChoice && (
+                          <button
+                            style={{
+                              ...styles.btn,
+                              background: "#fde68a",
+                              fontWeight: 800,
+                            }}
+                            onClick={() =>
+                              socket.emit("setVariant", { variant: "FLIP" })
+                            }
+                          >
+                            نرس
+                          </button>
+                        )}
+                      </div>
+                    </>
+                  );
+                })()}
               </div>
             </div>
           )}
+
           {/* Bieten */}
           {isMyTurn && !biddingWinner && !anyModalOpen && (
             <div style={styles.modalBackdrop}>
