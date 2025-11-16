@@ -569,6 +569,9 @@ function App() {
     tricksPlayed: 0,
     winnerId: null,
   });
+  const [includeJokers, setIncludeJokers] = useState(false);
+
+  const [discardTargetCount, setDiscardTargetCount] = useState(4); // 4 oder 6
 
   // --- Auth State ---
   const [auth, setAuth] = useState({
@@ -723,10 +726,20 @@ function App() {
         "Q",
         "K",
         "A",
-      ]; // wie bisher
+        "JOKER_BW",
+        "JOKER",
+      ];
+
+      const decode = (code) => {
+        if (code === "JOKER_BW") return ["JOKER_BW", "♠"]; // s/w Joker bei ♠
+        if (code === "JOKER") return ["JOKER", "♥"]; // farbig Joker bei ♥
+        return [code.slice(0, -1), code.slice(-1)];
+      };
+
       return [...cards].sort((a, b) => {
-        const [ra, sa] = [a.slice(0, -1), a.slice(-1)];
-        const [rb, sb] = [b.slice(0, -1), b.slice(-1)];
+        const [ra, sa] = decode(a);
+        const [rb, sb] = decode(b);
+
         if (suitOrder.indexOf(sa) !== suitOrder.indexOf(sb)) {
           return suitOrder.indexOf(sa) - suitOrder.indexOf(sb);
         }
@@ -784,10 +797,11 @@ function App() {
       setShowBottom(true);
     });
 
-    socket.on("discardPhase", ({ hand }) => {
+    socket.on("discardPhase", ({ hand, bottomSize }) => {
       setHand(sortHand(hand));
       setDiscardPhase(true);
       setSelectedDiscard([]);
+      setDiscardTargetCount(bottomSize || 4);
     });
 
     // Discard beendet
@@ -796,6 +810,7 @@ function App() {
       setDiscardPhase(false);
       setSelectedDiscard([]);
       setHand((h) => sortHand(h));
+      setDiscardTargetCount(4);
     });
 
     socket.on("trumpChosen", ({ trumpf, winner }) => {
@@ -943,7 +958,7 @@ function App() {
       if (s?.roundPoints) setRoundPointsLive(s.roundPoints);
       if (Array.isArray(s?.players)) setPlayers(s.players);
       if (s?.trumpf) setTrumpf(s.trumpf);
-      if (s?.roundVariant) setRoundVariant(s.roundVariant); // <— vom Server übernehmen
+      if (s?.roundVariant) setRoundVariant(s.roundVariant);
       if (typeof s?.biddingActive === "boolean")
         setBiddingActive(s.biddingActive);
       if (typeof s?.tricksPlayed === "number" || s?.winnerPlayerId != null) {
@@ -951,6 +966,12 @@ function App() {
           tricksPlayed: s?.tricksPlayed || 0,
           winnerId: s?.winnerPlayerId || null,
         });
+      }
+      if (typeof s?.includeJokers === "boolean") {
+        setIncludeJokers(s.includeJokers);
+      }
+      if (typeof s?.currentBottomSize === "number" && s.currentBottomSize > 0) {
+        setDiscardTargetCount(s.currentBottomSize);
       }
     });
 
@@ -1054,16 +1075,16 @@ function App() {
     setSelectedDiscard((prev) =>
       prev.includes(card)
         ? prev.filter((c) => c !== card)
-        : prev.length < 4
+        : prev.length < discardTargetCount
         ? [...prev, card]
         : prev
     );
   };
 
   const confirmDiscard = () => {
-    if (selectedDiscard.length === 4)
+    if (selectedDiscard.length === discardTargetCount)
       socket.emit("discardCards", selectedDiscard);
-    else alert("Bitte genau 4 Karten auswählen!");
+    else alert(`Bitte genau ${discardTargetCount} Karten auswählen!`);
   };
 
   const playCard = (card) => {
@@ -1299,8 +1320,10 @@ function App() {
     return `${CARD_BASE}/card_r${r}_c${c}.jpg`;
   }
 
-  // Fallback: Punktewert einer Karte (wie Server)
   function cardPointsClient(card) {
+    if (card === "JOKER_BW") return 15;
+    if (card === "JOKER") return 20;
+
     const rank = card.slice(0, -1);
     if (rank === "A") return 10;
     if (rank === "10") return 10;
@@ -1498,7 +1521,41 @@ function App() {
 
         return (
           <div style={styles.card}>
-            <h3 style={{ margin: 0 }}>انتخاب تیم</h3>
+            {/* Joker-Option nur vor Rundenstart  */}
+            <div
+              style={{
+                marginTop: 8,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 8,
+                flexWrap: "wrap",
+              }}
+            >
+              <label
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  fontSize: 14,
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={includeJokers}
+                  disabled={!isFirstPlayer}
+                  onChange={(e) =>
+                    socket.emit("setIncludeJokers", { value: e.target.checked })
+                  }
+                />
+                <span>بازی با جوکر</span>
+              </label>
+              {!isFirstPlayer && (
+                <span style={{ fontSize: 12, opacity: 0.7 }}>
+                  فقط بازیکن اول می‌تواند این گزینه را عوض کند
+                </span>
+              )}
+            </div>
 
             {/* Random nur für ersten Spieler und nur wenn alle Plätze leer */}
             {isFirstPlayer && seatsAllEmpty && (
@@ -1544,7 +1601,7 @@ function App() {
                         fontWeight: 800,
                       }}
                     >
-                      {occupant ? occupant.name : "— آزاد —"}
+                      {occupant ? occupant.username : "— آزاد —"}
                     </div>
 
                     <div style={{ marginTop: 8, display: "flex", gap: 8 }}>
@@ -1864,42 +1921,98 @@ function App() {
           {players.length === 4 && (
             <div style={styles.tableWrap}>
               {/* HUD Gesamt- und Rundenpunkte */}
+              {/* HUD Gesamt- und Rundenpunkte */}
               <div style={styles.hudGrid}>
-                <div style={{ ...styles.hudTL }}>
-                  <div
-                    style={{ display: "flex", flexDirection: "column", gap: 6 }}
-                  >
-                    <span style={styles.hudPill}>
-                      امتیاز کل آتش: {scores.Fire}
-                    </span>
-                    <span style={styles.hudPill}>
-                      امتیاز دست آتش: {roundPointsLive.Fire}
-                    </span>
-                  </div>
-                </div>
-
-                <div style={{ ...styles.hudTR }}>
+                {/* Fire – Gesamt + Hand, rot */}
+                <div style={styles.hudTL}>
                   <div
                     style={{
                       display: "flex",
                       flexDirection: "column",
-                      gap: 6,
-                      alignItems: "flex-end",
+                      gap: 4,
                     }}
                   >
-                    <span style={styles.hudPill}>
-                      امتیاز کل طوفان: {scores.Storm}
+                    {/* Gesamtpunkte Fire */}
+                    <span
+                      style={{
+                        ...styles.hudPill,
+                        background: "rgba(248,113,113,.22)", // rot-transparent
+                        borderColor: "#fecaca",
+                      }}
+                    >
+                      آتش: {scores.Fire}
                     </span>
-                    <span style={styles.hudPill}>
-                      امتیاز دست طوفان: {roundPointsLive.Storm}
+
+                    {/* Punkte dieser Runde Fire */}
+                    <span
+                      style={{
+                        ...styles.hudPill,
+                        background: "rgba(254,202,202,.2)",
+                        borderColor: "#fecaca",
+                        fontSize: 12,
+                      }}
+                    >
+                      دست: {roundPointsLive.Fire}
                     </span>
                   </div>
                 </div>
 
+                {/* Storm – Gesamt + Hand, blau */}
+                <div style={styles.hudTR}>
+                  <div
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 4,
+                      alignItems: "flex-end",
+                    }}
+                  >
+                    {/* Gesamtpunkte Storm */}
+                    <span
+                      style={{
+                        ...styles.hudPill,
+                        background: "rgba(59,130,246,.22)", // blau-transparent
+                        borderColor: "#bfdbfe",
+                      }}
+                    >
+                      طوفان: {scores.Storm}
+                    </span>
+
+                    {/* Punkte dieser Runde Storm */}
+                    <span
+                      style={{
+                        ...styles.hudPill,
+                        background: "rgba(191,219,254,.2)",
+                        borderColor: "#bfdbfe",
+                        fontSize: 12,
+                      }}
+                    >
+                      دست: {roundPointsLive.Storm}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Joker-Hinweis in der Mitte links */}
+                {includeJokers && (
+                  <div style={styles.hudLM}>
+                    <span
+                      style={{
+                        ...styles.hudPill,
+                        background: "rgba(234,179,8,.18)",
+                        borderColor: "#facc15",
+                      }}
+                    >
+                      بازی با جوکر
+                    </span>
+                  </div>
+                )}
+
+                {/* aktuelles Gebot links unten */}
                 <div style={styles.hudBL}>
                   <span style={styles.hudPill}>هدف: {currentBid}</span>
                 </div>
 
+                {/* Buttons rechts unten */}
                 <div style={styles.hudButtonWrap}>
                   <button
                     style={styles.hudButton}
@@ -1921,6 +2034,7 @@ function App() {
                   </button>
                 </div>
               </div>
+
               {/* Karten-Mitte */}
               <div
                 style={{
@@ -2075,7 +2189,8 @@ function App() {
               >
                 <h4 style={{ margin: 0 }}>چهار برگ انتخاب کن </h4>
                 <div style={{ fontWeight: 400 }}>
-                  برگ های انتخاب شده: {selectedDiscard.length} / 4
+                  برگ های انتخاب شده: {selectedDiscard.length} /{" "}
+                  {discardTargetCount}
                 </div>
               </div>
               <div style={{ marginTop: 8 }}>
@@ -2086,7 +2201,7 @@ function App() {
                     color: "white",
                   }}
                   onClick={confirmDiscard}
-                  disabled={selectedDiscard.length !== 4}
+                  disabled={selectedDiscard.length !== discardTargetCount}
                 >
                   شروع بازی
                 </button>
@@ -2256,7 +2371,8 @@ function App() {
             >
               {hand.map((card, idx) => {
                 const isSelected = selectedDiscard.includes(card);
-                const canSelectMore = selectedDiscard.length < 4;
+                const canSelectMore =
+                  selectedDiscard.length < discardTargetCount;
                 const inDiscard = discardPhase;
                 const showSelected = inDiscard && isSelected;
 
