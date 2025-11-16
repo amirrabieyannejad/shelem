@@ -2003,7 +2003,7 @@ function App() {
                       // dein Styling für "Aktuelles Gebot"
                     }}
                   >
-                    هدف:{currentBid ?? "-"}
+                    هدف : {currentBid ?? "-"}
                   </span>
 
                   {includeJokers && (

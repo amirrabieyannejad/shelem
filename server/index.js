@@ -537,13 +537,18 @@ function splitCard(card) {
 // Für Bedienpflicht etc.
 function cardSuitForPlay(card) {
   if (card === "JOKER_BW") {
-    // Im Flip gehört er zu ♠, sonst eigenes „R“
-    return roundVariant === VARIANTS.FLIP ? "♠" : "R";
+    // Flip: wie eine ♠-Karte
+    if (roundVariant === VARIANTS.FLIP) return "♠";
+    // Normal: Joker gehört zur Trumpf-Farbe, solange es schon einen Trumpf gibt
+    return trumpf || "R"; // vor Trumpf-Wahl bleibt er eigene „R“-Farbe
   }
   if (card === "JOKER") {
-    // Im Flip gehört er zu ♥, sonst eigenes „R“
-    return roundVariant === VARIANTS.FLIP ? "♥" : "R";
+    // Flip: wie eine ♥-Karte
+    if (roundVariant === VARIANTS.FLIP) return "♥";
+    // Normal: Joker gehört zur Trumpf-Farbe, solange es schon einen Trumpf gibt
+    return trumpf || "R";
   }
+  // normale Karten: einfach ihre Suit
   return card.slice(-1);
 }
 
@@ -925,7 +930,7 @@ io.on("connection", (socket) => {
     broadcastSeats(); // falls UI sich darauf verlässt
   });
 
-   socket.on("setVariant", ({ variant }) => {
+  socket.on("setVariant", ({ variant }) => {
     // Nur der Startspieler (Richter) darf wählen
     if (socket.id !== winnerPlayerId) return;
     if (!variant) return;
@@ -982,7 +987,6 @@ io.on("connection", (socket) => {
       io.emit("turnUpdate", { currentPlayer: next });
     }
   });
-
 
   socket.on("makeBid", (bid) => {
     if (!biddingActive) return;
