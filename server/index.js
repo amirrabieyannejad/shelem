@@ -160,7 +160,8 @@ let trumpf = null;
 let winnerPlayerId = null;
 let randomTeams = false;
 let consecutivePasses = 0;
-let forceBidPlayerId = null;
+let includeJokers = false; // Spiel mit/ohne Joker
+let currentBottomSize = 4; // 4 ohne Joker, 6 mit Joker
 // --- Neue globale Variablen für Stiche ---
 let currentTrick = []; // [{playerId, card}]
 let trickLeader = null; // Spieler, der die Farbe vorgibt
@@ -169,9 +170,27 @@ let teamScores = { Fire: 0, Storm: 0 };
 let roundPoints = { Fire: 0, Storm: 0 };
 let roundBottomCards = [];
 let roundDiscarded = [];
-let MAX_BID = 165;
-//let MAX_POINTS = 1165;
-let MAX_POINTS = 300;
+// Basis-Werte (ohne/mit Joker)
+const MAX_BID_NORMAL = 165;
+const MAX_BID_JOKERS = 200;
+
+const MAX_POINTS_NORMAL = 1165;
+const MAX_POINTS_JOKERS = 1600;
+
+// Dynamische Helfer basierend auf includeJokers
+function getMaxBid() {
+  return includeJokers ? MAX_BID_JOKERS : MAX_BID_NORMAL;
+}
+
+function getMaxPoints() {
+  return includeJokers ? MAX_POINTS_JOKERS : MAX_POINTS_NORMAL;
+}
+
+// Mindestens 80, oder die (aufgerundete) Hälfte des Maximalgebots
+function getDoubleNegativeMin() {
+  const mb = getMaxBid();
+  return Math.max(80, Math.ceil(mb / 2));
+}
 
 let gamePaused = false;
 // --- Sitzplätze (1..4) mit fixen Teams ---
@@ -213,6 +232,10 @@ function stateSnapshot() {
     winnerPlayerId,
     roundVariant,
     tricksPlayed,
+    includeJokers,
+    currentBottomSize,
+    maxBid: getMaxBid(),
+    maxPoints: getMaxPoints(),
   };
 }
 
@@ -245,11 +268,11 @@ function resetGameState() {
   roundVariant = VARIANTS.UNDECIDED;
   variantPending = false;
 
+  // Boden-Größe für nächste Runde (4 oder 6)
+  currentBottomSize = includeJokers ? 6 : 4;
+
   // Seats/Players bleiben bewusst erhalten
 }
-
-// Mindestens 80, oder die (aufgerundete) Hälfte des Maximalgebots
-const DOUBLE_NEGATIVE_MIN = Math.max(80, Math.ceil(MAX_BID / 2));
 
 let trickHistory = []; // Stiche der aktuellen Runde (Array mit 12 Einträgen)
 let roundsHistory = []; // Chronik aller Runden
@@ -294,17 +317,37 @@ const RANK_ORDER = [
   "Q",
   "K",
   "A",
+  "JOKER_BW", // Joker schwarz/weiß
+  "JOKER", // Joker farbig
 ];
 
 function sortCards(cards) {
   return [...cards].sort((a, b) => {
-    const [ra, sa] = [a.slice(0, -1), a.slice(-1)];
-    const [rb, sb] = [b.slice(0, -1), b.slice(-1)];
-    const sDiff = SUIT_ORDER.indexOf(sa) - SUIT_ORDER.indexOf(sb);
-    return sDiff !== 0
-      ? sDiff
-      : RANK_ORDER.indexOf(ra) - RANK_ORDER.indexOf(rb);
+    const ka = sortKey(a);
+    const kb = sortKey(b);
+
+    const sDiff = SUIT_ORDER.indexOf(ka.suit) - SUIT_ORDER.indexOf(kb.suit);
+    if (sDiff !== 0) return sDiff;
+    return ka.rankIndex - kb.rankIndex;
   });
+}
+
+function sortKey(card) {
+  // Joker speziell behandeln
+  if (card === "JOKER_BW") {
+    const isFlip = roundVariant === VARIANTS.FLIP;
+    const suitForSort = isFlip ? "♠" : trumpf || "♠"; // im Normalfall neben Trumpf/♠
+    return { suit: suitForSort, rankIndex: RANK_ORDER.indexOf("JOKER_BW") };
+  }
+  if (card === "JOKER") {
+    const isFlip = roundVariant === VARIANTS.FLIP;
+    const suitForSort = isFlip ? "♥" : trumpf || "♥"; // im Normalfall neben Trumpf/♥
+    return { suit: suitForSort, rankIndex: RANK_ORDER.indexOf("JOKER") };
+  }
+
+  const suit = card.slice(-1);
+  const rank = card.slice(0, -1);
+  return { suit, rankIndex: RANK_ORDER.indexOf(rank) };
 }
 
 function createDeck() {
@@ -314,6 +357,13 @@ function createDeck() {
       deck.push(`${rank}${suit}`);
     }
   }
+
+  if (includeJokers) {
+    // Codes passen zu  Frontend: "JOKER" & "JOKER_BW"
+    deck.push("JOKER_BW"); // schwarz-weiß (card_r07_c06.jpg)
+    deck.push("JOKER"); // farbig     (card_r01_c01.jpg)
+  }
+
   return deck;
 }
 
@@ -386,16 +436,23 @@ function deal() {
   trickHistory = [];
   hands = {};
 
-  bottomCards = deck.slice(48); // letzte 4 Karten als "Bottom Cards"
+  const cardsPerPlayer = 12;
+  const totalPlayers = players.length;
+  const cardsForHands = cardsPerPlayer * totalPlayers;
+
+  currentBottomSize = deck.length - cardsForHands; // 4 oder 6 je nach Joker
+
+  bottomCards = deck.slice(cardsForHands);
   roundBottomCards = bottomCards.slice();
   roundDiscarded = [];
 
   players.forEach((p, idx) => {
-    hands[p.id] = sortCards(deck.slice(idx * 12, idx * 12 + 12));
+    const start = idx * cardsPerPlayer;
+    const end = start + cardsPerPlayer;
+    hands[p.id] = sortCards(deck.slice(start, end));
     io.to(p.id).emit("hand", hands[p.id]);
   });
 
-  // einmalig 0:0 an alle schicken (für live-Anzeige)
   io.emit("roundPointsUpdate", { roundPoints });
 }
 
@@ -449,8 +506,11 @@ function maybeEndAuction() {
   return false;
 }
 
-// Hilfsfunktionen: Kartenwerte für Punkte
 function cardPoints(card) {
+  // Joker zuerst
+  if (card === "JOKER_BW") return 15; // schwarz/weiß
+  if (card === "JOKER") return 20; // farbig
+
   const rank = card.slice(0, -1);
   if (rank === "A") return 10;
   if (rank === "10") return 10;
@@ -459,54 +519,105 @@ function cardPoints(card) {
 }
 
 // Kartenrang zum Vergleichen im Stich
-const rankOrder = [
-  "2",
-  "3",
-  "4",
-  "5",
-  "6",
-  "7",
-  "8",
-  "9",
-  "10",
-  "J",
-  "Q",
-  "K",
-  "A",
-];
+const rankOrder = RANK_ORDER;
+
+function splitCard(card) {
+  if (card === "JOKER_BW") {
+    return { rank: "JOKER_BW", suit: "R" }; // eigenes „R“-Suit intern
+  }
+  if (card === "JOKER") {
+    return { rank: "JOKER", suit: "R" };
+  }
+  return {
+    rank: card.slice(0, -1),
+    suit: card.slice(-1),
+  };
+}
+
+// Für Bedienpflicht etc.
+function cardSuitForPlay(card) {
+  if (card === "JOKER_BW") {
+    // Im Flip gehört er zu ♠, sonst eigenes „R“
+    return roundVariant === VARIANTS.FLIP ? "♠" : "R";
+  }
+  if (card === "JOKER") {
+    // Im Flip gehört er zu ♥, sonst eigenes „R“
+    return roundVariant === VARIANTS.FLIP ? "♥" : "R";
+  }
+  return card.slice(-1);
+}
+
 function compareCards(cardA, cardB, leadSuit, trumpSuit, isFlip = false) {
-  const [rankA, suitA] = [cardA.slice(0, -1), cardA.slice(-1)];
-  const [rankB, suitB] = [cardB.slice(0, -1), cardB.slice(-1)];
+  const a = splitCard(cardA);
+  const b = splitCard(cardB);
+  const isJokerA = a.rank === "JOKER" || a.rank === "JOKER_BW";
+  const isJokerB = b.rank === "JOKER" || b.rank === "JOKER_BW";
 
   if (isFlip) {
-    // Kein Trumpf. Nur Karten der angespielten Farbe können gewinnen.
+    // Flip: Kein Trumpf, kleine Karten sind höher, Joker sind am schwächsten.
+    const suitA =
+      a.rank === "JOKER_BW" ? "♠" : a.rank === "JOKER" ? "♥" : a.suit;
+    const suitB =
+      b.rank === "JOKER_BW" ? "♠" : b.rank === "JOKER" ? "♥" : b.suit;
+
     const aLed = suitA === leadSuit;
     const bLed = suitB === leadSuit;
     if (aLed && !bLed) return 1;
     if (!aLed && bLed) return -1;
+
     if (aLed && bLed) {
-      // 2 ist höchste, A niedrigste → kleinerer Index ist stärker
-      const ia = rankOrder.indexOf(rankA);
-      const ib = rankOrder.indexOf(rankB);
-      return ib - ia; // positiv, wenn A stärker (ia < ib)
+      const ia = RANK_ORDER.indexOf(a.rank);
+      const ib = RANK_ORDER.indexOf(b.rank);
+      if (ia === -1 || ib === -1) return 0;
+
+      // 2 höchster, A danach ... Joker ganz hinten (niedrigste)
+      const diff = ib - ia; // ia < ib → A stärker
+      if (diff > 0) return 1;
+      if (diff < 0) return -1;
+      return 0;
     }
     return 0;
   }
 
-  // Normal (mit Trumpf)
+  // Normal: Joker > Ass, farbiger Joker > s/w-Joker
+  if (isJokerA || isJokerB) {
+    if (isJokerA && isJokerB) {
+      const ia = RANK_ORDER.indexOf(a.rank);
+      const ib = RANK_ORDER.indexOf(b.rank);
+      if (ia > ib) return 1; // "JOKER" schlägt "JOKER_BW"
+      if (ia < ib) return -1;
+      return 0;
+    }
+    return isJokerA ? 1 : -1;
+  }
+
+  const suitA = a.suit;
+  const suitB = b.suit;
+
+  // Trumpf
   if (suitA === trumpSuit && suitB !== trumpSuit) return 1;
   if (suitB === trumpSuit && suitA !== trumpSuit) return -1;
 
   if (suitA === trumpSuit && suitB === trumpSuit) {
-    return rankOrder.indexOf(rankA) - rankOrder.indexOf(rankB);
+    const ia = RANK_ORDER.indexOf(a.rank);
+    const ib = RANK_ORDER.indexOf(b.rank);
+    if (ia > ib) return 1;
+    if (ia < ib) return -1;
+    return 0;
   }
 
+  // Angespielte Farbe
   if (suitA === leadSuit && suitB !== leadSuit) return 1;
   if (suitB === leadSuit && suitA !== leadSuit) return -1;
 
   if (suitA === leadSuit && suitB === leadSuit) {
-    return rankOrder.indexOf(rankA) - rankOrder.indexOf(rankB);
+    const ia = RANK_ORDER.indexOf(a.rank);
+    const ib = RANK_ORDER.indexOf(b.rank);
+    if (ia > ib) return 1;
+    if (ia < ib) return -1;
+    return 0;
   }
+
   return 0;
 }
 
@@ -776,6 +887,28 @@ io.on("connection", (socket) => {
     io.emit("playersUpdate", players);
   });
 
+  socket.on("setIncludeJokers", ({ value }) => {
+    const isFirst = players[0] && players[0].id === socket.id;
+    if (!isFirst) {
+      socket.emit("invalidAction", {
+        msg: "Nur der erste Spieler kann Joker an/aus schalten.",
+      });
+      return;
+    }
+
+    // nur vor Rundenstart
+    if (Object.keys(hands).length || biddingActive) {
+      socket.emit("invalidAction", {
+        msg: "Joker können nur vor Rundenstart geändert werden.",
+      });
+      return;
+    }
+
+    includeJokers = !!value;
+    currentBottomSize = includeJokers ? 6 : 4;
+    io.emit("stateSync", stateSnapshot());
+  });
+
   // Spiel hart zurücksetzen (Spieler/Seats bleiben)
   socket.on("resetGame", () => {
     // Optional: nur der erste Spieler darf resetten
@@ -826,14 +959,18 @@ io.on("connection", (socket) => {
     if (!biddingActive) return;
     const player = players.find((p) => p.id === socket.id);
     if (!player) return;
+
+    const maxBid = getMaxBid(); // <- NEU
+
     if (bid !== 0) {
       // Validierung gegen Manipulation
       const minAllowed = Math.max(100, currentBid + 5);
       const isStepOk = bid % 5 === 0;
-      if (!isStepOk || bid < minAllowed || bid > MAX_BID) {
+      if (!isStepOk || bid < minAllowed || bid > maxBid) {
         socket.emit("invalidAction", {
-          msg: `Ungültiges Gebot. Erlaubt: mindestens ${minAllowed}, höchstens ${MAX_BID}, in 5er-Schritten.`,
+          msg: `Ungültiges Gebot. Erlaubt: mindestens ${minAllowed}, höchstens ${maxBid}, in 5er-Schritten.`,
         });
+
         // Spieler bleibt am Zug:
         io.to(player.id).emit("yourTurn", {
           currentBid,
@@ -870,7 +1007,7 @@ io.on("connection", (socket) => {
       consecutivePasses = 0;
       forceBidPlayerId = null;
       // ✅ Sofortiger Zuschlag bei Maximalgebot
-      if (currentBid >= MAX_BID) {
+      if (currentBid >= maxBid) {
         biddingActive = false;
         winnerPlayerId = player.id;
         io.emit("biddingResult", { winner: player, bid: currentBid });
@@ -908,13 +1045,16 @@ io.on("connection", (socket) => {
     bottomCards = [];
 
     io.to(socket.id).emit("hand", hands[socket.id]);
-    io.to(socket.id).emit("discardPhase", { hand: hands[socket.id] });
+    io.to(socket.id).emit("discardPhase", {
+      hand: hands[socket.id],
+      bottomSize: currentBottomSize, // 4 oder 6
+    });
   });
 
   socket.on("discardCards", (selected) => {
     if (socket.id !== winnerPlayerId) return;
     if (!hands[socket.id]) return;
-    if (selected.length !== 4) return;
+    if (selected.length !== currentBottomSize) return; // 4 oder 6
 
     hands[socket.id] = sortCards(
       hands[socket.id].filter((c) => !selected.includes(c))
@@ -922,13 +1062,13 @@ io.on("connection", (socket) => {
     roundDiscarded = selected.slice();
     io.to(socket.id).emit("hand", hands[socket.id]);
 
-    // NEU: Discard-Phase ist vorbei
+    // NEU: Discard beendet
     io.to(socket.id).emit("discardDone");
 
     const player = players.find((p) => p.id === socket.id);
     trumpf = null;
 
-    // Jetzt darf der Richter als erster spielen
+    // jetzt wie bisher Startspieler setzen ...
     currentPlayerIndex = players.findIndex((p) => p.id === winnerPlayerId);
     const startPlayer = players[currentPlayerIndex];
     io.to(startPlayer.id).emit("yourTurn", {
@@ -946,12 +1086,13 @@ io.on("connection", (socket) => {
     // Prüfen: Karte in Hand?
     if (!hands[socket.id].includes(card)) return;
 
-    // Bedienpflicht prüfen
+    // Bedienpflicht prüfen (Joker + Flip berücksichtigen)
     if (currentTrick.length > 0) {
-      const leadSuit = currentTrick[0].card.slice(-1);
-      const hasLead = hands[socket.id].some((c) => c.slice(-1) === leadSuit);
-      if (card.slice(-1) !== leadSuit && hasLead) {
-        // Falsche Farbe gewählt, obwohl bedienbar → Anfrage ignorieren (keine Meldung)
+      const leadSuit = cardSuitForPlay(currentTrick[0].card);
+      const hasLead = hands[socket.id].some(
+        (c) => cardSuitForPlay(c) === leadSuit
+      );
+      if (cardSuitForPlay(card) !== leadSuit && hasLead) {
         return;
       }
     }
@@ -985,7 +1126,7 @@ io.on("connection", (socket) => {
 
     // Wenn 4 Karten → Stich auswerten
     if (currentTrick.length === 4) {
-      const leadSuit = currentTrick[0].card.slice(-1);
+      const leadSuit = cardSuitForPlay(currentTrick[0].card);
 
       let winner = currentTrick[0];
       for (let i = 1; i < 4; i++) {
@@ -1061,6 +1202,7 @@ io.on("connection", (socket) => {
   // --- Rundenauswertung ---
   function endRound() {
     const bidder = players.find((p) => p.id === winnerPlayerId) || {};
+    const DOUBLE_NEGATIVE_MIN = getDoubleNegativeMin();
     const bidderTeam = bidder.team;
     const otherTeam = bidderTeam === "Fire" ? "Storm" : "Fire";
     const bid = bids[winnerPlayerId] || 0;
@@ -1181,9 +1323,11 @@ io.on("connection", (socket) => {
       trickHistory = [];
 
       // Spielende?
-      if (teamScores.Fire >= MAX_POINTS || teamScores.Storm >= MAX_POINTS) {
-        const winner = teamScores.Fire >= MAX_POINTS ? "Fire" : "Storm";
-        io.emit("gameOver", { winner, teamScores });
+      // Spielende?
+      const maxPoints = getMaxPoints();
+      if (teamScores.Fire >= maxPoints || teamScores.Storm >= maxPoints) {
+        const winner = teamScores.Fire >= maxPoints ? "Fire" : "Storm";
+        io.emit("gameOver", { winner, teamScores, maxPoints });
         return;
       }
 
@@ -1247,7 +1391,6 @@ io.on("connection", (socket) => {
     if (hands[socket.id]) {
       io.to(socket.id).emit("hand", hands[socket.id]);
     }
-
     // ► Safety: wenn er (wieder) am Zug ist, Turn erneut schicken
     const isHisTurn = players[currentPlayerIndex]?.id === socket.id;
     if (biddingActive && isHisTurn) {
