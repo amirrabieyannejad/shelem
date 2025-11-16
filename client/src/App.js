@@ -1666,6 +1666,9 @@ function App() {
         );
       })()
     : null;
+  // direkt über dem JSX vom Bieten-Modal
+  const maxBid = includeJokers ? 200 : 165;
+  const minBid = Math.max(100, currentBid + 5);
 
   return (
     <div style={styles.page}>
@@ -1936,7 +1939,7 @@ function App() {
                     <span
                       style={{
                         ...styles.hudPill,
-                        background: "rgba(248,113,113,.22)", // rot-transparent
+                        background: "rgba(243, 61, 61, 0.67)", // rot-transparent
                         borderColor: "#fecaca",
                       }}
                     >
@@ -1947,7 +1950,7 @@ function App() {
                     <span
                       style={{
                         ...styles.hudPill,
-                        background: "rgba(254,202,202,.2)",
+                        background: "rgba(243, 61, 61, 0.67)",
                         borderColor: "#fecaca",
                         fontSize: 12,
                       }}
@@ -1971,7 +1974,7 @@ function App() {
                     <span
                       style={{
                         ...styles.hudPill,
-                        background: "rgba(59,130,246,.22)", // blau-transparent
+                        background: "rgba(19, 115, 233, 0.65)", // blau-transparent
                         borderColor: "#bfdbfe",
                       }}
                     >
@@ -1982,7 +1985,7 @@ function App() {
                     <span
                       style={{
                         ...styles.hudPill,
-                        background: "rgba(191,219,254,.2)",
+                        background: "rgba(19, 115, 233, 0.65)",
                         borderColor: "#bfdbfe",
                         fontSize: 12,
                       }}
@@ -1992,24 +1995,28 @@ function App() {
                   </div>
                 </div>
 
-                {/* Joker-Hinweis in der Mitte links */}
-                {includeJokers && (
-                  <div style={styles.hudLM}>
+                {/* Aktuelles Gebot + Joker-Hinweis links unten */}
+                <div style={styles.hudBL}>
+                  <span
+                    style={{
+                      ...styles.hudPill,
+                      // dein Styling für "Aktuelles Gebot"
+                    }}
+                  >
+                    هدف:{currentBid ?? "-"}
+                  </span>
+
+                  {includeJokers && (
                     <span
                       style={{
                         ...styles.hudPill,
-                        background: "rgba(234,179,8,.18)",
+                        background: "#db700b2e",
                         borderColor: "#facc15",
                       }}
                     >
                       بازی با جوکر
                     </span>
-                  </div>
-                )}
-
-                {/* aktuelles Gebot links unten */}
-                <div style={styles.hudBL}>
-                  <span style={styles.hudPill}>هدف: {currentBid}</span>
+                  )}
                 </div>
 
                 {/* Buttons rechts unten */}
@@ -2288,10 +2295,9 @@ function App() {
                   <button
                     style={{ ...styles.btn, fontSize: 24 }}
                     onClick={() => {
-                      const minAllowed = Math.max(100, currentBid + 5);
-                      setMyBid((prev) => Math.max(prev - 5, minAllowed));
+                      setMyBid((prev) => Math.max(prev - 5, minBid));
                     }}
-                    disabled={myBid <= Math.max(100, currentBid + 5)}
+                    disabled={myBid <= minBid}
                   >
                     –
                   </button>
@@ -2305,13 +2311,15 @@ function App() {
                       color: "black",
                     }}
                   >
-                    {myBid || 100}
+                    {myBid || minBid}
                   </div>
 
                   <button
                     style={{ ...styles.btn, fontSize: 24 }}
-                    onClick={() => setMyBid((prev) => Math.min(prev + 5, 165))}
-                    disabled={myBid >= 165}
+                    onClick={() =>
+                      setMyBid((prev) => Math.min(prev + 5, maxBid))
+                    }
+                    disabled={myBid >= maxBid}
                   >
                     +
                   </button>
