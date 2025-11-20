@@ -552,6 +552,37 @@ function cardSuitForPlay(card) {
   return card.slice(-1);
 }
 
+/**
+ * Liefert die "angespielte Farbe" des aktuellen Stiches.
+ * – Normale Karte: einfach ihre Farbe
+ * – Joker als erste Karte:
+ *     NORMAL  -> Trumpf-Farbe (falls gewählt), sonst "R" = keine Pflicht
+ *     FLIP    -> ♠ für JOKER_BW, ♥ für JOKER
+ *     UNDECIDED -> "R" = keine Pflicht, bis Richter gewählt hat
+ */
+function getLeadSuit() {
+  if (!currentTrick.length) return null;
+
+  const first = currentTrick[0].card;
+
+  // Joker als erste Karte
+  if (first === "JOKER" || first === "JOKER_BW") {
+    if (roundVariant === VARIANTS.NORMAL) {
+      // Normal-Runde: Joker gehört zur Trumpf-Farbe, falls schon gesetzt
+      return trumpf || "R"; // noch kein Trumpf -> keine Bedienpflicht
+    }
+    if (roundVariant === VARIANTS.FLIP) {
+      // Flip: fester Suit
+      return first === "JOKER_BW" ? "♠" : "♥";
+    }
+    // Variante noch unklar
+    return "R";
+  }
+
+  // Normale Karte: Suit der Karte
+  return first.slice(-1);
+}
+
 function compareCards(cardA, cardB, leadSuit, trumpSuit, isFlip = false) {
   const a = splitCard(cardA);
   const b = splitCard(cardB);
@@ -1119,14 +1150,23 @@ io.on("connection", (socket) => {
     // Prüfen: Karte in Hand?
     if (!hands[socket.id].includes(card)) return;
 
-    // Bedienpflicht prüfen (Joker + Flip berücksichtigen)
+    // Bedienpflicht prüfen (Joker + Flip + Trumpf-Wahl berücksichtigen)
     if (currentTrick.length > 0) {
-      const leadSuit = cardSuitForPlay(currentTrick[0].card);
-      const hasLead = hands[socket.id].some(
-        (c) => cardSuitForPlay(c) === leadSuit
-      );
-      if (cardSuitForPlay(card) !== leadSuit && hasLead) {
-        return;
+      const leadSuit = getLeadSuit();
+
+      // Wenn Joker gestartet wurde und noch KEIN echter Suit feststeht ("R"),
+      // gibt es noch keine Bedienpflicht – Richter wählt erst die Variante.
+      if (leadSuit !== "R") {
+        const hasLead = hands[socket.id].some(
+          (c) => cardSuitForPlay(c) === leadSuit
+        );
+        if (cardSuitForPlay(card) !== leadSuit && hasLead) {
+          // Optional: Debug/Feedback einbauen
+          socket.emit("invalidAction", {
+            msg: `Du musst ${leadSuit} bedienen.`,
+          });
+          return;
+        }
       }
     }
 
@@ -1175,8 +1215,7 @@ io.on("connection", (socket) => {
 
     // Wenn 4 Karten → Stich auswerten
     if (currentTrick.length === 4) {
-      const leadSuit = cardSuitForPlay(currentTrick[0].card);
-
+      const leadSuit = getLeadSuit();
       let winner = currentTrick[0];
       for (let i = 1; i < 4; i++) {
         const cmp = compareCards(
