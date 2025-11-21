@@ -1391,7 +1391,7 @@ function App() {
       minWidth: 56,
       whiteSpace: "nowrap",
       background: isFire ? "#ef4444" : isStorm ? "#3b82f6" : "#111827",
-      color: "#fff",
+      color: "#0f0101ff",
     };
 
     // kleine Helper, damit der Text hübsch ist
@@ -1926,7 +1926,7 @@ function App() {
                 </div>
 
                 <div style={{ marginTop: 16 }}>
-                  <div style={{ fontWeight: 800, marginBottom: 6 }}>Stiche</div>
+                  <div style={{ fontWeight: 800, marginBottom: 6 }}>دست ها</div>
                   <div style={{ display: "grid", gap: 8 }}>
                     {recap.tricks.map((t) => (
                       <TrickRow key={t.no} t={t} />
