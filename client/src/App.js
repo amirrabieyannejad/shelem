@@ -1441,6 +1441,7 @@ function App() {
                 marginTop: 4,
                 opacity: 0.8,
                 width: "100%",
+                color: "#000",
               }}
             >
               {tapInfo}

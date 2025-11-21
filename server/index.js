@@ -1056,9 +1056,9 @@ io.on("connection", (socket) => {
     // Falls gezwungener Spieler Pass machen will → blocken
     if (forceBidPlayerId === player.id && bid === 0) {
       //socket.emit("invalidAction", {
-        //msg: "Pass ist hier nicht erlaubt. Du musst bieten.",
+      //msg: "Pass ist hier nicht erlaubt. Du musst bieten.",
       //}
-    //);
+      //);
       io.to(player.id).emit("yourTurn", {
         currentBid,
         currentPlayer: player,
@@ -1182,9 +1182,9 @@ io.on("connection", (socket) => {
         );
         if (cardSuitForPlay(card) !== leadSuit && hasLead) {
           // Optional: Debug/Feedback einbauen
-          socket.emit("invalidAction", {
-            msg: `Du musst ${leadSuit} bedienen.`,
-          });
+          //socket.emit("invalidAction", {
+          //msg: `Du musst ${leadSuit} bedienen.`,
+          //});
           return;
         }
       }
