@@ -2229,7 +2229,6 @@ function App() {
                   flexWrap: "wrap",
                 }}
               >
-                <h4 style={{ margin: 0 }}>چهار برگ انتخاب کن </h4>
                 <div style={{ fontWeight: 400 }}>
                   برگ های انتخاب شده: {selectedDiscard.length} /{" "}
                   {discardTargetCount}
