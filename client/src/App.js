@@ -2688,7 +2688,7 @@ function App() {
                           >
                             <div style={{ fontWeight: 800 }}>
                               دست {r.round}
-                              {r.trumpf ? ` · حکم: ${r.trumpf}` : ""}
+                              {r.trumpf ? ` · حکم: ${r.trumpf}` : "نرس"}
                             </div>
                             <div
                               style={{
