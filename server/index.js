@@ -891,6 +891,13 @@ io.on("connection", (socket) => {
     fillRandomTeamsNow();
   });
   socket.on("startGame", () => {
+    const isFirst = players[0] && players[0].id === socket.id;
+    if (!isFirst) {
+      socket.emit("invalidAction", {
+        msg: "Nur der erste Spieler darf das Spiel starten.",
+      });
+      return;
+    }
     // nur starten, wenn 4 Plätze belegt und noch keine Runde läuft
     if (!seatsFull()) {
       socket.emit("invalidAction", {
@@ -1390,6 +1397,14 @@ io.on("connection", (socket) => {
         ? "Fire"
         : "Storm";
 
+    const finalTrumpf = roundEntry.trumpf; // Trumpf der beendeten Runde merken
+    const finalVariant = roundVariant; // (falls du ihn später brauchst)
+
+    // direkt nach Rundenschluss HUD-Status resetten
+    trumpf = null;
+    roundVariant = VARIANTS.UNDECIDED;
+    winnerPlayerId = null; // Krone/„Richter“ im HUD auch weg
+
     // Events an Clients
     io.emit("roundEnd", {
       roundPoints,
@@ -1398,7 +1413,7 @@ io.on("connection", (socket) => {
       bidderName: roundEntry.bidderName,
       bidderTeam: roundEntry.bidderTeam,
       bid: roundEntry.bid,
-      trumpf: roundEntry.trumpf,
+      trumpf: finalTrumpf,
       tricks: roundEntry.tricks,
       bottomCards: roundEntry.bottomCards,
       discarded: roundEntry.discarded,

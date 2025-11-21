@@ -1332,6 +1332,8 @@ function App() {
   }
 
   function TrickRow({ t }) {
+    const [tapInfo, setTapInfo] = useState(null); // 👈 neu
+
     const win = t.winnerTeam; // "Fire" | "Storm" | undefined
     const isFire = win === "Fire";
     const isStorm = win === "Storm";
@@ -1392,6 +1394,10 @@ function App() {
       color: "#fff",
     };
 
+    // kleine Helper, damit der Text hübsch ist
+    const teamLabel = (team) =>
+      team === "Fire" ? "آتش" : team === "Storm" ? "طوفان" : team || "";
+
     return (
       <div style={rowStyle}>
         {/* links: Stich + angespielte Farbe */}
@@ -1411,7 +1417,14 @@ function App() {
           }}
         >
           {(t.plays || []).map((p, i) => (
-            <div key={i} title={`#${i + 1} · ${p.name} (${p.team})`}>
+            <div
+              key={i}
+              title={`#${i + 1} · ${p.name} (${p.team})`} // Desktop-Hover
+              onClick={() =>
+                setTapInfo(`#${i + 1} – ${p.name} (${teamLabel(p.team)})`)
+              } // Mobile-Tap
+              style={{ cursor: "pointer" }}
+            >
               <SpriteCard
                 code={p.card}
                 size="xxs"
@@ -1419,6 +1432,20 @@ function App() {
               />
             </div>
           ))}
+
+          {/* Info-Zeile bei Tap – funktioniert auch auf Handy */}
+          {tapInfo && (
+            <div
+              style={{
+                fontSize: 11,
+                marginTop: 4,
+                opacity: 0.8,
+                width: "100%",
+              }}
+            >
+              {tapInfo}
+            </div>
+          )}
         </div>
 
         {/* rechts: Punkte deutlich sichtbar */}
@@ -1471,7 +1498,7 @@ function App() {
           width,
           height: "auto",
           display: "block",
-          borderRadius: 10,
+          borderRadius: radius,
           border: "1px solid rgba(0,0,0,.15)",
           boxShadow: "0 4px 10px rgba(0,0,0,.25)",
           userSelect: "none",
@@ -1643,7 +1670,7 @@ function App() {
               })}
             </div>
             {/* Manuelles Starten: sichtbar für alle, sobald 4/4 sitzen */}
-            {seatsAllFilled && (
+            {seatsAllFilled && isFirstPlayer && (
               <div style={{ marginTop: 12 }}>
                 <button
                   style={{
@@ -1807,7 +1834,7 @@ function App() {
                     )}
                     {recap.ruleApplied === "doubleNegative" && (
                       <span className="pill" style={styles.pill}>
-                        دوبل منفی (−{recap.bid * 2})
+                        دوبل ● █▀█▄🤜🤜🤜🤫 منفی (−{recap.bid * 2})
                       </span>
                     )}
 
@@ -2613,9 +2640,7 @@ function App() {
                 </div>
 
                 {!roundsHistory || roundsHistory.length === 0 ? (
-                  <div style={{ marginTop: 12 }}>
-                    Noch keine Rundendaten vorhanden.
-                  </div>
+                  <div style={{ marginTop: 12 }}>دستی وجود ندارد</div>
                 ) : (
                   <div style={{ display: "grid", gap: 12, marginTop: 12 }}>
                     {roundsHistory.map((r) => {
@@ -2656,8 +2681,8 @@ function App() {
                             title="Details ein-/ausklappen"
                           >
                             <div style={{ fontWeight: 800 }}>
-                              Runde {r.round}
-                              {r.trumpf ? ` · Trumpf: ${r.trumpf}` : ""}
+                              دست {r.round}
+                              {r.trumpf ? ` · حکم: ${r.trumpf}` : ""}
                             </div>
                             <div
                               style={{
