@@ -2230,7 +2230,13 @@ function App() {
                   flexWrap: "wrap",
                 }}
               >
-                <div style={{ fontWeight: 400, alignItems: "center" }}>
+                <div
+                  style={{
+                    fontWeight: 400,
+                    alignItems: "center",
+                    alignContent: "center",
+                  }}
+                >
                   برگ های انتخاب شده: {selectedDiscard.length} /{" "}
                   {discardTargetCount}
                 </div>
