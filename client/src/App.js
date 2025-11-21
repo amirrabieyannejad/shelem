@@ -1815,7 +1815,8 @@ function App() {
                     }}
                   >
                     <span className="pill" style={styles.pill}>
-                      حاکم: {recap.bidderName} ({recap.bidderTeam})
+                      حاکم: {recap.bidderUsername || recap.bidderName || "-"} (
+                      {recap.bidderTeam || "?"})
                     </span>
                     <span className="pill" style={styles.pill}>
                       هدف {recap.bid}
@@ -2699,8 +2700,8 @@ function App() {
                               }}
                             >
                               <span className="pill" style={styles.pill}>
-                                حاکم: {r.bidderName || "-"} (
-                                {r.bidderTeam || "?"})
+                                حاکم: {r.bidderUsername || r.bidderName || "-"}{" "}
+                                ({r.bidderTeam || "?"})
                               </span>
                               <span className="pill" style={styles.pill}>
                                 هدف: {r.bid || 0}

@@ -1371,6 +1371,7 @@ io.on("connection", (socket) => {
       bidderId: winnerPlayerId || null,
       bidderName: bidder.name || null,
       bidderTeam: bidderTeam || null,
+      bidderUsername: bidder.username || null,
       bid, // kommt von: const bid = bids[winnerPlayerId] || 0;
       trumpf: trumpf || null,
 
