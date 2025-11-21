@@ -1955,7 +1955,11 @@ function App() {
                         fontSize: 12,
                       }}
                     >
-                      دست: {roundPointsLive.Fire}
+                      :دست
+                      {judgeId &&
+                      players.find((p) => p.id === judgeId)?.team === "Fire"
+                        ? 0
+                        : roundPointsLive.Fire}
                     </span>
                   </div>
                 </div>
@@ -1978,7 +1982,11 @@ function App() {
                         borderColor: "#bfdbfe",
                       }}
                     >
-                      طوفان: {scores.Storm}
+                      دست:
+                      {judgeId &&
+                      players.find((p) => p.id === judgeId)?.team === "Storm"
+                        ? 0
+                        : roundPointsLive.Storm}
                     </span>
 
                     {/* Punkte dieser Runde Storm */}

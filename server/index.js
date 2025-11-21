@@ -1124,6 +1124,18 @@ io.on("connection", (socket) => {
       hands[socket.id].filter((c) => !selected.includes(c))
     );
     roundDiscarded = selected.slice();
+    // 🔥 Stich 0: Abgeworfene Karten zählen (nur intern, aber nicht broadcasten!)
+    let discardPoints = 5; // Basis-Stichpunkte
+    selected.forEach((c) => (discardPoints += cardPoints(c)));
+
+    const winner = players.find((p) => p.id === winnerPlayerId);
+    if (winner) {
+      roundPoints[winner.team] += discardPoints;
+    }
+
+    // WICHTIG: NICHT io.emit("roundPointsUpdate")!
+    // Punkte bleiben serverseitig intern, nicht im HUD
+
     io.to(socket.id).emit("hand", hands[socket.id]);
 
     // NEU: Discard beendet
