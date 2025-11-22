@@ -135,7 +135,7 @@ const styles = {
     fontWeight: 800,
   },
   card: {
-    background: "white",
+    //background: "white",
     color: "black",
     padding: 16,
     borderRadius: 8,
