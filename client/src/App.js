@@ -118,7 +118,10 @@ const SuitIcon = ({ suit = "♠", size = 32 }) => {
   );
 };
 
-const HAND_CARD_SCALE = 0.9; // 1.0 = original, <1.0 = kleiner
+// Handkarten-Größe (kannst du später einfach ändern)
+const HAND_CARD_SCALE_X = 0.86; // Breite (1 = normal, >1 = breiter, <1 = schmaler)
+const HAND_CARD_SCALE_Y = 0.85; // Höhe  (1 = normal, <1 = kürzer, >1 = höher)
+
 const HAND_CARD_SHIFT_PX = -25; // negativer Wert = Überlappung
 
 // --- einfache Styles ohne Tailwind ---
@@ -138,7 +141,7 @@ const styles = {
     fontWeight: 800,
   },
   card: {
-        color: "black",
+    color: "black",
     padding: 16,
     borderRadius: 8,
     marginTop: 16,
@@ -291,6 +294,7 @@ const styles = {
     borderRadius: 10,
     fontWeight: 800,
     fontSize: 13,
+
     color: "#fff",
     whiteSpace: "nowrap",
     boxShadow: "0 2px 6px rgba(0,0,0,.15)",
@@ -313,6 +317,7 @@ const styles = {
     gridRow: "3",
     justifySelf: "start",
     alignSelf: "end",
+    marginBottom: -1,
   },
   hudBR: {
     gridColumn: "3",
@@ -338,6 +343,7 @@ const styles = {
     justifySelf: "end",
     alignSelf: "end",
     pointerEvents: "auto",
+    marginBottom: -7,
   },
   hudButton: {
     padding: "10px 10px",
@@ -1156,25 +1162,6 @@ function App() {
           </div>
         )}
 
-        {/* Trumpf unten außen NUR bei NORMAL + gesetztem trumpf */}
-        {isJudge && roundVariant === VARIANTS.NORMAL && trumpf && (
-          <div
-            style={{
-              position: "absolute",
-              bottom: 0,
-              left: "50%",
-              transform: "translate(-50%, 66%)",
-              pointerEvents: "none",
-              zIndex: 40,
-              filter: "drop-shadow(0 2px 6px rgba(0,0,0,.35))",
-            }}
-            aria-hidden
-            title={`Trumpf ${trumpf}`}
-          >
-            <SuitIcon suit={trumpf} size={36} />
-          </div>
-        )}
-
         {/* Bei FLIP: Badge unten außen */}
         {isJudge && roundVariant === VARIANTS.FLIP && (
           <div
@@ -1467,7 +1454,13 @@ function App() {
     );
   }
 
-  function SpriteCard({ code, size = "md", style = {}, radius = CARD_RADIUS }) {
+  function SpriteCard({
+    code,
+    size = "md",
+    style = {},
+    radius = CARD_RADIUS,
+    squash = false, // ⬅️ neu
+  }) {
     if (!code) return null;
 
     const src = cardPathFor(code);
@@ -1481,45 +1474,31 @@ function App() {
         : size === "xs"
         ? "clamp(32px, 7vw, 40px)" // deutlich kleiner
         : /* xxs */ "clamp(26px, 6vw, 32px)";
-    if (!src) {
-      // Fallback, falls ein Code nicht gemappt ist
-      return (
-        <img
-          src={src}
-          alt={code}
-          draggable="false"
-          style={{
-            width,
-            height: "auto",
-            display: "block",
-            borderRadius: radius,
-            border: "1px solid rgba(0,0,0,.15)",
-            boxShadow: "0 4px 10px rgba(0,0,0,.25)",
-            userSelect: "none",
-            ...style,
-          }}
-        />
-      );
+
+    // gemeinsamer Style
+    const baseStyle = {
+      width,
+      height: "auto",
+      display: "block",
+      borderRadius: radius,
+      border: "1px solid rgba(0,0,0,.15)",
+      boxShadow: "0 4px 10px rgba(0,0,0,.25)",
+      userSelect: "none",
+      ...style,
+    };
+
+    // hier breiter + etwas niedriger machen NUR wenn squash=true
+    if (squash) {
+      const existing = baseStyle.transform ? baseStyle.transform + " " : "";
+      baseStyle.transform = existing + "scale(1.08, 0.9)"; // breiter & kürzer
+      baseStyle.transformOrigin = "bottom center";
     }
 
-    return (
-      <img
-        src={src}
-        alt={code}
-        draggable="false"
-        style={{
-          width,
-          height: "auto",
-          display: "block",
-          borderRadius: radius,
-          border: "1px solid rgba(0,0,0,.15)",
-          boxShadow: "0 4px 10px rgba(0,0,0,.25)",
-          userSelect: "none",
-          ...style,
-        }}
-      />
-    );
+    if (!src) return null;
+
+    return <img src={src} alt={code} draggable="false" style={baseStyle} />;
   }
+
   // === Sitzplatzauswahl vorbereiten ===
   // sichtbar bis das Spiel wirklich startet (keine Hand, keine Auktion, keine Discard-Phase)
   const roundActiveServer =
@@ -1841,66 +1820,66 @@ function App() {
       ) : (
         <>
           <div
-  style={{
-    maxWidth: "min(92vw, 900px)",
-    margin: "0 auto 8px",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 0,
-  }}
->
-  <div style={{ fontSize: 14 }}>
-    👤 {auth.profile?.username || auth.profile?.name || "?"}
-  </div>
+            style={{
+              maxWidth: "min(92vw, 900px)",
+              margin: "0 auto 8px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 0,
+            }}
+          >
+            <div style={{ fontSize: 14 }}>
+              👤 {auth.profile?.username || auth.profile?.name || "?"}
+            </div>
 
-  {/* Rechts: Statistik, Neues Spiel, Logout */}
-  <div
-    style={{
-      display: "flex",
-      alignItems: "center",
-      gap: 8,
-    }}
-  >
-    <button
-      style={{
-        ...styles.btn,
-        padding: "6px 10px",
-        borderRadius: 999,
-        fontWeight: 700,
-      }}
-      onClick={() => setShowStats(true)}
-    >
-      آمار
-    </button>
+            {/* Rechts: Statistik, Neues Spiel, Logout */}
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+              }}
+            >
+              <button
+                style={{
+                  ...styles.btn,
+                  padding: "6px 10px",
+                  borderRadius: 999,
+                  fontWeight: 700,
+                }}
+                onClick={() => setShowStats(true)}
+              >
+                آمار
+              </button>
 
-    <button
-      style={{
-        ...styles.btn,
-        padding: "6px 10px",
-        borderRadius: 999,
-        fontWeight: 700,
-      }}
-      onClick={() => socket.emit("resetGame")}
-      title="Spiel komplett zurücksetzen (ohne Spieler zu entfernen)"
-    >
-      بازی جدید
-    </button>
+              <button
+                style={{
+                  ...styles.btn,
+                  padding: "6px 10px",
+                  borderRadius: 999,
+                  fontWeight: 700,
+                }}
+                onClick={() => socket.emit("resetGame")}
+                title="Spiel komplett zurücksetzen (ohne Spieler zu entfernen)"
+              >
+                بازی جدید
+              </button>
 
-    <button
-      onClick={handleLogout}
-      title="خروج از حساب"
-      style={{
-        ...styles.btn,
-        padding: "6px 10px",
-        borderRadius: 999,
-        fontWeight: 800,
-      }}
-    >
-      ⎋ خروج
-    </button>
-  </div>
-</div>
+              <button
+                onClick={handleLogout}
+                title="خروج از حساب"
+                style={{
+                  ...styles.btn,
+                  padding: "6px 10px",
+                  borderRadius: 999,
+                  fontWeight: 800,
+                }}
+              >
+                ⎋ خروج
+              </button>
+            </div>
+          </div>
 
           {/* Popup Boden-Karten */}
           {showBottom && (
@@ -2127,6 +2106,7 @@ function App() {
               {/* HUD Gesamt- und Rundenpunkte */}
               <div style={styles.hudGrid}>
                 {/* Fire – Gesamt + Hand, rot */}
+
                 <div style={styles.hudTL}>
                   <div
                     style={{
@@ -2206,6 +2186,7 @@ function App() {
                 </div>
 
                 {/* Aktuelles Gebot + Joker-Hinweis links unten */}
+
                 <div style={styles.hudBL}>
                   <span
                     style={{
@@ -2215,19 +2196,60 @@ function App() {
                   >
                     هدف : {currentBid ?? "-"}
                   </span>
+                </div>
+                <div style={styles.hudButtonWrap}>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                    }}
+                  >
+                    {/* Joker-Hinweis */}
+                    {includeJokers && (
+                      <span
+                        style={{
+                          ...styles.hudPill,
+                          background: "#db700b2e",
+                          borderColor: "#facc15",
+                        }}
+                      >
+                        بازی با جوکر
+                      </span>
+                    )}
 
-                  {includeJokers && (
-                    <span
-                      style={{
-                        ...styles.hudPill,
-                        background: "#db700b2e",
-                        borderColor: "#facc15",
-                      }}
-                    >
-                      بازی با جوکر
-                    </span>
-                  )}
-                </div>               
+                    {/* Trumpf / Suit vom Richter direkt daneben */}
+                    {roundVariant === VARIANTS.NORMAL && trumpf && (
+                      <span
+                        style={{
+                          ...styles.hudPill,
+                          padding: "4px 10px",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          gap: 4,
+                        }}
+                        title={`حکم: ${trumpf}`}
+                      >
+                        <SuitIcon suit={trumpf} size={25} />
+                      </span>
+                    )}
+
+                    {/* Optional: bei Flip statt Suit ein Badge zeigen */}
+                    {roundVariant === VARIANTS.FLIP && (
+                      <span
+                        style={{
+                          ...styles.hudPill,
+                          padding: "4px 10px",
+                          fontWeight: 900,
+                        }}
+                        title="نرس (Flip)"
+                      >
+                        نرس
+                      </span>
+                    )}
+                  </div>
+                </div>
               </div>
 
               {/* Karten-Mitte */}
@@ -2457,6 +2479,7 @@ function App() {
                             flexWrap: "wrap",
                           }}
                         >
+                          {/*SuitOs */}
                           {suitOpts.map((suit) => (
                             <button
                               key={suit}
@@ -2671,7 +2694,14 @@ function App() {
             </div>
           )}
           {/* Hand */}
-          <div style={{ ...styles.card, marginTop: -4, paddingTop: 0, paddingBottom: 4,}}>
+          <div
+            style={{
+              ...styles.card,
+              marginTop: -4,
+              paddingTop: 0,
+              paddingBottom: 4,
+            }}
+          >
             {/* leichtes Overlap-Layout für ein Kartenband */}
             <div
               style={{
@@ -2749,7 +2779,7 @@ function App() {
                           : "translateY(0px)",
                         transform: `${
                           showSelected ? "translateY(-8px)" : "translateY(0px)"
-                        } scale(${HAND_CARD_SCALE})`,
+                        } scale(${HAND_CARD_SCALE_X},${HAND_CARD_SCALE_Y})`,
                         transformOrigin: "bottom center",
                         transition: "transform 140ms ease",
                         filter: !disabled ? "brightness(1)" : "grayscale(0.2)",
@@ -2758,6 +2788,7 @@ function App() {
                       <SpriteCard
                         code={card}
                         size="sm"
+                        squash
                         style={{
                           boxShadow: showSelected
                             ? "0 12px 24px rgba(0,0,0,.35)"
