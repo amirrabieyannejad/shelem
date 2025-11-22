@@ -1596,8 +1596,8 @@ function App() {
                 <span>نمایش امتیاز دست‌ها</span>
               </label>
               {!isFirstPlayer && (
-                <span style={{ fontSize: 12, opacity: 0.7 }}>
-                  فقط بازیکن اول می‌تواند این گزینه ها را عوض کند
+                <span style={{ fontSize: 11, opacity: 0.7 }}>
+                  فقط بازیکن اول می‌تواند این گزینه ها را عوض کند:
                 </span>
               )}
             </div>
@@ -1993,8 +1993,9 @@ function App() {
                     </span>
 
                     {/* Fire Punkte dieser Runde */}
-                    {judgeId &&
-                    showRoundPoints &&
+                    {showRoundPoints &&
+                    (judgeId &&
+                    
                     players.find((p) => p.id === judgeId)?.team ===
                       "Fire" ? null : (
                       <span
@@ -2007,7 +2008,7 @@ function App() {
                       >
                         دست: {roundPointsLive.Fire}
                       </span>
-                    )}
+                    ))}
                   </div>
                 </div>
 
@@ -2032,10 +2033,10 @@ function App() {
                       طوفان: {scores.Storm}
                     </span>
 
-                    
                     {/* Storm Punkte dieser Runde */}
-                    {judgeId &&
-                    showRoundPoints &&
+                    {showRoundPoints &&
+                    (judgeId &&
+                    
                     players.find((p) => p.id === judgeId)?.team ===
                       "Storm" ? null : (
                       <span
@@ -2048,7 +2049,7 @@ function App() {
                       >
                         دست: {roundPointsLive.Storm}
                       </span>
-                    )}
+                    ))}
                   </div>
                 </div>
 
