@@ -1721,7 +1721,7 @@ function App() {
               <div
                 style={{
                   position: "relative",
-                  width: 400,
+                  width: 700,
                   maxWidth: "100%",
                   height: 260,
                   margin: "0 auto",
