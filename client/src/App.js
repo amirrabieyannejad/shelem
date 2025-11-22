@@ -751,6 +751,10 @@ function App() {
       setVariantModal({ open: true, options: options || ["NORMAL", "FLIP"] });
     });
 
+    socket.on("showRoundPointsUpdated", ({ value }) => {
+      setShowRoundPoints(value);
+    });
+
     socket.on("variantChosen", ({ variant, trumpf: t }) => {
       setVariantModal({ open: false, options: [] });
       setRoundVariant(variant); // <— Variante merken
@@ -961,6 +965,9 @@ function App() {
       if (s?.roundVariant) setRoundVariant(s.roundVariant);
       if (typeof s?.biddingActive === "boolean")
         setBiddingActive(s.biddingActive);
+      if (typeof s?.showRoundPoints === "boolean") {
+        setShowRoundPoints(s.showRoundPoints);
+      }
       if (typeof s?.tricksPlayed === "number" || s?.winnerPlayerId != null) {
         setServerFlags({
           tricksPlayed: s?.tricksPlayed || 0,
@@ -1024,6 +1031,7 @@ function App() {
     return () => {
       socket.off();
       socket.off("invalidAction", onInvalidAction);
+      socket.off("showRoundPointsUpdated");
       if (trickTimer.current) clearTimeout(trickTimer.current);
     };
   }, []); // Events nur einmal registrieren
@@ -1591,7 +1599,11 @@ function App() {
                   type="checkbox"
                   checked={showRoundPoints}
                   disabled={!isFirstPlayer}
-                  onChange={(e) => setShowRoundPoints(e.target.checked)}
+                  onChange={(e) =>
+                    socket.emit("setShowRoundPoints", {
+                      value: e.target.checked,
+                    })
+                  }
                 />
                 <span>نمایش امتیاز دست‌ها</span>
               </label>
@@ -1994,21 +2006,20 @@ function App() {
 
                     {/* Fire Punkte dieser Runde */}
                     {showRoundPoints &&
-                    (judgeId &&
-                    
-                    players.find((p) => p.id === judgeId)?.team ===
-                      "Fire" ? null : (
-                      <span
-                        style={{
-                          ...styles.hudPill,
-                          background: "rgba(243, 61, 61, 0.67)",
-                          borderColor: "#fecaca",
-                          fontSize: 12,
-                        }}
-                      >
-                        دست: {roundPointsLive.Fire}
-                      </span>
-                    ))}
+                      (judgeId &&
+                      players.find((p) => p.id === judgeId)?.team ===
+                        "Fire" ? null : (
+                        <span
+                          style={{
+                            ...styles.hudPill,
+                            background: "rgba(243, 61, 61, 0.67)",
+                            borderColor: "#fecaca",
+                            fontSize: 12,
+                          }}
+                        >
+                          دست: {roundPointsLive.Fire}
+                        </span>
+                      ))}
                   </div>
                 </div>
 
@@ -2035,21 +2046,20 @@ function App() {
 
                     {/* Storm Punkte dieser Runde */}
                     {showRoundPoints &&
-                    (judgeId &&
-                    
-                    players.find((p) => p.id === judgeId)?.team ===
-                      "Storm" ? null : (
-                      <span
-                        style={{
-                          ...styles.hudPill,
-                          background: "rgba(19, 115, 233, 0.65)",
-                          borderColor: "#bfdbfe",
-                          fontSize: 12,
-                        }}
-                      >
-                        دست: {roundPointsLive.Storm}
-                      </span>
-                    ))}
+                      (judgeId &&
+                      players.find((p) => p.id === judgeId)?.team ===
+                        "Storm" ? null : (
+                        <span
+                          style={{
+                            ...styles.hudPill,
+                            background: "rgba(19, 115, 233, 0.65)",
+                            borderColor: "#bfdbfe",
+                            fontSize: 12,
+                          }}
+                        >
+                          دست: {roundPointsLive.Storm}
+                        </span>
+                      ))}
                   </div>
                 </div>
 

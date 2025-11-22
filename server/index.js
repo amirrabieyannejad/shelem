@@ -161,6 +161,7 @@ let winnerPlayerId = null;
 let randomTeams = false;
 let consecutivePasses = 0;
 let includeJokers = false; // Spiel mit/ohne Joker
+let showRoundPoints = true;
 let currentBottomSize = 4; // 4 ohne Joker, 6 mit Joker
 // --- Neue globale Variablen für Stiche ---
 let currentTrick = []; // [{playerId, card}]
@@ -170,6 +171,7 @@ let teamScores = { Fire: 0, Storm: 0 };
 let roundPoints = { Fire: 0, Storm: 0 };
 let roundBottomCards = [];
 let roundDiscarded = [];
+
 // Basis-Werte (ohne/mit Joker)
 const MAX_BID_NORMAL = 165;
 const MAX_BID_JOKERS = 200;
@@ -234,6 +236,7 @@ function stateSnapshot() {
     tricksPlayed,
     includeJokers,
     currentBottomSize,
+    showRoundPoints,
     maxBid: getMaxBid(),
     maxPoints: getMaxPoints(),
   };
@@ -951,6 +954,20 @@ io.on("connection", (socket) => {
     currentBottomSize = includeJokers ? 6 : 4;
     io.emit("stateSync", stateSnapshot());
   });
+  socket.on("setShowRoundPoints", ({ value }) => {
+  const isFirst = players[0] && players[0].id === socket.id;
+  if (!isFirst) {
+    socket.emit("invalidAction", {
+      msg: "Nur der erste Spieler kann die Rundenpunkte-Ansicht ändern.",
+    });
+    return;
+  }
+
+  // hier ist es egal, ob die Runde schon läuft – es ist nur eine Anzeige-Option
+  showRoundPoints = !!value;
+  io.emit("stateSync", stateSnapshot());
+});
+
 
   // Spiel hart zurücksetzen (Spieler/Seats bleiben)
   socket.on("resetGame", () => {
