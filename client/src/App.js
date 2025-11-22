@@ -1541,14 +1541,15 @@ function App() {
         const SEAT_TEAMS = { 1: "آتش", 2: "طوفان", 3: "آتش", 4: "طوفان" };
         const seatLabel = (i) => `(${i}) تیم ${SEAT_TEAMS[i]}`;
 
-        // kleinere Seat-Box
+        // gleiche Funktionalität, nur anders platziert
         const seatStyle = (i) => ({
-          width: 160,
+          width: 170,
+          maxWidth: "100%",
           borderRadius: 12,
           padding: 8,
           border: "2px solid #e5e7eb",
           background: SEAT_TEAMS[i] === "آتش" ? "#ffe4e6" : "#eff6ff",
-          boxShadow: "0 2px 6px rgba(0,0,0,.12)",
+          boxShadow: "0 2px 6px rgba(0,0,0,0.1)",
           fontSize: 12,
         });
 
@@ -1562,7 +1563,6 @@ function App() {
           padding: "6px 8px",
         });
 
-        // gleiche Funktionalität, nur anders platziert
         const renderSeat = (i, posStyle) => {
           const occupant = seatMap[i];
           const mine = mySeat === i;
@@ -1598,7 +1598,6 @@ function App() {
                 </div>
 
                 <div style={{ marginTop: 6, display: "flex", gap: 6 }}>
-                  {/* Platz wählen/wechseln */}
                   <button
                     style={seatButtonStyle(occupiedByOther)}
                     disabled={occupiedByOther}
@@ -1616,7 +1615,6 @@ function App() {
                       : "اینجا بنشین"}
                   </button>
 
-                  {/* Platz freigeben – nur wenn du hier sitzt */}
                   {mine && (
                     <button
                       style={{
@@ -1694,7 +1692,7 @@ function App() {
 
               {!isFirstPlayer && (
                 <span style={{ fontSize: 11, opacity: 0.7 }}>
-                  فقط بازیکن اول می‌تواند این گزینه ها را عوض کند:
+                  :فقط بازیکن اول می‌تواند این گزینه ها را عوض کند
                 </span>
               )}
             </div>
