@@ -118,6 +118,9 @@ const SuitIcon = ({ suit = "♠", size = 32 }) => {
   );
 };
 
+const HAND_CARD_SCALE = 0.7; // 1.0 = original, <1.0 = kleiner
+const HAND_CARD_SHIFT_PX = -25; // negativer Wert = Überlappung
+
 // --- einfache Styles ohne Tailwind ---
 const styles = {
   page: {
@@ -135,8 +138,7 @@ const styles = {
     fontWeight: 800,
   },
   card: {
-    //background: "white",
-    color: "black",
+        color: "black",
     padding: 16,
     borderRadius: 8,
     marginTop: 16,
@@ -205,7 +207,7 @@ const styles = {
     position: "relative",
     width: "min(94vw, 720px)", // statt 600px
     height: "min(60vh, 520px)", // statt 500px
-    margin: "clamp(8px, 3vh, 24px) auto",
+    margin: "4px auto 0",
     background: "#047857",
     borderRadius: 12,
   },
@@ -1602,7 +1604,7 @@ function App() {
                   {occupant ? occupant.username : "— آزاد —"}
                 </div>
 
-                <div style={{ marginTop: 6, display: "flex", gap: 6 }}>
+                <div style={{ marginTop: 0, display: "flex", gap: 0 }}>
                   <button
                     style={seatButtonStyle(occupiedByOther)}
                     disabled={occupiedByOther}
@@ -1646,7 +1648,7 @@ function App() {
             {/* Joker-Option nur vor Rundenstart */}
             <div
               style={{
-                marginTop: 8,
+                marginTop: 0,
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
@@ -1675,7 +1677,6 @@ function App() {
                   }
                 />
                 <span>بازی با جوکر</span>
-                
               </label>
 
               {/*  Rundenpunkte sichtbar / unsichtbar */}
@@ -1701,20 +1702,24 @@ function App() {
                     })
                   }
                 />
-                
+
                 <span>نمایش امتیاز دست‌ها</span>
               </label>
-              
 
-              {!isFirstPlayer && (
-                <span></span>,
-                <span style={{ fontSize: 11, opacity: 0.7, color: "white" ,textAlign:"center"}}>
-                  
-                  فقط بازیکن اول می‌تواند این گزینه ها را عوض کند
-                  
-                </span>
-                
-              )}
+              {!isFirstPlayer &&
+                ((<span></span>),
+                (
+                  <span
+                    style={{
+                      fontSize: 11,
+                      opacity: 0.7,
+                      color: "white",
+                      textAlign: "center",
+                    }}
+                  >
+                    فقط بازیکن اول می‌تواند این گزینه ها را عوض کند
+                  </span>
+                ))}
             </div>
 
             {/* Random nur für ersten Spieler und nur wenn alle Plätze leer */}
@@ -1815,7 +1820,7 @@ function App() {
                   شروع بازی
                 </button>
 
-                <div style={{ marginTop: 6, fontSize: 12, color: "#111" }}>
+                <div style={{ marginTop: 6, fontSize: 12, color: "#fafafaff" }}>
                   ناخدا⚓ : بادبان ها را بکشید
                 </div>
               </div>
@@ -1835,33 +1840,68 @@ function App() {
         <AuthGate onAuthed={setAuth} />
       ) : (
         <>
-          {/* 🔽 NEUE TOP-BAR MIT LOGOUT OBEN RECHTS */}
           <div
-            style={{
-              maxWidth: "min(92vw, 900px)",
-              margin: "0 auto 8px",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: 0,
-            }}
-          >
-            <div style={{ fontSize: 14 }}>
-              👤 {auth.profile?.username || auth.profile?.name || "?"}
-            </div>
-            <button
-              onClick={handleLogout}
-              title="خروج از حساب"
-              style={{
-                ...styles.btn,
-                padding: "6px 10px",
-                borderRadius: 999,
-                fontWeight: 800,
-              }}
-            >
-              ⎋ خروج
-            </button>
-          </div>
+  style={{
+    maxWidth: "min(92vw, 900px)",
+    margin: "0 auto 8px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 0,
+  }}
+>
+  <div style={{ fontSize: 14 }}>
+    👤 {auth.profile?.username || auth.profile?.name || "?"}
+  </div>
+
+  {/* Rechts: Statistik, Neues Spiel, Logout */}
+  <div
+    style={{
+      display: "flex",
+      alignItems: "center",
+      gap: 8,
+    }}
+  >
+    <button
+      style={{
+        ...styles.btn,
+        padding: "6px 10px",
+        borderRadius: 999,
+        fontWeight: 700,
+      }}
+      onClick={() => setShowStats(true)}
+    >
+      آمار
+    </button>
+
+    <button
+      style={{
+        ...styles.btn,
+        padding: "6px 10px",
+        borderRadius: 999,
+        fontWeight: 700,
+      }}
+      onClick={() => socket.emit("resetGame")}
+      title="Spiel komplett zurücksetzen (ohne Spieler zu entfernen)"
+    >
+      بازی جدید
+    </button>
+
+    <button
+      onClick={handleLogout}
+      title="خروج از حساب"
+      style={{
+        ...styles.btn,
+        padding: "6px 10px",
+        borderRadius: 999,
+        fontWeight: 800,
+      }}
+    >
+      ⎋ خروج
+    </button>
+  </div>
+</div>
+
           {/* Popup Boden-Karten */}
           {showBottom && (
             <div style={styles.modalBackdrop}>
@@ -2187,29 +2227,7 @@ function App() {
                       بازی با جوکر
                     </span>
                   )}
-                </div>
-
-                {/* Buttons rechts unten */}
-                <div style={styles.hudButtonWrap}>
-                  <button
-                    style={styles.hudButton}
-                    onClick={() => setShowStats(true)}
-                  >
-                    آمار
-                  </button>
-                  <button
-                    style={{
-                      ...styles.btn,
-                      marginLeft: 8,
-                      background: "#fca5a5",
-                      fontWeight: 900,
-                    }}
-                    onClick={() => socket.emit("resetGame")}
-                    title="Spiel komplett zurücksetzen (ohne Spieler zu entfernen)"
-                  >
-                    بازی جدید
-                  </button>
-                </div>
+                </div>               
               </div>
 
               {/* Karten-Mitte */}
@@ -2653,17 +2671,18 @@ function App() {
             </div>
           )}
           {/* Hand */}
-          <div style={styles.card}>
+          <div style={{ ...styles.card, marginTop: -4, paddingTop: 0, paddingBottom: 4,}}>
             {/* leichtes Overlap-Layout für ein Kartenband */}
             <div
               style={{
                 display: "flex",
                 gap: 0,
-                flexWrap: "wrap",
+                flexWrap: "nowrap",
                 alignItems: "flex-end",
-                paddingBottom: "8px 16px",
+                padding: "0px 16px",
                 justifyContent: "center",
-                overflow: "visible",
+                overflowY: "visible",
+                maxWidth: "100%",
               }}
             >
               {hand.map((card, idx) => {
@@ -2716,7 +2735,7 @@ function App() {
                       background: "transparent",
                       border: "none",
                       overflow: "visible",
-                      marginLeft: idx ? "-12px" : "0px",
+                      marginLeft: idx ? `${HAND_CARD_SHIFT_PX}px` : "0px",
                       zIndex: isSelected ? 1000 + idx : idx,
                       cursor: disabled ? "not-allowed" : "pointer",
                       // für kleine Overlap-Optik kann man hier z.B. marginLeft: -12 setzen,
@@ -2725,12 +2744,14 @@ function App() {
                   >
                     <div
                       style={{
-                        // der Wrapper bewegt die Karte nach oben, wenn ausgewählt
-                        transform: showSelected
+                        constTransform: showSelected
                           ? "translateY(-8px)"
                           : "translateY(0px)",
+                        transform: `${
+                          showSelected ? "translateY(-8px)" : "translateY(0px)"
+                        } scale(${HAND_CARD_SCALE})`,
+                        transformOrigin: "bottom center",
                         transition: "transform 140ms ease",
-                        // keine rote Outline mehr
                         filter: !disabled ? "brightness(1)" : "grayscale(0.2)",
                       }}
                     >
@@ -2738,7 +2759,6 @@ function App() {
                         code={card}
                         size="sm"
                         style={{
-                          // dezenter Auswahl-Effekt nur über Schatten
                           boxShadow: showSelected
                             ? "0 12px 24px rgba(0,0,0,.35)"
                             : "0 6px 14px rgba(0,0,0,.25)",
