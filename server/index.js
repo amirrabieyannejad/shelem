@@ -18,7 +18,12 @@ const upload = multer({ dest: path.join(__dirname, "uploads") });
 const server = http.createServer(app);
 const allowed = process.env.CORS_ORIGIN
   ? process.env.CORS_ORIGIN.split(",").map((s) => s.trim())
-  : ["https://shelem-ruby.vercel.app", "https://shelem.onrender.com"];
+  : [
+      "http://localhost:3000", // ⬅ lokal Frontend
+      "https://shelem-ruby.vercel.app",
+      "https://shelem.onrender.com",
+    ];
+
 app.use(cors({ origin: allowed, credentials: true }));
 const io = new Server(server, { cors: { origin: allowed } });
 // --- Simple user store (dev) ---
@@ -955,19 +960,18 @@ io.on("connection", (socket) => {
     io.emit("stateSync", stateSnapshot());
   });
   socket.on("setShowRoundPoints", ({ value }) => {
-  const isFirst = players[0] && players[0].id === socket.id;
-  if (!isFirst) {
-    socket.emit("invalidAction", {
-      msg: "Nur der erste Spieler kann die Rundenpunkte-Ansicht ändern.",
-    });
-    return;
-  }
+    const isFirst = players[0] && players[0].id === socket.id;
+    if (!isFirst) {
+      socket.emit("invalidAction", {
+        msg: "Nur der erste Spieler kann die Rundenpunkte-Ansicht ändern.",
+      });
+      return;
+    }
 
-  // hier ist es egal, ob die Runde schon läuft – es ist nur eine Anzeige-Option
-  showRoundPoints = !!value;
-  io.emit("stateSync", stateSnapshot());
-});
-
+    // hier ist es egal, ob die Runde schon läuft – es ist nur eine Anzeige-Option
+    showRoundPoints = !!value;
+    io.emit("stateSync", stateSnapshot());
+  });
 
   // Spiel hart zurücksetzen (Spieler/Seats bleiben)
   socket.on("resetGame", () => {

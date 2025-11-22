@@ -1542,7 +1542,7 @@ function App() {
         const seatLabel = (i) => `(${i}) تیم ${SEAT_TEAMS[i]}`;
 
         // die Größe der Sitzboxen ändern
-        const SEAT_BOX_WIDTH = 110; // Breite der Box
+        const SEAT_BOX_WIDTH = 90; // Breite der Box
         const SEAT_FONT_SIZE = 9; // Basisschriftgröße
 
         // gleiche Funktionalität, nur anders platziert
@@ -1626,7 +1626,7 @@ function App() {
                         ...styles.btn,
                         background: "#fde68a",
                         fontWeight: 800,
-                        fontSize: 12,
+                        fontSize: SEAT_FONT_SIZE,
                         padding: "6px 8px",
                       }}
                       onClick={() => socket.emit("leaveSeat")}
@@ -1660,6 +1660,10 @@ function App() {
                   alignItems: "center",
                   gap: 6,
                   fontSize: 14,
+                  padding: "4px 8x",
+                  borderRadius: 6,
+                  backgroundColor: includeJokers ? "#064e3b" : "#065f46", // z.B. dunkles Grün vs. Grau
+                  color: "white", // Schriftfarbe
                 }}
               >
                 <input
@@ -1671,6 +1675,7 @@ function App() {
                   }
                 />
                 <span>بازی با جوکر</span>
+                
               </label>
 
               {/*  Rundenpunkte sichtbar / unsichtbar */}
@@ -1679,7 +1684,11 @@ function App() {
                   display: "flex",
                   alignItems: "center",
                   gap: 6,
-                  fontSize: 14,
+                  fontSize: 12,
+                  padding: "4px 8x",
+                  borderRadius: 6,
+                  backgroundColor: showRoundPoints ? "#064e3b" : "#065f46", // z.B. dunkles Grün vs. Grau
+                  color: "white", // Schriftfarbe
                 }}
               >
                 <input
@@ -1692,13 +1701,19 @@ function App() {
                     })
                   }
                 />
+                
                 <span>نمایش امتیاز دست‌ها</span>
               </label>
+              
 
               {!isFirstPlayer && (
-                <span style={{ fontSize: 11, opacity: 0.7 }}>
-                  :فقط بازیکن اول می‌تواند این گزینه ها را عوض کند
+                <span></span>,
+                <span style={{ fontSize: 11, opacity: 0.7, color: "white" ,textAlign:"center"}}>
+                  
+                  فقط بازیکن اول می‌تواند این گزینه ها را عوض کند
+                  
                 </span>
+                
               )}
             </div>
 
@@ -1718,7 +1733,7 @@ function App() {
             {/* NEUES Layout: Sitze wie am Tisch (oben/unten/links/rechts) */}
             <div
               style={{
-                marginTop: 12,
+                marginTop: 4,
                 display: "flex",
                 justifyContent: "center",
               }}
@@ -1728,7 +1743,7 @@ function App() {
                   position: "relative",
                   width: 300,
                   maxWidth: "100%",
-                  height: 340,
+                  height: 390,
                   margin: "0 auto",
                 }}
               >
