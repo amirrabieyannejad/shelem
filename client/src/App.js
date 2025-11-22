@@ -1541,16 +1541,20 @@ function App() {
         const SEAT_TEAMS = { 1: "آتش", 2: "طوفان", 3: "آتش", 4: "طوفان" };
         const seatLabel = (i) => `(${i}) تیم ${SEAT_TEAMS[i]}`;
 
+        // die Größe der Sitzboxen ändern
+        const SEAT_BOX_WIDTH = 110; // Breite der Box
+        const SEAT_FONT_SIZE = 9; // Basisschriftgröße
+
         // gleiche Funktionalität, nur anders platziert
         const seatStyle = (i) => ({
-          width: 170,
+          width: SEAT_BOX_WIDTH,
           maxWidth: "100%",
           borderRadius: 12,
           padding: 8,
           border: "2px solid #e5e7eb",
           background: SEAT_TEAMS[i] === "آتش" ? "#ffe4e6" : "#eff6ff",
           boxShadow: "0 2px 6px rgba(0,0,0,0.1)",
-          fontSize: 12,
+          fontSize: SEAT_FONT_SIZE,
         });
 
         const seatButtonStyle = (disabled) => ({
@@ -1559,7 +1563,7 @@ function App() {
           cursor: disabled ? "not-allowed" : "pointer",
           width: "100%",
           fontWeight: 800,
-          fontSize: 12,
+          fontSize: SEAT_FONT_SIZE,
           padding: "6px 8px",
         });
 
@@ -1577,7 +1581,7 @@ function App() {
               }}
             >
               <div style={seatStyle(i)}>
-                <div style={{ fontWeight: 900, fontSize: 13 }}>
+                <div style={{ fontWeight: 900, fontSize: SEAT_FONT_SIZE + 1 }}>
                   {seatLabel(i)}
                 </div>
                 <div
@@ -1590,6 +1594,7 @@ function App() {
                     minHeight: 30,
                     display: "flex",
                     alignItems: "center",
+                    fontSize: SEAT_FONT_SIZE,
                     justifyContent: "center",
                     fontWeight: 800,
                   }}
@@ -1721,7 +1726,7 @@ function App() {
               <div
                 style={{
                   position: "relative",
-                  width: 750,
+                  width: 400,
                   maxWidth: "100%",
                   height: 260,
                   margin: "0 auto",
