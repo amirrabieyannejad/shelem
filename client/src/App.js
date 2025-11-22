@@ -570,7 +570,7 @@ function App() {
     winnerId: null,
   });
   const [includeJokers, setIncludeJokers] = useState(false);
-
+  const [showRoundPoints, setShowRoundPoints] = useState(true);
   const [discardTargetCount, setDiscardTargetCount] = useState(4); // 4 oder 6
 
   // --- Auth State ---
@@ -1578,9 +1578,26 @@ function App() {
                 />
                 <span>بازی با جوکر</span>
               </label>
+              {/*  Rundenpunkte sichtbar / unsichtbar */}
+              <label
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  fontSize: 14,
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={showRoundPoints}
+                  disabled={!isFirstPlayer}
+                  onChange={(e) => setShowRoundPoints(e.target.checked)}
+                />
+                <span>نمایش امتیاز دست‌ها</span>
+              </label>
               {!isFirstPlayer && (
                 <span style={{ fontSize: 12, opacity: 0.7 }}>
-                  فقط بازیکن اول می‌تواند این گزینه را عوض کند
+                  فقط بازیکن اول می‌تواند این گزینه ها را عوض کند
                 </span>
               )}
             </div>
@@ -1975,21 +1992,22 @@ function App() {
                       آتش: {scores.Fire}
                     </span>
 
-                    {/* Punkte dieser Runde Fire */}
-                    <span
-                      style={{
-                        ...styles.hudPill,
-                        background: "rgba(243, 61, 61, 0.67)",
-                        borderColor: "#fecaca",
-                        fontSize: 12,
-                      }}
-                    >
-                      دست:{" "}
-                      {judgeId &&
-                      players.find((p) => p.id === judgeId)?.team === "Fire"
-                        ? 0
-                        : roundPointsLive.Fire}
-                    </span>
+                    {/* Fire Punkte dieser Runde */}
+                    {judgeId &&
+                    showRoundPoints &&
+                    players.find((p) => p.id === judgeId)?.team ===
+                      "Fire" ? null : (
+                      <span
+                        style={{
+                          ...styles.hudPill,
+                          background: "rgba(243, 61, 61, 0.67)",
+                          borderColor: "#fecaca",
+                          fontSize: 12,
+                        }}
+                      >
+                        دست: {roundPointsLive.Fire}
+                      </span>
+                    )}
                   </div>
                 </div>
 
@@ -2014,21 +2032,23 @@ function App() {
                       طوفان: {scores.Storm}
                     </span>
 
-                    {/* Punkte dieser Runde Storm */}
-                    <span
-                      style={{
-                        ...styles.hudPill,
-                        background: "rgba(19, 115, 233, 0.65)",
-                        borderColor: "#bfdbfe",
-                        fontSize: 12,
-                      }}
-                    >
-                      دست:{" "}
-                      {judgeId &&
-                      players.find((p) => p.id === judgeId)?.team === "Storm"
-                        ? 0
-                        : roundPointsLive.Storm}
-                    </span>
+                    
+                    {/* Storm Punkte dieser Runde */}
+                    {judgeId &&
+                    showRoundPoints &&
+                    players.find((p) => p.id === judgeId)?.team ===
+                      "Storm" ? null : (
+                      <span
+                        style={{
+                          ...styles.hudPill,
+                          background: "rgba(19, 115, 233, 0.65)",
+                          borderColor: "#bfdbfe",
+                          fontSize: 12,
+                        }}
+                      >
+                        دست: {roundPointsLive.Storm}
+                      </span>
+                    )}
                   </div>
                 </div>
 
