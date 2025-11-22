@@ -2259,7 +2259,7 @@ function App() {
                 style={{
                   display: "flex",
                   alignItems: "center",
-                  justifyContent: "space-between",
+                  justifyContent: "center",
                   gap: 12,
                   flexWrap: "wrap",
                 }}
