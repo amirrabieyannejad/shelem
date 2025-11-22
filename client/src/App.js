@@ -792,6 +792,8 @@ function App() {
 
       // Gewinner/Status der Auktion setzen
       setBiddingWinner({ winner, bid });
+      // Gelber Rand sofort zum Richter
+      setCurrentPlayer(winner);
       setIsMyTurn(false);
       setBiddingActive(false);
     });
