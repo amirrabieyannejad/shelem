@@ -1540,13 +1540,16 @@ function App() {
         const isFirstPlayer = players[0]?.id === me?.id;
         const SEAT_TEAMS = { 1: "آتش", 2: "طوفان", 3: "آتش", 4: "طوفان" };
         const seatLabel = (i) => `(${i}) تیم ${SEAT_TEAMS[i]}`;
+
+        // kleinere Seat-Box
         const seatStyle = (i) => ({
-          flex: "1 1 220px",
-          minWidth: 220,
+          width: 160,
           borderRadius: 12,
-          padding: 12,
+          padding: 8,
           border: "2px solid #e5e7eb",
           background: SEAT_TEAMS[i] === "آتش" ? "#ffe4e6" : "#eff6ff",
+          boxShadow: "0 2px 6px rgba(0,0,0,.12)",
+          fontSize: 12,
         });
 
         const seatButtonStyle = (disabled) => ({
@@ -1555,11 +1558,89 @@ function App() {
           cursor: disabled ? "not-allowed" : "pointer",
           width: "100%",
           fontWeight: 800,
+          fontSize: 12,
+          padding: "6px 8px",
         });
+
+        // gleiche Funktionalität, nur anders platziert
+        const renderSeat = (i, posStyle) => {
+          const occupant = seatMap[i];
+          const mine = mySeat === i;
+          const occupiedByOther = occupant && occupant.id !== me?.id;
+
+          return (
+            <div
+              key={i}
+              style={{
+                position: "absolute",
+                ...posStyle,
+              }}
+            >
+              <div style={seatStyle(i)}>
+                <div style={{ fontWeight: 900, fontSize: 13 }}>
+                  {seatLabel(i)}
+                </div>
+                <div
+                  style={{
+                    marginTop: 4,
+                    padding: "6px 8px",
+                    borderRadius: 8,
+                    background: "#fff",
+                    border: "1px solid #e5e7eb",
+                    minHeight: 30,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontWeight: 800,
+                  }}
+                >
+                  {occupant ? occupant.username : "— آزاد —"}
+                </div>
+
+                <div style={{ marginTop: 6, display: "flex", gap: 6 }}>
+                  {/* Platz wählen/wechseln */}
+                  <button
+                    style={seatButtonStyle(occupiedByOther)}
+                    disabled={occupiedByOther}
+                    onClick={() => socket.emit("chooseSeat", { seat: i })}
+                    title={
+                      occupiedByOther
+                        ? "Platz ist belegt."
+                        : "اینجا بنشین / تغییر مکان"
+                    }
+                  >
+                    {occupiedByOther
+                      ? "Belegt"
+                      : mine
+                      ? "اینجا نشسته ام"
+                      : "اینجا بنشین"}
+                  </button>
+
+                  {/* Platz freigeben – nur wenn du hier sitzt */}
+                  {mine && (
+                    <button
+                      style={{
+                        ...styles.btn,
+                        background: "#fde68a",
+                        fontWeight: 800,
+                        fontSize: 12,
+                        padding: "6px 8px",
+                      }}
+                      onClick={() => socket.emit("leaveSeat")}
+                      title="Diesen Platz freigeben"
+                    >
+                      آزاد کردن
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        };
 
         return (
           <div style={styles.card}>
-            {/* Joker-Option nur vor Rundenstart  */}
+            {/* Joker-Option nur vor Rundenstart */}
             <div
               style={{
                 marginTop: 8,
@@ -1588,6 +1669,7 @@ function App() {
                 />
                 <span>بازی با جوکر</span>
               </label>
+
               {/*  Rundenpunkte sichtbar / unsichtbar */}
               <label
                 style={{
@@ -1609,6 +1691,7 @@ function App() {
                 />
                 <span>نمایش امتیاز دست‌ها</span>
               </label>
+
               {!isFirstPlayer && (
                 <span style={{ fontSize: 11, opacity: 0.7 }}>
                   فقط بازیکن اول می‌تواند این گزینه ها را عوض کند:
@@ -1629,81 +1712,79 @@ function App() {
               </div>
             )}
 
+            {/* NEUES Layout: Sitze wie am Tisch (oben/unten/links/rechts) */}
             <div
               style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-                gap: 12,
                 marginTop: 12,
+                display: "flex",
+                justifyContent: "center",
               }}
             >
-              {[1, 2, 3, 4].map((i) => {
-                const occupant = seatMap[i];
-                const mine = mySeat === i;
-                const occupiedByOther = occupant && occupant.id !== me?.id;
-                return (
-                  <div key={i} style={seatStyle(i)}>
-                    <div style={{ fontWeight: 900, fontSize: 14 }}>
-                      {seatLabel(i)}
-                    </div>
-                    <div
-                      style={{
-                        marginTop: 6,
-                        padding: "10px 12px",
-                        borderRadius: 10,
-                        background: "#fff",
-                        border: "1px solid #e5e7eb",
-                        minHeight: 42,
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        fontWeight: 800,
-                      }}
-                    >
-                      {occupant ? occupant.username : "— آزاد —"}
-                    </div>
+              <div
+                style={{
+                  position: "relative",
+                  width: 360,
+                  maxWidth: "100%",
+                  height: 260,
+                  margin: "0 auto",
+                }}
+              >
+                {/* Mini-Tisch in der Mitte (nur Deko) */}
+                <div
+                  style={{
+                    position: "absolute",
+                    top: "50%",
+                    left: "50%",
+                    transform: "translate(-50%, -50%)",
+                    width: 120,
+                    height: 80,
+                    borderRadius: 16,
+                    background: "#065f46",
+                    border: "2px solid #10b981",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: 12,
+                    color: "#fff",
+                    opacity: 0.85,
+                  }}
+                >
+                  میز
+                </div>
 
-                    <div style={{ marginTop: 8, display: "flex", gap: 8 }}>
-                      {/* Hauptbutton: auf freien Platz setzen / wechseln */}
-                      <button
-                        style={seatButtonStyle(occupiedByOther)}
-                        disabled={occupiedByOther}
-                        onClick={() => socket.emit("chooseSeat", { seat: i })}
-                        title={
-                          occupiedByOther
-                            ? "Platz ist belegt."
-                            : "اینجا بنشین / تغییر مکان"
-                        }
-                      >
-                        {occupiedByOther
-                          ? "Belegt"
-                          : mine
-                          ? "اینجا نشسته ام"
-                          : "اینجا بنشین"}
-                      </button>
+                {/* oben = Sitz 3 */}
+                {renderSeat(3, {
+                  top: 0,
+                  left: "50%",
+                  transform: "translate(-50%, 0)",
+                })}
 
-                      {/* Zusatz: nur wenn du hier sitzt → Platz freigeben */}
-                      {mine && (
-                        <button
-                          style={{
-                            ...styles.btn,
-                            background: "#fde68a",
-                            fontWeight: 800,
-                          }}
-                          onClick={() => socket.emit("leaveSeat")}
-                          title="Diesen Platz freigeben"
-                        >
-                          آزاد کردن مکان
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
+                {/* unten = Sitz 1 */}
+                {renderSeat(1, {
+                  bottom: 0,
+                  left: "50%",
+                  transform: "translate(-50%, 0)",
+                })}
+
+                {/* links = Sitz 4 */}
+                {renderSeat(4, {
+                  top: "50%",
+                  left: 0,
+                  transform: "translate(0, -50%)",
+                })}
+
+                {/* rechts = Sitz 2 */}
+                {renderSeat(2, {
+                  top: "50%",
+                  right: 0,
+                  transform: "translate(0, -50%)",
+                })}
+              </div>
             </div>
+
             {/* Manuelles Starten: sichtbar für alle, sobald 4/4 sitzen */}
             {seatsAllFilled && isFirstPlayer && (
-              <div style={{ marginTop: 12 }}>
+              <div style={{ marginTop: 12, textAlign: "center" }}>
                 <button
                   style={{
                     ...styles.btn,
@@ -1725,6 +1806,7 @@ function App() {
         );
       })()
     : null;
+
   // direkt über dem JSX vom Bieten-Modal
   const maxBid = includeJokers ? 200 : 165;
   const minBid = Math.max(100, currentBid + 5);
