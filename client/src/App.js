@@ -193,7 +193,13 @@ const styles = {
     justifyContent: "center",
     zIndex: 50,
   },
-  modal: { background: "white", padding: 20, borderRadius: 10, width: 360 },
+  modal: {
+    background: "#ffffffff",
+    padding: 0,
+    borderRadius: 10,
+    width: 350,
+    paddingBottom: 4,
+  },
   infoBar: {
     maxWidth: "min(92vw, 900px)",
     margin: "0 auto 12px",
@@ -1885,9 +1891,22 @@ function App() {
           {showBottom && (
             <div style={styles.modalBackdrop}>
               <div style={styles.modal}>
-                <h3 style={{ margin: 0, fontWeight: 800 }}>Boden-Karten</h3>
-
                 {/* Karten als Bilder im neuen Layout */}
+                <div style={{ marginTop: 0, textAlign: "center" }}>
+                  <button
+                    style={{
+                      ...styles.btn,
+                      background: "#238747ff",
+                      color: "#fff",
+                    }}
+                    onClick={() => {
+                      socket.emit("takeBottomCards");
+                      setShowBottom(false);
+                    }}
+                  >
+                    برگ های زمین را دیدم
+                  </button>
+                </div>
                 <div
                   style={{
                     display: "flex",
@@ -1902,25 +1921,13 @@ function App() {
                     <SpriteCard
                       key={`${c}-${i}`}
                       code={c}
-                      size="lg"
+                      size="md"
                       style={{
                         boxShadow: "0 8px 18px rgba(0,0,0,.35)",
                         border: "1px solid rgba(0,0,0,.12)",
                       }}
                     />
                   ))}
-                </div>
-
-                <div style={{ marginTop: 16, textAlign: "right" }}>
-                  <button
-                    style={{ ...styles.btn, background: "#86efac" }}
-                    onClick={() => {
-                      socket.emit("takeBottomCards");
-                      setShowBottom(false);
-                    }}
-                  >
-                    برگ های زمین را دیدم
-                  </button>
                 </div>
               </div>
             </div>
@@ -2409,6 +2416,7 @@ function App() {
                     fontWeight: 400,
                     alignItems: "center",
                     alignContent: "center",
+                    color:"white",
                   }}
                 >
                   برگ های انتخاب شده: {selectedDiscard.length} /{" "}
@@ -2658,7 +2666,7 @@ function App() {
                 <div
                   style={{
                     display: "flex",
-                    justifyContent: "space-between",
+                    justifyContent: "space-around",
                     marginTop: 20,
                   }}
                 >
@@ -2667,7 +2675,7 @@ function App() {
                       ...styles.btn,
                       background: "#fbbf24",
                       color: "#000",
-                      padding: "16px 60px",
+                      padding: "10px 30px",
                       fontWeight: 800,
                       fontSize: 15,
                     }}
@@ -2681,7 +2689,7 @@ function App() {
                       ...styles.btn,
                       background: "#22c55e",
                       color: "#000000ff",
-                      padding: "16px 60px",
+                      padding: "10px 30px",
                       fontWeight: 800,
                       fontSize: 15,
                     }}
@@ -2707,8 +2715,8 @@ function App() {
               style={{
                 display: "flex",
                 gap: 0,
-                flexWrap: "nowrap",
-                alignItems: "flex-end",
+                flexWrap: "wrap",
+                //alignItems: "flex-end",
                 padding: "0px 16px",
                 justifyContent: "center",
                 overflowY: "visible",
@@ -2768,8 +2776,6 @@ function App() {
                       marginLeft: idx ? `${HAND_CARD_SHIFT_PX}px` : "0px",
                       zIndex: isSelected ? 1000 + idx : idx,
                       cursor: disabled ? "not-allowed" : "pointer",
-                      // für kleine Overlap-Optik kann man hier z.B. marginLeft: -12 setzen,
-                      // wir lassen es neutral
                     }}
                   >
                     <div
