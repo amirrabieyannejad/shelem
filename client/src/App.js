@@ -122,8 +122,6 @@ const SuitIcon = ({ suit = "♠", size = 32 }) => {
 const HAND_CARD_SCALE_X = 0.86; // Breite (1 = normal, >1 = breiter, <1 = schmaler)
 const HAND_CARD_SCALE_Y = 0.85; // Höhe  (1 = normal, <1 = kürzer, >1 = höher)
 
-const HAND_CARD_SHIFT_PX = -30; // negativer Wert = Überlappung
-
 // --- einfache Styles ohne Tailwind ---
 const styles = {
   page: {
@@ -1825,7 +1823,9 @@ function App() {
   // direkt über dem JSX vom Bieten-Modal
   const maxBid = includeJokers ? 200 : 165;
   const minBid = Math.max(100, currentBid + 5);
-
+  const handOverlapPx = -8 - hand.length * 1.3;
+  // -8 ist fast keine Überlappung
+  // 1.3 bestimmt, wie stark es bei vielen Karten zusammenrückt
   return (
     <div style={styles.page}>
       {!auth?.token ? (
@@ -2782,7 +2782,7 @@ function App() {
                       background: "transparent",
                       border: "none",
                       overflow: "visible",
-                      marginLeft: idx ? `${HAND_CARD_SHIFT_PX}px` : "0px",
+                      marginLeft: idx ? `${handOverlapPx}px` : "0px",
                       zIndex: isSelected ? 1000 + idx : idx,
                       cursor: disabled ? "not-allowed" : "pointer",
                       flex: "0 0 26px",
