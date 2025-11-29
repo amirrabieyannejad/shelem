@@ -122,7 +122,7 @@ const SuitIcon = ({ suit = "♠", size = 32 }) => {
 const HAND_CARD_SCALE_X = 0.86; // Breite (1 = normal, >1 = breiter, <1 = schmaler)
 const HAND_CARD_SCALE_Y = 0.85; // Höhe  (1 = normal, <1 = kürzer, >1 = höher)
 
-const HAND_CARD_SHIFT_PX = -25; // negativer Wert = Überlappung
+const HAND_CARD_SHIFT_PX = -30; // negativer Wert = Überlappung
 
 // --- einfache Styles ohne Tailwind ---
 const styles = {
