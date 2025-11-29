@@ -2723,11 +2723,12 @@ function App() {
               style={{
                 display: "flex",
                 gap: 0,
-                flexWrap: "wrap",
+                flexWrap: "nowrap",
                 //lignItems: "flex-end",
                 padding: "0px 16px",
                 justifyContent: "center",
                 overflowY: "visible",
+                //overflowX: "auto",
                 maxWidth: "100%",
               }}
             >
@@ -2784,6 +2785,7 @@ function App() {
                       marginLeft: idx ? `${HAND_CARD_SHIFT_PX}px` : "0px",
                       zIndex: isSelected ? 1000 + idx : idx,
                       cursor: disabled ? "not-allowed" : "pointer",
+                      flex: "0 0 26px",
                     }}
                   >
                     <div
