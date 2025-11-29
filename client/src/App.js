@@ -1987,10 +1987,33 @@ function App() {
                       هدف {recap.bid}
                     </span>
 
-                    <span className="pill" style={styles.pill}>
+                    <span
+                      className="pill"
+                      style={{
+                        ...styles.pill,
+                        color:
+                          recap.bidderTeam === "Fire"
+                            ? recap.roundPoints.Fire >= recap.bid
+                              ? "#16a34a"
+                              : "#b91c1c"
+                            : undefined,
+                      }}
+                    >
                       امتیاز این دست آتش: {recap.roundPoints.Fire}
                     </span>
-                    <span className="pill" style={styles.pill}>
+
+                    <span
+                      className="pill"
+                      style={{
+                        ...styles.pill,
+                        color:
+                          recap.bidderTeam === "Storm"
+                            ? recap.roundPoints.Storm >= recap.bid
+                              ? "#16a34a"
+                              : "#b91c1c"
+                            : undefined,
+                      }}
+                    >
                       امتیاز این دست طوفان: {recap.roundPoints.Storm}
                     </span>
 
@@ -2852,6 +2875,21 @@ function App() {
                   <div style={{ display: "grid", gap: 12, marginTop: 12 }}>
                     {roundsHistory.map((r) => {
                       const isOpen = !!expandedRounds[r.round];
+
+                      const firePts = r.roundPoints?.Fire ?? 0;
+                      const stormPts = r.roundPoints?.Storm ?? 0;
+                      const bid = r.bid || 0;
+
+                      let fireColor;
+                      let stormColor;
+
+                      if (r.bidderTeam === "Fire") {
+                        const ok = firePts >= bid;
+                        fireColor = ok ? "#16a34a" : "#b91c1c"; // grün / rot
+                      } else if (r.bidderTeam === "Storm") {
+                        const ok = stormPts >= bid;
+                        stormColor = ok ? "#16a34a" : "#b91c1c";
+                      }
                       return (
                         <div
                           key={r.round}
@@ -2906,11 +2944,17 @@ function App() {
                               <span className="pill" style={styles.pill}>
                                 هدف: {r.bid || 0}
                               </span>
-                              <span className="pill" style={styles.pill}>
-                                امتیاز دست آتش: {r.roundPoints?.Fire ?? 0}
+                              <span
+                                className="pill"
+                                style={{ ...styles.pill, color: fireColor }}
+                              >
+                                امتیاز دست آتش: {firePts}
                               </span>
-                              <span className="pill" style={styles.pill}>
-                                امتیاز دست طوفان: {r.roundPoints?.Storm ?? 0}
+                              <span
+                                className="pill"
+                                style={{ ...styles.pill, color: stormColor }}
+                              >
+                                امتیاز دست طوفان: {stormPts}
                               </span>
                               {r.ruleApplied === "doublePositive" && (
                                 <span className="pill" style={styles.pill}>
