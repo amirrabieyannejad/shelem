@@ -156,6 +156,8 @@ app.get("/api/me", (req, res) => {
 // --- Globale Variablen ---
 let players = []; // [{id, name, team, passed, seatPosition}]
 let hands = {}; // id -> Karten
+// Ersten Spieler (Owner) serverseitig merken
+let firstClientId = null;
 let bottomCards = [];
 let bids = {}; // id -> bid
 let currentBid = 0;
@@ -197,6 +199,17 @@ function getMaxPoints() {
 function getDoubleNegativeMin() {
   const mb = getMaxBid();
   return Math.max(80, Math.ceil(mb / 2));
+}
+
+// Helper Funktion, um einfach der erste Spieler zu merken
+function isFirstPlayerSocket(socket) {
+  // stabile ID aus JWT oder Player-Objekt
+  const jwtId = socket.user?.id || null;
+  const player = players.find((p) => p.id === socket.id);
+  const cid = player?.clientId || jwtId;
+
+  if (!firstClientId || !cid) return false;
+  return cid === firstClientId;
 }
 
 let gamePaused = false;
@@ -244,6 +257,7 @@ function stateSnapshot() {
     showRoundPoints,
     maxBid: getMaxBid(),
     maxPoints: getMaxPoints(),
+    firstClientId,
   };
 }
 
@@ -713,7 +727,6 @@ io.use((socket, next) => {
 // === Socket.io Events ===
 io.on("connection", (socket) => {
   console.log("Player connected:", socket.id);
-
   socket.on("register", (payload) => {
     const { name, clientId } =
       typeof payload === "string"
@@ -793,7 +806,6 @@ io.on("connection", (socket) => {
       socket.emit("lobbyFull", { msg: "Lobby voll (max. 4 Spieler)" });
       return;
     }
-
     const player = {
       id: socket.id,
       clientId: finalClientId,
@@ -804,6 +816,11 @@ io.on("connection", (socket) => {
       lastBid: null,
       seatPosition: null,
     };
+    // Ersten Spieler serverseitig festhalten
+    if (!firstClientId && finalClientId) {
+      firstClientId = finalClientId;
+      console.log("First player locked to clientId:", firstClientId);
+    }
     players.push(player);
 
     socket.emit("stateSync", stateSnapshot());
@@ -870,7 +887,6 @@ io.on("connection", (socket) => {
     const player = players.find((p) => p.id === socket.id);
     if (!player) return;
 
-    // Wir unterstützen hier NUR noch Random, die manuelle Wahl passiert über chooseSeat
     if (team !== "Random") {
       socket.emit("invalidAction", {
         msg: "Teams werden über Sitzplätze gewählt. Bitte einen Platz (1..4) anklicken.",
@@ -878,7 +894,6 @@ io.on("connection", (socket) => {
       return;
     }
 
-    // Random nur, solange ALLE Plätze frei sind …
     if (!seatsEmpty()) {
       socket.emit("invalidAction", {
         msg: "Random ist nur möglich, solange alle Plätze frei sind.",
@@ -886,24 +901,19 @@ io.on("connection", (socket) => {
       return;
     }
 
-    // … und nur vom ersten beigetretenen Spieler
-    const isFirst = players[0] && players[0].id === socket.id;
-    if (!isFirst) {
+    // nur vom serverseitig ersten Spieler
+    if (!isFirstPlayerSocket(socket)) {
       socket.emit("invalidAction", {
         msg: "Nur der erste Spieler darf Random Teams starten.",
       });
       return;
     }
 
-    // → die gesamte Platz-/Teamverteilung + Autostart übernimmt diese Funktion
     fillRandomTeamsNow();
   });
+
   socket.on("startGame", () => {
-    const isFirst = players[0] && players[0].id === socket.id;
-    if (!isFirst) {
-      socket.emit("invalidAction", {
-        msg: "Nur der erste Spieler darf das Spiel starten.",
-      });
+    if (!isFirstPlayerSocket(socket)) {
       return;
     }
     // nur starten, wenn 4 Plätze belegt und noch keine Runde läuft
@@ -939,14 +949,9 @@ io.on("connection", (socket) => {
   });
 
   socket.on("setIncludeJokers", ({ value }) => {
-    const isFirst = players[0] && players[0].id === socket.id;
-    if (!isFirst) {
-      socket.emit("invalidAction", {
-        msg: "Nur der erste Spieler kann Joker an/aus schalten.",
-      });
+    if (!isFirstPlayerSocket(socket)) {
       return;
     }
-
     // nur vor Rundenstart
     if (Object.keys(hands).length || biddingActive) {
       socket.emit("invalidAction", {
@@ -960,11 +965,7 @@ io.on("connection", (socket) => {
     io.emit("stateSync", stateSnapshot());
   });
   socket.on("setShowRoundPoints", ({ value }) => {
-    const isFirst = players[0] && players[0].id === socket.id;
-    if (!isFirst) {
-      socket.emit("invalidAction", {
-        msg: "Nur der erste Spieler kann die Rundenpunkte-Ansicht ändern.",
-      });
+    if (!isFirstPlayerSocket(socket)) {
       return;
     }
 
@@ -975,13 +976,9 @@ io.on("connection", (socket) => {
 
   // Spiel hart zurücksetzen (Spieler/Seats bleiben)
   socket.on("resetGame", () => {
-    // Optional: nur der erste Spieler darf resetten
-    // const isFirst = players[0] && players[0].id === socket.id;
-    // if (!isFirst) {
-    //   socket.emit("invalidAction", { msg: "Nur der erste Spieler darf Reset ausführen." });
-    //   return;
-    // }
-
+    if (!isFirstPlayerSocket(socket)) {
+      return;
+    }
     resetGameState();
     // allen sofort den neuen Grundzustand schicken
     io.emit("gameReset", stateSnapshot());

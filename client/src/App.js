@@ -586,6 +586,7 @@ function App() {
   const [includeJokers, setIncludeJokers] = useState(false);
   const [showRoundPoints, setShowRoundPoints] = useState(true);
   const [discardTargetCount, setDiscardTargetCount] = useState(4); // 4 oder 6
+  const [firstClientId, setFirstClientId] = useState(null);
 
   // --- Auth State ---
   const [auth, setAuth] = useState({
@@ -621,8 +622,10 @@ function App() {
   // Runde noch nicht gestartet = keine Hand verteilt & keine Auktion/Discard aktiv
   const canStart =
     seatsFullClient && !biddingActive && !hand.length && !discardPhase;
-  // nur der erste (players[0]) darf "Random" sehen/auslösen
-  const isFirstPlayer = !!me && players[0] && players[0].id === me.id;
+
+  // nur der serverseitig erste Spieler (firstClientId) darf Random/Optionen
+  const isFirstPlayer =
+    !!auth?.profile?.id && firstClientId === auth.profile.id;
 
   const anyChosen = players.some(
     (p) => p.team === "Fire" || p.team === "Storm"
@@ -996,6 +999,9 @@ function App() {
       if (typeof s?.currentBottomSize === "number" && s.currentBottomSize > 0) {
         setDiscardTargetCount(s.currentBottomSize);
       }
+      if (s?.firstClientId) {
+        setFirstClientId(s.firstClientId);
+      }
     });
 
     socket.on("gameOver", ({ winner, teamScores }) => {
@@ -1042,6 +1048,9 @@ function App() {
       setTrumpfSetter(null); // falls vorhanden
       // sicherheitshalber Variant-Modal schließen
       setVariantModal({ open: false, options: [] });
+      if (s?.firstClientId) {
+        setFirstClientId(s.firstClientId);
+      }
     });
 
     return () => {
@@ -1519,12 +1528,10 @@ function App() {
         });
         const seatsAllFilled =
           !!seatMap[1] && !!seatMap[2] && !!seatMap[3] && !!seatMap[4];
-        const mySeat = me?.seatPosition || null;
-
         const seatsAllEmpty =
           !seatMap[1] && !seatMap[2] && !seatMap[3] && !seatMap[4];
-        // erster Spieler in der Liste?
-        const isFirstPlayer = players[0]?.id === me?.id;
+        const mySeat = me?.seatPosition || null;
+
         const SEAT_TEAMS = { 1: "آتش", 2: "طوفان", 3: "آتش", 4: "طوفان" };
         const seatLabel = (i) => `(${i}) تیم ${SEAT_TEAMS[i]}`;
 
@@ -1859,19 +1866,20 @@ function App() {
                 آمار
               </button>
 
-              <button
-                style={{
-                  ...styles.btn,
-                  padding: "6px 10px",
-                  borderRadius: 999,
-                  fontWeight: 700,
-                }}
-                onClick={() => socket.emit("resetGame")}
-                title="Spiel komplett zurücksetzen (ohne Spieler zu entfernen)"
-              >
-                بازی جدید
-              </button>
-
+              {isFirstPlayer && (
+                <button
+                  style={{
+                    ...styles.btn,
+                    padding: "6px 10px",
+                    borderRadius: 999,
+                    fontWeight: 700,
+                  }}
+                  onClick={() => socket.emit("resetGame")}
+                  title="Spiel komplett zurücksetzen (ohne Spieler zu entfernen)"
+                >
+                  بازی جدید
+                </button>
+              )}
               <button
                 onClick={handleLogout}
                 title="خروج از حساب"
@@ -2416,7 +2424,7 @@ function App() {
                     fontWeight: 400,
                     alignItems: "center",
                     alignContent: "center",
-                    color:"white",
+                    color: "white",
                   }}
                 >
                   برگ های انتخاب شده: {selectedDiscard.length} /{" "}
@@ -2716,7 +2724,7 @@ function App() {
                 display: "flex",
                 gap: 0,
                 flexWrap: "wrap",
-                //alignItems: "flex-end",
+                //lignItems: "flex-end",
                 padding: "0px 16px",
                 justifyContent: "center",
                 overflowY: "visible",
