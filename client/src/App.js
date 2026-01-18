@@ -597,7 +597,31 @@ function App() {
       }
     })(),
   });
+  // Token vorhanden → Profil serverseitig verifizieren (kommt aus DB)
+  useEffect(() => {
+    if (!auth?.token) return;
+    const host = API_BASE;
 
+    (async () => {
+      try {
+        const res = await fetch(`${host}/api/me`, {
+          headers: { Authorization: `Bearer ${auth.token}` },
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data?.error || "Unauthorized");
+
+        if (data?.profile) {
+          localStorage.setItem("shelem_profile", JSON.stringify(data.profile));
+          setAuth((a) => ({ ...a, profile: data.profile }));
+        }
+      } catch {
+        // Token ungültig → logout
+        localStorage.removeItem("shelem_token");
+        localStorage.removeItem("shelem_profile");
+        setAuth({ token: null, profile: null });
+      }
+    })();
+  }, [auth?.token]);
   const handleLogout = () => {
     // Token/Profile aus dem Storage entfernen
     localStorage.removeItem("shelem_token");
@@ -1061,7 +1085,7 @@ function App() {
 
   // Wenn Auth vorhanden → Socket mit Token verbinden
   useEffect(() => {
-    if (!auth?.token) return;
+    if (!auth?.token || !auth?.profile?.id) return;
 
     // Token zuerst setzen
     socket.auth = { token: auth.token };
@@ -1072,17 +1096,18 @@ function App() {
 
     // Registrierung nur, wenn verbunden
     socket.once("connect", () => {
-      try {
-        const profRaw = localStorage.getItem("shelem_profile");
-        const prof = profRaw ? JSON.parse(profRaw) : null;
-        if (prof?.id && prof?.name) {
-          socket.emit("register", { clientId: prof.id, name: prof.name });
-          socket.emit("getRoundsHistory");
-          socket.emit("requestState");
-        }
-      } catch {}
+		   
+      const prof = auth.profile;
+      if (!prof?.id) return;
+
+      const displayName = prof.username || prof.name;
+      socket.emit("register", { clientId: prof.id, name: displayName });
+      socket.emit("getRoundsHistory");
+      socket.emit("requestState");
+		 
+				
     });
-  }, [auth?.token]);
+  }, [auth?.token, auth?.profile?.id]);
 
   useEffect(() => {
     setTabTitle({ me, isMyTurn });
@@ -2813,7 +2838,7 @@ function App() {
                   >
                     <div
                       style={{
-                        constTransform: showSelected
+                        transform: showSelected
                           ? "translateY(-8px)"
                           : "translateY(0px)",
                         transform: `${

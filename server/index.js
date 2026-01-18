@@ -1,13 +1,25 @@
-const { Server } = require("socket.io");
-const http = require("http");
-const express = require("express");
-const cors = require("cors");
-const bcrypt = require("bcryptjs");
-const jwt = require("jsonwebtoken");
-const fs = require("fs");
-const path = require("path");
-const multer = require("multer");
-const { randomUUID } = require("crypto");
+import "dotenv/config"; // nur lokal nötig
+if (process.env.NODE_ENV !== "production") {
+  await import("dotenv/config");
+}
+import { pool, dbPing } from "./db.js";
+import { Server } from "socket.io";
+import http from "http";
+import express from "express";
+import cors from "cors";
+import bcrypt from "bcryptjs";
+import jwt from "jsonwebtoken";
+import path from "path";
+import multer from "multer";
+import { randomUUID } from "crypto";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+dbPing()
+  .then(() => console.log("DB ok"))
+  .catch((err) => console.error("DB error", err));
 
 // --- Express  HTTP  IO ---
 const app = express();
@@ -26,19 +38,7 @@ const allowed = process.env.CORS_ORIGIN
 
 app.use(cors({ origin: allowed, credentials: true }));
 const io = new Server(server, { cors: { origin: allowed } });
-// --- Simple user store (dev) ---
-const USERS_FILE = path.join(__dirname, "users.json");
-function loadUsers() {
-  try {
-    return JSON.parse(fs.readFileSync(USERS_FILE, "utf8"));
-  } catch {
-    return [];
-  }
-}
-function saveUsers(list) {
-  fs.writeFileSync(USERS_FILE, JSON.stringify(list, null, 2));
-}
-let users = loadUsers();
+
 const JWT_SECRET = process.env.JWT_SECRET || "dev_change_me";
 
 // --- Helpers ---
@@ -52,83 +52,149 @@ const publicUser = (u) => ({
   createdAt: u.createdAt,
 });
 
+async function dbUserById(id) {
+  const r = await pool.query(
+    `select
+        id,
+        name,
+        username,
+        email,
+        phone,
+        avatar_url as "avatarUrl",
+        created_at as "createdAt",
+        password_hash as "passwordHash"
+     from users
+     where id = $1
+     limit 1`,
+    [id]
+  );
+  return r.rows[0] || null;
+}
+
+async function dbUserByUsernameOrEmail(key) {
+  const r = await pool.query(
+    `select
+        id,
+        name,
+        username,
+        email,
+        phone,
+        avatar_url as "avatarUrl",
+        created_at as "createdAt",
+        password_hash as "passwordHash"
+     from users
+     where lower(username) = $1 or lower(email) = $1
+     limit 1`,
+    [key]
+  );
+  return r.rows[0] || null;
+}
+
+async function dbUsernameExists(uname) {
+  const r = await pool.query(
+    `select 1 from users where lower(username) = $1 limit 1`,
+    [uname]
+  );
+  return r.rowCount > 0;
+}
+
+async function dbEmailExists(mail) {
+  const r = await pool.query(`select 1 from users where lower(email) = $1 limit 1`, [
+    mail,
+  ]);
+  return r.rowCount > 0;
+}
+
 // --- Auth API ---
 app.post("/api/auth/register", async (req, res) => {
-  const {
-    name,
-    username,
-    email,
-    password,
-    phone = null,
-    avatarUrl = null,
-  } = req.body || {};
+  const { name, username, email, password, phone = null, avatarUrl = null } =
+    req.body || {};
+
   if (!name || !username || !email || !password) {
     return res
       .status(400)
       .json({ error: "name, username, email, password sind erforderlich" });
   }
+
   const uname = String(username).trim().toLowerCase();
   const mail = String(email).trim().toLowerCase();
-  if (users.find((u) => u.username === uname))
-    return res.status(409).json({ error: "Benutzername belegt" });
-  if (users.find((u) => u.email === mail))
-    return res.status(409).json({ error: "E-Mail belegt" });
-  if (String(password).length < 6)
-    return res.status(400).json({ error: "Passwort min. 6 Zeichen" });
 
-  const hash = await bcrypt.hash(String(password), 10);
-  const user = {
-    id: randomUUID(),
-    name: String(name).trim(),
-    username: uname,
-    email: mail,
-    passwordHash: hash,
-    phone,
-    avatarUrl,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    emailVerified: false, // später erweiterbar
-    role: "player",
-  };
-  users.push(user);
-  saveUsers(users);
-  const token = jwt.sign(
-    {
-      sub: user.id,
-      name: user.name,
-      username: user.username,
-      email: user.email,
-    },
-    JWT_SECRET,
-    { expiresIn: "30d" }
-  );
-  return res.json({ token, profile: publicUser(user) });
+  if (String(password).length < 6) {
+    return res.status(400).json({ error: "Passwort min. 6 Zeichen" });
+  }
+
+  try {
+    // Früh prüfen für bessere Fehlermeldungen (Unique-Constraint bleibt trotzdem die Wahrheit)
+    if (await dbUsernameExists(uname)) {
+      return res.status(409).json({ error: "Benutzername belegt" });
+    }
+    if (await dbEmailExists(mail)) {
+      return res.status(409).json({ error: "E-Mail belegt" });
+    }
+
+    const hash = await bcrypt.hash(String(password), 10);
+    const id = randomUUID();
+
+    const r = await pool.query(
+      `insert into users (id, name, username, email, password_hash, phone, avatar_url, role, email_verified)
+       values ($1, $2, $3, $4, $5, $6, $7, 'player', false)
+       returning
+         id,
+         name,
+         username,
+         email,
+         phone,
+         avatar_url as "avatarUrl",
+         created_at as "createdAt"`,
+      [id, String(name).trim(), uname, mail, hash, phone, avatarUrl]
+    );
+
+    const user = r.rows[0];
+    const token = jwt.sign(
+      { sub: user.id, name: user.name, username: user.username, email: user.email },
+      JWT_SECRET,
+      { expiresIn: "30d" }
+    );
+
+    return res.json({ token, profile: publicUser(user) });
+  } catch (e) {
+    // pg unique violation
+    if (e && e.code === "23505") {
+      return res.status(409).json({ error: "Benutzername oder E-Mail belegt" });
+    }
+    console.error("register error", e);
+    return res.status(500).json({ error: "Serverfehler" });
+  }
 });
 
 app.post("/api/auth/login", async (req, res) => {
   const { usernameOrEmail, password } = req.body || {};
-  if (!usernameOrEmail || !password)
+  if (!usernameOrEmail || !password) {
     return res
       .status(400)
       .json({ error: "usernameOrEmail & password erforderlich" });
+  }
+
   const key = String(usernameOrEmail).trim().toLowerCase();
-  const user = users.find(
-    (u) => u.username?.toLowerCase() === key || u.email?.toLowerCase() === key
-  );
-  if (!user) return res.status(401).json({ error: "Ungültige Zugangsdaten" });
-  const ok = await bcrypt.compare(String(password), user.passwordHash);
-  if (!ok) return res.status(401).json({ error: "Ungültige Zugangsdaten" });
-  const token = jwt.sign(
-    {
-      sub: user.id,
-      name: user.name,
-      username: user.username,
-      email: user.email,
-    },
-    JWT_SECRET,
-    { expiresIn: "30d" }
-  );
-  return res.json({ token, profile: publicUser(user) });
+
+  try {
+    const user = await dbUserByUsernameOrEmail(key);
+    if (!user) return res.status(401).json({ error: "Ungültige Zugangsdaten" });
+
+    const ok = await bcrypt.compare(String(password), user.passwordHash);
+    if (!ok) return res.status(401).json({ error: "Ungültige Zugangsdaten" });
+
+    const token = jwt.sign(
+      { sub: user.id, name: user.name, username: user.username, email: user.email },
+      JWT_SECRET,
+      { expiresIn: "30d" }
+    );
+
+    return res.json({ token, profile: publicUser(user) });
+  } catch (e) {
+    console.error("login error", e);
+    return res.status(500).json({ error: "Serverfehler" });
+  }
 });
 
 // optional: Avatar-Upload (multipart/form-data, Feldname "avatar")
@@ -138,15 +204,17 @@ app.post("/api/upload-avatar", upload.single("avatar"), (req, res) => {
   return res.json({ url });
 });
 
-// Token prüfen / Profil holen
-app.get("/api/me", (req, res) => {
+// Token prüfen / Profil holen (profil kommt jetzt aus DB)
+app.get("/api/me", async (req, res) => {
   const hdr = req.headers.authorization || "";
   const token = hdr.startsWith("Bearer ") ? hdr.slice(7) : null;
   try {
     const payload = token ? jwt.verify(token, JWT_SECRET) : null;
     if (!payload) return res.status(401).json({ error: "Unauthorized" });
-    const user = users.find((u) => u.id === payload.sub);
+
+    const user = await dbUserById(payload.sub);
     if (!user) return res.status(401).json({ error: "Unauthorized" });
+
     return res.json({ profile: publicUser(user) });
   } catch {
     return res.status(401).json({ error: "Unauthorized" });
