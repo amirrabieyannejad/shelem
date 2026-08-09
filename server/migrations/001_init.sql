@@ -1,4 +1,4 @@
-create table users (
+create table if not exists users (
   id uuid primary key,
   name text not null,
   username text not null unique,
@@ -13,7 +13,7 @@ create table users (
 );
 
 -- Für Crash-Recovery reicht ein persistierter Snapshot.
-create table games (
+create table if not exists games (
   id uuid primary key,
   status text not null default 'active', -- active|finished|archived
   first_user_id uuid references users(id),
@@ -29,7 +29,7 @@ create table games (
 
 create index games_status_idx on games(status);
 
-create table game_players (
+create table if not exists game_players (
   game_id uuid references games(id) on delete cascade,
   user_id uuid references users(id),
   seat_position int check (seat_position between 1 and 4),
@@ -41,7 +41,7 @@ create table game_players (
   unique (game_id, seat_position)
 );
 
-create table rounds (
+create table if not exists rounds(
   id bigserial primary key,
   game_id uuid references games(id) on delete cascade,
   round_no int not null,
@@ -60,7 +60,7 @@ create table rounds (
   unique (game_id, round_no)
 );
 
-create table tricks (
+create table if not exists tricks (
   id bigserial primary key,
   round_id bigint references rounds(id) on delete cascade,
   trick_no int not null,

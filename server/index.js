@@ -1,7 +1,6 @@
-import "dotenv/config"; // nur lokal nötig
-if (process.env.NODE_ENV !== "production") {
-  await import("dotenv/config");
-}
+import "dotenv/config";
+if (process.env.NODE_ENV !== "production") await import("dotenv/config");
+
 import { pool, dbPing } from "./db.js";
 import { Server } from "socket.io";
 import http from "http";
@@ -17,316 +16,314 @@ import { fileURLToPath } from "url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-dbPing()
-  .then(() => console.log("DB ok"))
-  .catch((err) => console.error("DB error", err));
-
-// --- Express  HTTP  IO ---
-const app = express();
-app.use(express.json({ limit: "2mb" }));
-app.use("/uploads", express.static(path.join(__dirname, "uploads")));
-const upload = multer({ dest: path.join(__dirname, "uploads") });
-
-const server = http.createServer(app);
-const allowed = process.env.CORS_ORIGIN
-  ? process.env.CORS_ORIGIN.split(",").map((s) => s.trim())
-  : [
-      "http://localhost:3000", // ⬅ lokal Frontend
-      "https://shelem-ruby.vercel.app",
-      "https://shelem.onrender.com",
-    ];
-
-app.use(cors({ origin: allowed, credentials: true }));
-const io = new Server(server, { cors: { origin: allowed } });
-
 const JWT_SECRET = process.env.JWT_SECRET || "dev_change_me";
 
-// --- Helpers ---
-const publicUser = (u) => ({
-  id: u.id,
-  name: u.name,
-  username: u.username,
-  email: u.email,
-  phone: u.phone || null,
-  avatarUrl: u.avatarUrl || null,
-  createdAt: u.createdAt,
-});
+const app = express();
+const server = http.createServer(app);
+const io = new Server(server, { cors: { origin: "*", methods: ["GET","POST"] } });
 
-async function dbUserById(id) {
-  const r = await pool.query(
-    `select
-        id,
-        name,
-        username,
-        email,
-        phone,
-        avatar_url as "avatarUrl",
-        created_at as "createdAt",
-        password_hash as "passwordHash"
-     from users
-     where id = $1
-     limit 1`,
-    [id]
-  );
-  return r.rows[0] || null;
-}
 
-async function dbUserByUsernameOrEmail(key) {
-  const r = await pool.query(
-    `select
-        id,
-        name,
-        username,
-        email,
-        phone,
-        avatar_url as "avatarUrl",
-        created_at as "createdAt",
-        password_hash as "passwordHash"
-     from users
-     where lower(username) = $1 or lower(email) = $1
-     limit 1`,
-    [key]
-  );
-  return r.rows[0] || null;
-}
+// ---------- Globale Variablen (MUSS vor ensureActiveGame stehen) ----------
+let gameId = null;
+let persistQueued = false;
 
-async function dbUsernameExists(uname) {
-  const r = await pool.query(
-    `select 1 from users where lower(username) = $1 limit 1`,
-    [uname]
-  );
-  return r.rowCount > 0;
-}
+let players = [];          // [{ userId, socketId, name, ... }]
+let hands = {};            // userId -> [cards]
+let firstUserId = null;
 
-async function dbEmailExists(mail) {
-  const r = await pool.query(`select 1 from users where lower(email) = $1 limit 1`, [
-    mail,
-  ]);
-  return r.rowCount > 0;
-}
+let seats = { 1: null, 2: null, 3: null, 4: null };
 
-// --- Auth API ---
-app.post("/api/auth/register", async (req, res) => {
-  const { name, username, email, password, phone = null, avatarUrl = null } =
-    req.body || {};
-
-  if (!name || !username || !email || !password) {
-    return res
-      .status(400)
-      .json({ error: "name, username, email, password sind erforderlich" });
-  }
-
-  const uname = String(username).trim().toLowerCase();
-  const mail = String(email).trim().toLowerCase();
-
-  if (String(password).length < 6) {
-    return res.status(400).json({ error: "Passwort min. 6 Zeichen" });
-  }
-
-  try {
-    // Früh prüfen für bessere Fehlermeldungen (Unique-Constraint bleibt trotzdem die Wahrheit)
-    if (await dbUsernameExists(uname)) {
-      return res.status(409).json({ error: "Benutzername belegt" });
-    }
-    if (await dbEmailExists(mail)) {
-      return res.status(409).json({ error: "E-Mail belegt" });
-    }
-
-    const hash = await bcrypt.hash(String(password), 10);
-    const id = randomUUID();
-
-    const r = await pool.query(
-      `insert into users (id, name, username, email, password_hash, phone, avatar_url, role, email_verified)
-       values ($1, $2, $3, $4, $5, $6, $7, 'player', false)
-       returning
-         id,
-         name,
-         username,
-         email,
-         phone,
-         avatar_url as "avatarUrl",
-         created_at as "createdAt"`,
-      [id, String(name).trim(), uname, mail, hash, phone, avatarUrl]
-    );
-
-    const user = r.rows[0];
-    const token = jwt.sign(
-      { sub: user.id, name: user.name, username: user.username, email: user.email },
-      JWT_SECRET,
-      { expiresIn: "30d" }
-    );
-
-    return res.json({ token, profile: publicUser(user) });
-  } catch (e) {
-    // pg unique violation
-    if (e && e.code === "23505") {
-      return res.status(409).json({ error: "Benutzername oder E-Mail belegt" });
-    }
-    console.error("register error", e);
-    return res.status(500).json({ error: "Serverfehler" });
-  }
-});
-
-app.post("/api/auth/login", async (req, res) => {
-  const { usernameOrEmail, password } = req.body || {};
-  if (!usernameOrEmail || !password) {
-    return res
-      .status(400)
-      .json({ error: "usernameOrEmail & password erforderlich" });
-  }
-
-  const key = String(usernameOrEmail).trim().toLowerCase();
-
-  try {
-    const user = await dbUserByUsernameOrEmail(key);
-    if (!user) return res.status(401).json({ error: "Ungültige Zugangsdaten" });
-
-    const ok = await bcrypt.compare(String(password), user.passwordHash);
-    if (!ok) return res.status(401).json({ error: "Ungültige Zugangsdaten" });
-
-    const token = jwt.sign(
-      { sub: user.id, name: user.name, username: user.username, email: user.email },
-      JWT_SECRET,
-      { expiresIn: "30d" }
-    );
-
-    return res.json({ token, profile: publicUser(user) });
-  } catch (e) {
-    console.error("login error", e);
-    return res.status(500).json({ error: "Serverfehler" });
-  }
-});
-
-// optional: Avatar-Upload (multipart/form-data, Feldname "avatar")
-app.post("/api/upload-avatar", upload.single("avatar"), (req, res) => {
-  if (!req.file) return res.status(400).json({ error: "Keine Datei" });
-  const url = `/uploads/${req.file.filename}`;
-  return res.json({ url });
-});
-
-// Token prüfen / Profil holen (profil kommt jetzt aus DB)
-app.get("/api/me", async (req, res) => {
-  const hdr = req.headers.authorization || "";
-  const token = hdr.startsWith("Bearer ") ? hdr.slice(7) : null;
-  try {
-    const payload = token ? jwt.verify(token, JWT_SECRET) : null;
-    if (!payload) return res.status(401).json({ error: "Unauthorized" });
-
-    const user = await dbUserById(payload.sub);
-    if (!user) return res.status(401).json({ error: "Unauthorized" });
-
-    return res.json({ profile: publicUser(user) });
-  } catch {
-    return res.status(401).json({ error: "Unauthorized" });
-  }
-});
-
-// --- Globale Variablen ---
-let players = []; // [{id, name, team, passed, seatPosition}]
-let hands = {}; // id -> Karten
-// Ersten Spieler (Owner) serverseitig merken
-let firstClientId = null;
 let bottomCards = [];
-let bids = {}; // id -> bid
+let bids = {};             // userId -> bid
 let currentBid = 0;
 let currentPlayerIndex = 0;
 let biddingActive = false;
+
 let trumpf = null;
-let winnerPlayerId = null;
+let winnerUserId = null;
+let forceBidUserId = null;
+
 let randomTeams = false;
 let consecutivePasses = 0;
-let includeJokers = false; // Spiel mit/ohne Joker
+let includeJokers = false;
 let showRoundPoints = true;
-let currentBottomSize = 4; // 4 ohne Joker, 6 mit Joker
-// --- Neue globale Variablen für Stiche ---
-let currentTrick = []; // [{playerId, card}]
-let trickLeader = null; // Spieler, der die Farbe vorgibt
+let currentBottomSize = 4;
+
+let currentTrick = [];         // [{ userId, card }]
+let trickLeaderUserId = null;
 let tricksPlayed = 0;
+
 let teamScores = { Fire: 0, Storm: 0 };
 let roundPoints = { Fire: 0, Storm: 0 };
 let roundBottomCards = [];
 let roundDiscarded = [];
 
-// Basis-Werte (ohne/mit Joker)
-const MAX_BID_NORMAL = 165;
-const MAX_BID_JOKERS = 200;
+let trickHistory = [];
+let roundsHistory = [];
+let roundCounter = 0;
 
-const MAX_POINTS_NORMAL = 1165;
-const MAX_POINTS_JOKERS = 1600;
-
-// Dynamische Helfer basierend auf includeJokers
-function getMaxBid() {
-  return includeJokers ? MAX_BID_JOKERS : MAX_BID_NORMAL;
-}
-
-function getMaxPoints() {
-  return includeJokers ? MAX_POINTS_JOKERS : MAX_POINTS_NORMAL;
-}
-
-// Mindestens 80, oder die (aufgerundete) Hälfte des Maximalgebots
-function getDoubleNegativeMin() {
-  const mb = getMaxBid();
-  return Math.max(80, Math.ceil(mb / 2));
-}
-
-// Helper Funktion, um einfach der erste Spieler zu merken
-function isFirstPlayerSocket(socket) {
-  // stabile ID aus JWT oder Player-Objekt
-  const jwtId = socket.user?.id || null;
-  const player = players.find((p) => p.id === socket.id);
-  const cid = player?.clientId || jwtId;
-
-  if (!firstClientId || !cid) return false;
-  return cid === firstClientId;
-}
+const VARIANTS = { UNDECIDED: "UNDECIDED", NORMAL: "NORMAL", FLIP: "FLIP" };
+let roundVariant = VARIANTS.UNDECIDED;
+let variantPending = false;
 
 let gamePaused = false;
-// --- Sitzplätze (1..4) mit fixen Teams ---
-const SEAT_TEAMS = { 1: "Fire", 2: "Storm", 3: "Fire", 4: "Storm" };
-// null = frei, sonst direkt Player-Objekt (Referenz)
-let seats = { 1: null, 2: null, 3: null, 4: null };
-const disconnectTimers = new Map(); // clientId -> Timeout
-function seatsEmpty() {
-  return !seats[1] && !seats[2] && !seats[3] && !seats[4];
+const disconnectTimers = new Map(); // userId -> Timeout
+
+// ---------- Helpers ----------
+function uid(socket) {
+  return socket.user?.id || null;
 }
-function seatsFull() {
-  return !!seats[1] && !!seats[2] && !!seats[3] && !!seats[4];
+function playerByUserId(userId) {
+  return players.find((p) => p.userId === userId) || null;
 }
-// Hilfsfunktion: Reihenfolge aus Sitzen übernehmen (seatPosition NICHT überschreiben)
-function orderPlayersBySeats() {
-  players = [seats[1], seats[2], seats[3], seats[4]].filter(Boolean);
+function emitToUser(userId, event, payload) {
+  const p = playerByUserId(userId);
+  if (p?.socketId) io.to(p.socketId).emit(event, payload);
 }
-function broadcastSeats() {
-  io.emit("seatsUpdate", {
+function isFirstPlayerSocket(socket) {
+  const userId = uid(socket);
+  return !!firstUserId && userId === firstUserId;
+}
+
+// ---------- DB Snapshot / Restore ----------
+function dbSnapshot() {
+  return {
+    v: 1,
+    players: players.map((p) => ({
+      userId: p.userId,
+      name: p.name,
+      username: p.username,
+      team: p.team,
+      passed: p.passed,
+      lastBid: p.lastBid,
+      seatPosition: p.seatPosition,
+    })),
     seats: {
-      1: seats[1]?.name || null,
-      2: seats[2]?.name || null,
-      3: seats[3]?.name || null,
-      4: seats[4]?.name || null,
+      1: seats[1]?.userId || null,
+      2: seats[2]?.userId || null,
+      3: seats[3]?.userId || null,
+      4: seats[4]?.userId || null,
     },
-  });
+    hands,
+    bottomCards,
+    bids,
+    currentBid,
+    currentPlayerIndex,
+    biddingActive,
+    trumpf,
+    winnerUserId,
+    forceBidUserId,
+    randomTeams,
+    consecutivePasses,
+    includeJokers,
+    showRoundPoints,
+    currentBottomSize,
+    currentTrick,
+    trickLeaderUserId,
+    tricksPlayed,
+    teamScores,
+    roundPoints,
+    roundBottomCards,
+    roundDiscarded,
+    trickHistory,
+    roundsHistory,
+    roundCounter,
+    roundVariant,
+    variantPending,
+    firstUserId,
+    gamePaused,
+  };
+}
+
+function applyLoadedState(s) {
+  if (!s) return;
+
+  includeJokers = !!s.includeJokers;
+  showRoundPoints = s.showRoundPoints ?? true;
+  currentBottomSize = s.currentBottomSize ?? (includeJokers ? 6 : 4);
+
+  players = (s.players || []).map((p) => ({
+  ...p,
+  socketId: null,
+  id: null, // <- wichtig, sonst denkt UI evtl. das wäre noch gültig
+}));
+
+
+  seats = { 1: null, 2: null, 3: null, 4: null };
+  const seatMap = s.seats || {};
+  for (const pos of [1, 2, 3, 4]) {
+    const u = seatMap[pos] || seatMap[String(pos)];
+    if (!u) continue;
+    const pl = players.find((x) => x.userId === u);
+    if (pl) seats[pos] = pl;
+  }
+
+  hands = s.hands || {};
+  bottomCards = s.bottomCards || [];
+  bids = s.bids || {};
+  currentBid = s.currentBid || 0;
+  currentPlayerIndex = s.currentPlayerIndex || 0;
+  biddingActive = !!s.biddingActive;
+  trumpf = s.trumpf ?? null;
+  winnerUserId = s.winnerUserId ?? null;
+  forceBidUserId = s.forceBidUserId ?? null;
+
+  randomTeams = !!s.randomTeams;
+  consecutivePasses = s.consecutivePasses || 0;
+
+  currentTrick = s.currentTrick || [];
+  trickLeaderUserId = s.trickLeaderUserId ?? null;
+  tricksPlayed = s.tricksPlayed || 0;
+
+  teamScores = s.teamScores || { Fire: 0, Storm: 0 };
+  roundPoints = s.roundPoints || { Fire: 0, Storm: 0 };
+  roundBottomCards = s.roundBottomCards || [];
+  roundDiscarded = s.roundDiscarded || [];
+
+  trickHistory = s.trickHistory || [];
+  roundsHistory = s.roundsHistory || [];
+  roundCounter = s.roundCounter || 0;
+
+  roundVariant = s.roundVariant || VARIANTS.UNDECIDED;
+  variantPending = !!s.variantPending;
+
+  firstUserId = s.firstUserId || null;
+  gamePaused = !!s.gamePaused;
+}
+
+async function ensureActiveGame() {
+  const r = await pool.query(
+    `select id, current_state
+       from games
+      where status='active'
+      order by updated_at desc
+      limit 1`
+  );
+
+  if (r.rowCount) {
+    gameId = r.rows[0].id;
+    applyLoadedState(r.rows[0].current_state);
+    console.log("Loaded game:", gameId);
+    return;
+  }
+
+  gameId = randomUUID();
+  await pool.query(
+    `insert into games (id, status, first_user_id, include_jokers, show_round_points, current_bottom_size, current_state)
+     values ($1,'active',null,$2,$3,$4,$5::jsonb)`,
+    [gameId, includeJokers, showRoundPoints, currentBottomSize, dbSnapshot()]
+  );
+  console.log("Created new game:", gameId);
+}
+
+async function persistGameStateNow() {
+  if (!gameId) return;
+  await pool.query(
+    `update games
+        set current_state = $1::jsonb,
+            first_user_id = coalesce(first_user_id, $2),
+            include_jokers = $3,
+            show_round_points = $4,
+            current_bottom_size = $5,
+            updated_at = now()
+      where id = $6`,
+    [dbSnapshot(), firstUserId, includeJokers, showRoundPoints, currentBottomSize, gameId]
+  );
 }
 
 function stateSnapshot() {
-  return {
-    players,
-    teamScores,
-    roundPoints,
-    currentBid,
-    biddingActive,
-    currentPlayer: players[currentPlayerIndex] || null,
-    randomTeams,
-    trumpf,
-    winnerPlayerId,
-    roundVariant,
-    tricksPlayed,
-    includeJokers,
-    currentBottomSize,
-    showRoundPoints,
-    maxBid: getMaxBid(),
-    maxPoints: getMaxPoints(),
-    firstClientId,
-  };
+  const s = dbSnapshot();
+
+  // private Infos raus
+  delete s.hands;
+  delete s.bottomCards;
+
+  return s;
+}
+
+function persistGameState() {
+  if (persistQueued) return;
+  persistQueued = true;
+  setTimeout(async () => {
+    persistQueued = false;
+    try { await persistGameStateNow(); }
+    catch (e) { console.error("persistGameState error", e); }
+  }, 50);
+}
+
+// ---------- game_players / rounds / tricks Persistenz ----------
+async function persistGamePlayer(userId, seatPosition, team) {
+  if (!gameId || !userId) return;
+  try {
+    // Falls vorher jemand anderes auf diesem Sitz stand, Sitz dort freigeben
+    await pool.query(
+      `update game_players set seat_position = null
+        where game_id = $1 and seat_position = $2 and user_id <> $3`,
+      [gameId, seatPosition, userId]
+    );
+    await pool.query(
+      `insert into game_players (game_id, user_id, seat_position, team)
+       values ($1, $2, $3, $4)
+       on conflict (game_id, user_id)
+       do update set seat_position = excluded.seat_position,
+                     team = excluded.team,
+                     left_at = null`,
+      [gameId, userId, seatPosition, team]
+    );
+  } catch (e) {
+    console.error("persistGamePlayer error", e);
+  }
+}
+
+async function markGamePlayerLeft(userId) {
+  if (!gameId || !userId) return;
+  try {
+    await pool.query(
+      `update game_players set left_at = now() where game_id=$1 and user_id=$2`,
+      [gameId, userId]
+    );
+  } catch (e) {
+    console.error("markGamePlayerLeft error", e);
+  }
+}
+
+async function persistRoundAndTricks(roundEntry) {
+  if (!gameId) return;
+  try {
+    const r = await pool.query(
+      `insert into rounds
+        (game_id, round_no, bidder_user_id, bidder_team, bid, trumpf, round_variant,
+         round_points, team_scores_after, rule_applied, delta_applied, bottom_cards, discarded)
+       values ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9::jsonb,$10,$11::jsonb,$12::jsonb,$13::jsonb)
+       returning id`,
+      [
+        gameId,
+        roundEntry.round,
+        roundEntry.bidderId,
+        roundEntry.bidderTeam,
+        roundEntry.bid,
+        roundEntry.trumpf,
+        roundEntry.variant,
+        roundEntry.roundPoints,
+        roundEntry.teamScoresAfter,
+        roundEntry.ruleApplied,
+        roundEntry.deltaApplied,
+        roundEntry.bottomCards,
+        roundEntry.discarded,
+      ]
+    );
+    const roundId = r.rows[0].id;
+
+    for (const t of roundEntry.tricks) {
+      await pool.query(
+        `insert into tricks (round_id, trick_no, lead_suit, trumpf, winner_user_id, winner_team, points, plays)
+         values ($1,$2,$3,$4,$5,$6,$7,$8::jsonb)`,
+        [roundId, t.no, t.leadSuit, t.trumpf, t.winnerId, t.winnerTeam, t.points, t.plays]
+      );
+    }
+  } catch (e) {
+    console.error("persistRoundAndTricks error", e);
+  }
 }
 
 function resetGameState() {
@@ -338,13 +335,13 @@ function resetGameState() {
   currentPlayerIndex = 0;
   biddingActive = false;
   trumpf = null;
-  winnerPlayerId = null;
-  forceBidPlayerId = null;
+  winnerUserId = null;
+  forceBidUserId = null;
   consecutivePasses = 0;
 
   // Stich-Status
   currentTrick = [];
-  trickLeader = null;
+  trickLeaderUserId = null;
   tricksPlayed = 0;
   trickHistory = [];
 
@@ -363,15 +360,6 @@ function resetGameState() {
 
   // Seats/Players bleiben bewusst erhalten
 }
-
-let trickHistory = []; // Stiche der aktuellen Runde (Array mit 12 Einträgen)
-let roundsHistory = []; // Chronik aller Runden
-let roundCounter = 0; // Rundenzähler
-
-// Varianten-Flags
-const VARIANTS = { UNDECIDED: "UNDECIDED", NORMAL: "NORMAL", FLIP: "FLIP" };
-let roundVariant = VARIANTS.UNDECIDED;
-let variantPending = false;
 
 // === Karten Deck ===
 const suits = ["♠", "♥", "♣", "♦"];
@@ -537,11 +525,13 @@ function deal() {
   roundDiscarded = [];
 
   players.forEach((p, idx) => {
-    const start = idx * cardsPerPlayer;
-    const end = start + cardsPerPlayer;
-    hands[p.id] = sortCards(deck.slice(start, end));
-    io.to(p.id).emit("hand", hands[p.id]);
-  });
+  const start = idx * cardsPerPlayer;
+  const end = start + cardsPerPlayer;
+
+  hands[p.userId] = sortCards(deck.slice(start, end));
+
+  if (p.socketId) io.to(p.socketId).emit("hand", hands[p.userId]);
+});
 
   io.emit("roundPointsUpdate", { roundPoints });
 }
@@ -552,49 +542,58 @@ function maybeEndAuction() {
   const active = players.filter((p) => !p.passed);
   const haveAnyBid = Object.keys(bids).length > 0;
 
-  // b) Nur noch 1 aktiver Bieter übrig -> er gewinnt mit seinem höchsten Gebot
   if (haveAnyBid && active.length === 1) {
     biddingActive = false;
     const [winnerId, highestBid] = Object.entries(bids).reduce((a, b) =>
       a[1] > b[1] ? a : b
     );
-    const winnerPlayer = players.find((p) => p.id === winnerId);
-    winnerPlayerId = winnerId;
+
+    winnerUserId = winnerId;
+    const winnerPlayer = playerByUserId(winnerId);
+
     io.emit("biddingResult", { winner: winnerPlayer, bid: highestBid });
-    io.to(winnerId).emit("showBottomCards", { bottomCards });
+    emitToUser(winnerId, "showBottomCards", { bottomCards });
+
+    persistGameState();
     return true;
   }
 
-  // a) Nach einem (positiven) Gebot kommen 3 Pässe in Folge
   if (consecutivePasses >= 3 && haveAnyBid) {
     biddingActive = false;
     const [winnerId, highestBid] = Object.entries(bids).reduce((a, b) =>
       a[1] > b[1] ? a : b
     );
-    const winnerPlayer = players.find((p) => p.id === winnerId);
-    winnerPlayerId = winnerId;
+
+    winnerUserId = winnerId;
+    const winnerPlayer = playerByUserId(winnerId);
+
     io.emit("biddingResult", { winner: winnerPlayer, bid: highestBid });
-    io.to(winnerId).emit("showBottomCards", { bottomCards });
+    emitToUser(winnerId, "showBottomCards", { bottomCards });
+
+    persistGameState();
     return true;
   }
 
-  // Sonderfall: 3 Pässe und noch KEIN Gebot -> jemanden zwingen (wie gehabt)
   if (consecutivePasses >= 3 && !haveAnyBid) {
     const notPassed = players.find((p) => !p.passed);
     if (notPassed) {
-      forceBidPlayerId = notPassed.id;
-      io.to(notPassed.id).emit("yourTurn", {
+      forceBidUserId = notPassed.userId;
+
+      emitToUser(notPassed.userId, "yourTurn", {
         currentBid,
         currentPlayer: notPassed,
         mustBid: true,
       });
       io.emit("turnUpdate", { currentPlayer: notPassed });
-      return true; // wir haben die Runde „angehalten“, next turn gesetzt
+
+      persistGameState();
+      return true;
     }
   }
 
   return false;
 }
+
 
 function cardPoints(card) {
   // Joker zuerst
@@ -754,10 +753,10 @@ function startNewRound() {
     p.lastBid = null;
   });
   consecutivePasses = 0;
-  forceBidPlayerId = null;
+  forceBidUserId = null;
   bids = {};
   currentBid = 0;
-  winnerPlayerId = null;
+  winnerUserId = null;
   trumpf = null;
 
   // <-- wichtig: Reset sofort an alle Clients pushen
@@ -771,8 +770,9 @@ function startNewRound() {
 
   // ersten Bieter informieren
   const next = players[currentPlayerIndex];
-  io.to(next.id).emit("yourTurn", { currentBid, currentPlayer: next });
-  io.emit("turnUpdate", { currentPlayer: next });
+  emitToUser(next.userId, "yourTurn", { currentBid, currentPlayer: next });
+io.emit("turnUpdate", { currentPlayer: next });
+
 }
 // JWT im Handshake auswerten (optional, aber empfohlen)
 io.use((socket, next) => {
@@ -796,163 +796,138 @@ io.use((socket, next) => {
 io.on("connection", (socket) => {
   console.log("Player connected:", socket.id);
   socket.on("register", (payload) => {
-    const { name, clientId } =
-      typeof payload === "string"
-        ? { name: payload, clientId: null }
-        : payload || {};
-    // Bevorzugt die geprüften Werte aus JWT
-    const authName = socket.user?.name || null;
-    const authId = socket.user?.id || null;
-    const finalName = (authName || name || "").trim();
-    const finalClientId = authId || clientId || null;
-    console.log("DEBUG register payload:", payload, socket.user);
-    if (!finalName || !finalClientId) {
-      socket.emit("invalidAction", { msg: "Bitte zuerst anmelden." });
-      return;
-    }
-    console.log("Register:", finalName, "clientId:", finalClientId);
+  const userId = uid(socket);
+  const payloadName = typeof payload === "string" ? payload : (payload?.name || "");
+  const finalName = String(socket.user?.name || payloadName || "").trim();
 
-    // 1) Rebind: existiert schon ein Spieler mit gleicher clientId (bevorzugt) oder gleichem Namen?
-    let existing =
-      (finalClientId && players.find((p) => p.clientId === finalClientId)) ||
-      (finalName && players.find((p) => p.name === finalName));
+  if (!userId || !finalName) {
+    socket.emit("invalidAction", { msg: "Bitte zuerst anmelden." });
+    return;
+  }
 
-    if (existing) {
-      const oldId = existing.id; // ★ bisherige Socket-ID merken
-      // falls Grace-Timer aktiv: abbrechen
-      if (existing.clientId && disconnectTimers.has(existing.clientId)) {
-        clearTimeout(disconnectTimers.get(existing.clientId));
-        disconnectTimers.delete(existing.clientId);
-      }
-      // socket.id aktualisieren, evtl. Namen updaten
-      existing.id = socket.id;
-      if (finalName) existing.name = finalName;
-      if (socket.user?.username) existing.username = socket.user.username;
-      if (finalClientId) existing.clientId = finalClientId;
-      // Seats-Referenz sicherstellen
-      if (existing.seatPosition) seats[existing.seatPosition] = existing;
-      // ★ Hand auf neue Socket-ID migrieren
-      if (hands[oldId]) {
-        hands[socket.id] = hands[oldId];
-        delete hands[oldId];
-        // Hand sofort an den Spieler schicken, damit seatSelect NICHT erscheint
-        io.to(socket.id).emit("hand", hands[socket.id]);
-      }
+  let existing = playerByUserId(userId);
 
-      // ★ Gebotseinträge umziehen (falls in Auktion)
-      if (bids[oldId] != null) {
-        bids[socket.id] = bids[oldId];
-        delete bids[oldId];
-      }
-
-      // ★ Falls er der Biet-Gewinner war: Status aktualisieren
-      if (winnerPlayerId === oldId) {
-        winnerPlayerId = socket.id;
-        // falls Bottom-Cards noch beim Richter liegen, erneut schicken
-        if (bottomCards && bottomCards.length) {
-          io.to(socket.id).emit("showBottomCards", { bottomCards });
-        }
-      }
-
-      // ★ Wenn er gerade am Zug ist, „yourTurn“ erneut senden
-      if (biddingActive && players[currentPlayerIndex]?.id === socket.id) {
-        io.to(socket.id).emit("yourTurn", {
-          currentBid,
-          currentPlayer: players[currentPlayerIndex],
-          mustBid: forceBidPlayerId === socket.id,
-        });
-      }
-      socket.emit("stateSync", stateSnapshot());
-      socket.emit("roundsHistoryUpdate", { roundsHistory });
-      io.emit("playersUpdate", players);
-      maybeResumeGame();
-      return;
+  if (existing) {
+    if (disconnectTimers.has(userId)) {
+      clearTimeout(disconnectTimers.get(userId));
+      disconnectTimers.delete(userId);
     }
 
-    // 2) Neuer Spieler (nur wenn Platz ist)
-    if (players.length >= 4) {
-      socket.emit("lobbyFull", { msg: "Lobby voll (max. 4 Spieler)" });
-      return;
+    existing.socketId = socket.id;
+    existing.id = socket.id;
+    existing.name = finalName;
+    if (socket.user?.username) existing.username = socket.user.username;
+
+    if (existing.seatPosition) seats[existing.seatPosition] = existing;
+
+    if (hands[userId]) io.to(socket.id).emit("hand", hands[userId]);
+    if (winnerUserId === userId && bottomCards?.length) {
+      io.to(socket.id).emit("showBottomCards", { bottomCards });
     }
-    const player = {
-      id: socket.id,
-      clientId: finalClientId,
-      name: finalName,
-      username: socket.user?.username || null,
-      team: null,
-      passed: false,
-      lastBid: null,
-      seatPosition: null,
-    };
-    // Ersten Spieler serverseitig festhalten
-    if (!firstClientId && finalClientId) {
-      firstClientId = finalClientId;
-      console.log("First player locked to clientId:", firstClientId);
-    }
-    players.push(player);
 
     socket.emit("stateSync", stateSnapshot());
     socket.emit("roundsHistoryUpdate", { roundsHistory });
     io.emit("playersUpdate", players);
+
+    persistGameState();
     maybeResumeGame();
-  });
+    return;
+  }
+
+  if (players.length >= 4) {
+    socket.emit("lobbyFull", { msg: "Lobby voll (max. 4 Spieler)" });
+    return;
+  }
+
+  const player = {
+    userId,
+    socketId: socket.id,
+    id: socket.id,
+    name: finalName,
+    username: socket.user?.username || null,
+    team: null,
+    passed: false,
+    lastBid: null,
+    seatPosition: null,
+  };
+
+  if (!firstUserId) firstUserId = userId;
+
+  players.push(player);
+
+  socket.emit("stateSync", stateSnapshot());
+  socket.emit("roundsHistoryUpdate", { roundsHistory });
+  players.forEach(p => { if (p.socketId) p.id = p.socketId; });
+  io.emit("playersUpdate", players);
+
+  persistGameState();
+  maybeResumeGame();
+});
+
+
   socket.on("chooseSeat", ({ seat }) => {
-    const player = players.find((p) => p.id === socket.id);
-    if (!player) return;
+  const userId = uid(socket);
+  const player = playerByUserId(userId);
+  if (!player) return;
 
-    // während einer laufenden/ausgeteilten Runde blocken
-    if (Object.keys(hands).length || biddingActive) {
-      socket.emit("invalidAction", {
-        msg: "Sitzwechsel ist nur vor Rundenstart möglich.",
-      });
-      return;
-    }
+  if (Object.keys(hands).length || biddingActive) {
+    socket.emit("invalidAction", { msg: "Sitzwechsel ist nur vor Rundenstart möglich." });
+    return;
+  }
 
-    if (![1, 2, 3, 4].includes(seat)) return;
-    if (seats[seat] && seats[seat].id !== socket.id) {
-      socket.emit("invalidAction", { msg: "Dieser Platz ist bereits belegt." });
-      return;
-    }
+  if (![1,2,3,4].includes(seat)) return;
 
-    // alten Platz freigeben
-    if (player.seatPosition && seats[player.seatPosition]?.id === player.id) {
-      seats[player.seatPosition] = null;
-    }
+  if (seats[seat] && seats[seat].userId !== userId) {
+    socket.emit("invalidAction", { msg: "Dieser Platz ist bereits belegt." });
+    return;
+  }
 
-    // neuen Platz belegen
-    seats[seat] = player;
-    player.seatPosition = seat;
-    player.team = SEAT_TEAMS[seat];
+  if (player.seatPosition && seats[player.seatPosition]?.userId === userId) {
+    seats[player.seatPosition] = null;
+  }
 
-    if (seatsFull()) orderPlayersBySeats(); // nur wenn 4/4
-    broadcastSeats();
-    io.emit("playersUpdate", players);
-  });
+  seats[seat] = player;
+  player.seatPosition = seat;
+  player.team = SEAT_TEAMS[seat];
+
+  persistGamePlayer(userId, seat, player.team);
+
+  if (seatsFull()) orderPlayersBySeats();
+  broadcastSeats();
+  io.emit("playersUpdate", players);
+
+  persistGameState();
+});
+
 
   socket.on("leaveSeat", () => {
-    const player = players.find((p) => p.id === socket.id);
-    if (!player) return;
+  const userId = uid(socket);
+  const player = playerByUserId(userId);
+  if (!player) return;
 
-    // nur vor Rundenstart erlaubt
-    if (Object.keys(hands).length || biddingActive) {
-      socket.emit("invalidAction", {
-        msg: "Sitz verlassen ist nur vor Rundenstart möglich.",
-      });
-      return;
-    }
+  if (Object.keys(hands).length || biddingActive) {
+    socket.emit("invalidAction", { msg: "Sitz verlassen ist nur vor Rundenstart möglich." });
+    return;
+  }
 
-    if (player.seatPosition && seats[player.seatPosition]?.id === player.id) {
-      seats[player.seatPosition] = null;
-    }
-    player.seatPosition = null;
-    player.team = null;
+  if (player.seatPosition && seats[player.seatPosition]?.userId === userId) {
+    seats[player.seatPosition] = null;
+  }
 
-    broadcastSeats();
-    io.emit("playersUpdate", players);
-  });
+  player.seatPosition = null;
+  player.team = null;
+
+  markGamePlayerLeft(userId);
+
+  broadcastSeats();
+  io.emit("playersUpdate", players);
+  persistGameState();
+});
+
 
   socket.on("chooseTeam", (team) => {
-    const player = players.find((p) => p.id === socket.id);
+    const player = playerByUserId(uid(socket));
+
     if (!player) return;
 
     if (team !== "Random") {
@@ -1002,7 +977,7 @@ io.on("connection", (socket) => {
       p.lastBid = null;
     });
     consecutivePasses = 0;
-    forceBidPlayerId = null;
+    forceBidUserId = null;
     bids = {};
     currentBid = 0;
     currentPlayerIndex = 0; // Sitz 1 beginnt
@@ -1011,8 +986,9 @@ io.on("connection", (socket) => {
     deal(); // teilt aus & sendet Hands/RoundPoints
 
     const next = players[currentPlayerIndex];
-    io.to(next.id).emit("yourTurn", { currentBid, currentPlayer: next });
-    io.emit("turnUpdate", { currentPlayer: next });
+    emitToUser(next.userId, "yourTurn", { currentBid, currentPlayer: next });
+io.emit("turnUpdate", { currentPlayer: next });
+
     io.emit("playersUpdate", players);
   });
 
@@ -1056,8 +1032,11 @@ io.on("connection", (socket) => {
 
   socket.on("setVariant", ({ variant }) => {
     // Nur der Startspieler (Richter) darf wählen
-    if (socket.id !== winnerPlayerId) return;
+    if (uid(socket) !== winnerUserId) return;
     if (!variant) return;
+    const leaderIdx = players.findIndex(p => p.userId === trickLeaderUserId);
+if (leaderIdx === -1) return;
+currentPlayerIndex = (leaderIdx + 1) % players.length;
 
     // Erlaubte Werte:
     const isSuitChoice = suits.includes(variant); // ["♠","♥","♣","♦"]
@@ -1083,7 +1062,7 @@ io.on("connection", (socket) => {
         justSetTrump = trumpf;
         io.emit("trumpChosen", {
           trumpf,
-          winner: players.find((p) => p.id === winnerPlayerId),
+          winner: players.find((p) => p.userId === winnerUserId),
         });
       } else if (!trumpf && currentTrick[0]) {
         // "NORMAL" wie bisher: Trumpf = Farbe der ersten Karte,
@@ -1094,7 +1073,7 @@ io.on("connection", (socket) => {
           trumpf = justSetTrump;
           io.emit("trumpChosen", {
             trumpf,
-            winner: players.find((p) => p.id === winnerPlayerId),
+            winner: players.find((p) => p.userId === winnerUserId),
           });
         }
         // Falls doch Joker + "NORMAL" geschickt wird -> kein auto-Trumpf
@@ -1104,302 +1083,288 @@ io.on("connection", (socket) => {
     io.emit("variantChosen", { variant: roundVariant, trumpf: justSetTrump });
 
     // Falls genau 1 Karte liegt (wir hatten pausiert): jetzt weiterspielen lassen
-    if (currentTrick.length === 1) {
-      currentPlayerIndex = (currentPlayerIndex + 1) % players.length;
-      const next = players[currentPlayerIndex];
-      io.to(next.id).emit("yourTurn", { currentBid, currentPlayer: next });
-      io.emit("turnUpdate", { currentPlayer: next });
-    }
+   if (currentTrick.length === 1) {
+  const leaderIdx = players.findIndex(p => p.userId === trickLeaderUserId);
+  currentPlayerIndex = (leaderIdx + 1 + players.length) % players.length;
+  const next = players[currentPlayerIndex];
+  emitToUser(next.userId, "yourTurn", { currentBid, currentPlayer: next });
+  io.emit("turnUpdate", { currentPlayer: next });
+  persistGameState();
+}
+
   });
 
   socket.on("makeBid", (bid) => {
-    if (!biddingActive) return;
-    const player = players.find((p) => p.id === socket.id);
-    if (!player) return;
+  if (!biddingActive) return;
 
-    const maxBid = getMaxBid(); // <- NEU
+  const userId = uid(socket);
+  const player = playerByUserId(userId);
+  if (!player) return;
 
-    if (bid !== 0) {
-      // Validierung gegen Manipulation
-      const minAllowed = Math.max(100, currentBid + 5);
-      const isStepOk = bid % 5 === 0;
-      if (!isStepOk || bid < minAllowed || bid > maxBid) {
-        socket.emit("invalidAction", {
-          msg: `Ungültiges Gebot. Erlaubt: mindestens ${minAllowed}, höchstens ${maxBid}, in 5er-Schritten.`,
-        });
+  const maxBid = getMaxBid();
 
-        // Spieler bleibt am Zug:
-        io.to(player.id).emit("yourTurn", {
-          currentBid,
-          currentPlayer: player,
-          mustBid: forceBidPlayerId === player.id,
-        });
-        io.emit("turnUpdate", { currentPlayer: player });
-        return;
-      }
-    }
+  if (bid !== 0) {
+    const minAllowed = Math.max(100, currentBid + 5);
+    const isStepOk = bid % 5 === 0;
+    if (!isStepOk || bid < minAllowed || bid > maxBid) {
+      socket.emit("invalidAction", {
+        msg: `Ungültiges Gebot. Erlaubt: mindestens ${minAllowed}, höchstens ${maxBid}, in 5er-Schritten.`,
+      });
 
-    // Falls gezwungener Spieler Pass machen will → blocken
-    if (forceBidPlayerId === player.id && bid === 0) {
-      //socket.emit("invalidAction", {
-      //msg: "Pass ist hier nicht erlaubt. Du musst bieten.",
-      //}
-      //);
-      io.to(player.id).emit("yourTurn", {
+      emitToUser(userId, "yourTurn", {
         currentBid,
         currentPlayer: player,
-        mustBid: true,
+        mustBid: forceBidUserId === userId,
       });
       io.emit("turnUpdate", { currentPlayer: player });
       return;
     }
+  }
 
-    if (bid === 0) {
-      player.passed = true;
-      player.lastBid = null;
-      consecutivePasses++;
-    } else {
-      currentBid = bid;
-      bids[player.id] = bid;
-      player.lastBid = bid;
-      consecutivePasses = 0;
-      forceBidPlayerId = null;
-      // ✅ Sofortiger Zuschlag bei Maximalgebot
-      if (currentBid >= maxBid) {
-        biddingActive = false;
-        winnerPlayerId = player.id;
-        io.emit("biddingResult", { winner: player, bid: currentBid });
-        io.to(player.id).emit("showBottomCards", { bottomCards });
-        return; // keine weiteren Bieter fragen
-      }
-    }
-
-    io.emit("playersUpdate", players);
-
-    // Prüfen, ob die Auktion hier enden soll
-    if (maybeEndAuction()) return;
-
-    // Nächsten Spieler (gegen Uhrzeigersinn) suchen, der noch nicht gepasst hat
-    do {
-      currentPlayerIndex = (currentPlayerIndex + 1) % players.length;
-    } while (players[currentPlayerIndex].passed);
-
-    // Falls wir gerade jemanden zum Bieten zwingen müssen, wurde das in maybeEndAuction()
-    // bereits behandelt (return). Ansonsten normal weitermachen:
-    const next = players[currentPlayerIndex];
-    io.to(next.id).emit("yourTurn", {
+  if (forceBidUserId === userId && bid === 0) {
+    emitToUser(userId, "yourTurn", {
       currentBid,
-      currentPlayer: next,
-      mustBid: false,
+      currentPlayer: player,
+      mustBid: true,
     });
-    io.emit("turnUpdate", { currentPlayer: next });
+    io.emit("turnUpdate", { currentPlayer: player });
+    return;
+  }
+
+  if (bid === 0) {
+    player.passed = true;
+    player.lastBid = null;
+    consecutivePasses++;
+  } else {
+    currentBid = bid;
+    bids[userId] = bid;
+    player.lastBid = bid;
+    consecutivePasses = 0;
+    forceBidUserId = null;
+
+    if (currentBid >= maxBid) {
+      biddingActive = false;
+      winnerUserId = userId;
+      io.emit("biddingResult", { winner: player, bid: currentBid });
+      emitToUser(userId, "showBottomCards", { bottomCards });
+      persistGameState();
+      return;
+    }
+  }
+
+  io.emit("playersUpdate", players);
+
+  if (maybeEndAuction()) return;
+
+  do {
+    currentPlayerIndex = (currentPlayerIndex + 1) % players.length;
+  } while (players[currentPlayerIndex].passed);
+
+  const next = players[currentPlayerIndex];
+  emitToUser(next.userId, "yourTurn", { currentBid, currentPlayer: next, mustBid: false });
+  io.emit("turnUpdate", { currentPlayer: next });
+
+  persistGameState();
+});
+
+
+socket.on("takeBottomCards", () => {
+  const userId = uid(socket);
+  const player = playerByUserId(userId);
+  if (!player) return;
+
+  if (userId !== winnerUserId) return;
+  if (!hands[userId]) return;
+
+  hands[userId] = sortCards([...hands[userId], ...bottomCards]);
+  bottomCards = [];
+
+  io.to(player.socketId).emit("hand", hands[userId]);
+  io.to(player.socketId).emit("discardPhase", {
+    hand: hands[userId],
+    bottomSize: currentBottomSize,
   });
 
-  socket.on("takeBottomCards", () => {
-    if (socket.id !== winnerPlayerId) return;
-    if (!hands[socket.id]) return;
+  persistGameState();
+});
 
-    hands[socket.id] = sortCards([...hands[socket.id], ...bottomCards]);
-    bottomCards = [];
-
-    io.to(socket.id).emit("hand", hands[socket.id]);
-    io.to(socket.id).emit("discardPhase", {
-      hand: hands[socket.id],
-      bottomSize: currentBottomSize, // 4 oder 6
-    });
-  });
 
   socket.on("discardCards", (selected) => {
-    if (socket.id !== winnerPlayerId) return;
-    if (!hands[socket.id]) return;
-    if (selected.length !== currentBottomSize) return; // 4 oder 6
+  const userId = uid(socket);
+  const player = playerByUserId(userId);
+  if (!player) return;
 
-    hands[socket.id] = sortCards(
-      hands[socket.id].filter((c) => !selected.includes(c))
-    );
-    roundDiscarded = selected.slice();
-    // 🔥 Stich 0: Abgeworfene Karten zählen (nur intern, aber nicht broadcasten!)
-    let discardPoints = 5; // Basis-Stichpunkte
-    selected.forEach((c) => (discardPoints += cardPoints(c)));
+  if (userId !== winnerUserId) return;
+  if (!hands[userId]) return;
+  if (!Array.isArray(selected) || selected.length !== currentBottomSize) return;
 
-    const winner = players.find((p) => p.id === winnerPlayerId);
-    if (winner) {
-      roundPoints[winner.team] += discardPoints;
-    }
+  hands[userId] = sortCards(hands[userId].filter((c) => !selected.includes(c)));
+  roundDiscarded = selected.slice();
 
-    // WICHTIG: NICHT io.emit("roundPointsUpdate")!
-    // Punkte bleiben serverseitig intern, nicht im HUD
+  // Stich 0 Punkte (intern)
+  let discardPoints = 5;
+  selected.forEach((c) => (discardPoints += cardPoints(c)));
 
-    io.to(socket.id).emit("hand", hands[socket.id]);
+  const winner = playerByUserId(winnerUserId);
+  if (winner) roundPoints[winner.team] += discardPoints;
 
-    // NEU: Discard beendet
-    io.to(socket.id).emit("discardDone");
+  io.to(player.socketId).emit("hand", hands[userId]);
+  io.to(player.socketId).emit("discardDone");
 
-    const player = players.find((p) => p.id === socket.id);
-    trumpf = null;
+  trumpf = null;
 
-    // jetzt wie bisher Startspieler setzen ...
-    currentPlayerIndex = players.findIndex((p) => p.id === winnerPlayerId);
-    const startPlayer = players[currentPlayerIndex];
-    io.to(startPlayer.id).emit("yourTurn", {
-      currentBid,
-      currentPlayer: startPlayer,
-    });
-    io.emit("turnUpdate", { currentPlayer: startPlayer });
-  });
+  // Startspieler = winnerUserId
+  currentPlayerIndex = players.findIndex((p) => p.userId === winnerUserId);
+  const startPlayer = players[currentPlayerIndex];
+
+  emitToUser(startPlayer.userId, "yourTurn", { currentBid, currentPlayer: startPlayer });
+  io.emit("turnUpdate", { currentPlayer: startPlayer });
+
+  persistGameState();
+});
+
 
   // --- PlayCard Event erweitern ---
   socket.on("playCard", (card) => {
-    const player = players.find((p) => p.id === socket.id);
-    if (!player || !hands[socket.id]) return;
+  const userId = uid(socket);
+  const player = playerByUserId(userId);
+  if (!player) return;
 
-    // Prüfen: Karte in Hand?
-    if (!hands[socket.id].includes(card)) return;
+  if (!hands[userId]) return;
+  if (!hands[userId].includes(card)) return;
 
-    // Bedienpflicht prüfen (Joker + Flip + Trumpf-Wahl berücksichtigen)
-    if (currentTrick.length > 0) {
-      const leadSuit = getLeadSuit();
+  // Bedienpflicht
+  if (currentTrick.length > 0) {
+    const leadSuit = getLeadSuit();
+    if (leadSuit !== "R") {
+      const hasLead = hands[userId].some((c) => cardSuitForPlay(c) === leadSuit);
+      if (cardSuitForPlay(card) !== leadSuit && hasLead) return;
+    }
+  }
 
-      // Wenn Joker gestartet wurde und noch KEIN echter Suit feststeht ("R"),
-      // gibt es noch keine Bedienpflicht – Richter wählt erst die Variante.
-      if (leadSuit !== "R") {
-        const hasLead = hands[socket.id].some(
-          (c) => cardSuitForPlay(c) === leadSuit
-        );
-        if (cardSuitForPlay(card) !== leadSuit && hasLead) {
-          // Optional: Debug/Feedback einbauen
-          //socket.emit("invalidAction", {
-          //msg: `Du musst ${leadSuit} bedienen.`,
-          //});
-          return;
+  // Karte entfernen + Hand senden
+  hands[userId] = hands[userId].filter((c) => c !== card);
+  if (player.socketId) io.to(player.socketId).emit("hand", hands[userId]);
+
+  // Trick aktualisieren (intern nur userId!)
+  currentTrick.push({ userId, card });
+
+  const isFirstInTrick = currentTrick.length === 1;
+  if (isFirstInTrick) {
+    trickLeaderUserId = userId;
+
+    // Richter entscheidet Variante nach erster Karte
+    if (userId === winnerUserId) {
+      if (roundVariant === VARIANTS.UNDECIDED) {
+        variantPending = true;
+
+        const isJokerStart = card === "JOKER" || card === "JOKER_BW";
+        emitToUser(userId, "askVariant", {
+          options: isJokerStart ? ["♠", "♥", "♣", "♦", "FLIP"] : ["NORMAL", "FLIP"],
+        });
+      } else if (roundVariant === VARIANTS.NORMAL && !trumpf) {
+        if (card !== "JOKER" && card !== "JOKER_BW") {
+          trumpf = card.slice(-1);
+          io.emit("trumpChosen", { trumpf, winner: player });
         }
       }
     }
+  }
 
-    // Karte entfernen
-    hands[socket.id] = hands[socket.id].filter((c) => c !== card);
-    io.to(socket.id).emit("hand", hands[socket.id]);
+  // Für UI: sende beides (compat)
+  io.emit("cardPlayed", { userId, playerId: player.socketId, card });
 
-    // In Stich legen
-    currentTrick.push({ playerId: socket.id, card });
-    const isFirstInTrick = currentTrick.length === 1;
-    if (isFirstInTrick) {
-      trickLeader = socket.id;
-      // Startspieler (Richter) entscheidet nach der ersten Karte die Variante
-      if (player.id === winnerPlayerId) {
-        if (roundVariant === VARIANTS.UNDECIDED) {
-          variantPending = true;
+  // 4 Karten -> auswerten
+  if (currentTrick.length === 4) {
+    const leadSuit = getLeadSuit();
 
-          const isJokerStart = card === "JOKER" || card === "JOKER_BW";
-
-          if (isJokerStart) {
-            // Joker als erste Karte: direkt Trumpf-Farbe ODER Flip wählen
-            io.to(player.id).emit("askVariant", {
-              options: ["♠", "♥", "♣", "♦", "FLIP"],
-            });
-          } else {
-            // normale Karte: Nur Normal/Flip entscheiden
-            io.to(player.id).emit("askVariant", {
-              options: ["NORMAL", "FLIP"],
-            });
-          }
-        } else if (roundVariant === VARIANTS.NORMAL && !trumpf) {
-          // Runde ist bereits NORMAL (z.B. vorkonfiguriert):
-          // Trumpf = Farbe der ersten Karte – aber NICHT bei Joker
-          if (card !== "JOKER" && card !== "JOKER_BW") {
-            trumpf = card.slice(-1);
-            io.emit("trumpChosen", { trumpf, winner: player });
-          }
-        }
-      }
+    let winner = currentTrick[0]; // {userId, card}
+    for (let i = 1; i < 4; i++) {
+      const cmp = compareCards(
+        currentTrick[i].card,
+        winner.card,
+        leadSuit,
+        trumpf,
+        roundVariant === VARIANTS.FLIP
+      );
+      if (cmp > 0) winner = currentTrick[i];
     }
 
-    if (currentTrick.length === 1) {
-      trickLeader = socket.id;
-    }
-    io.emit("cardPlayed", { playerId: socket.id, card });
+    let trickPoints = 5;
+    currentTrick.forEach((c) => (trickPoints += cardPoints(c.card)));
 
-    // Wenn 4 Karten → Stich auswerten
-    if (currentTrick.length === 4) {
-      const leadSuit = getLeadSuit();
-      let winner = currentTrick[0];
-      for (let i = 1; i < 4; i++) {
-        const cmp = compareCards(
-          currentTrick[i].card,
-          winner.card,
-          leadSuit,
-          trumpf,
-          roundVariant === VARIANTS.FLIP
-        );
-        if (cmp > 0) winner = currentTrick[i];
-      }
+    const winnerPlayer = playerByUserId(winner.userId);
+    if (winnerPlayer) roundPoints[winnerPlayer.team] += trickPoints;
 
-      // Punkte berechnen
-      let trickPoints = 5; // Grundpunkte für Stich
-      currentTrick.forEach((c) => (trickPoints += cardPoints(c.card)));
-      const winnerPlayer = players.find((p) => p.id === winner.playerId);
-      roundPoints[winnerPlayer.team] += trickPoints;
+    // Für UI: cards auch mit playerId mitschicken
+    const cardsForUi = currentTrick.map((x) => ({
+      userId: x.userId,
+      playerId: playerByUserId(x.userId)?.socketId || null,
+      card: x.card,
+    }));
 
-      io.emit("trickResult", {
-        winner: winnerPlayer,
-        cards: currentTrick,
-        points: trickPoints,
-        roundPoints,
-      });
+    io.emit("trickResult", {
+      winner: winnerPlayer,
+      cards: cardsForUi,
+      points: trickPoints,
+      roundPoints,
+    });
+    io.emit("roundPointsUpdate", { roundPoints });
 
-      io.emit("roundPointsUpdate", { roundPoints });
+    tricksPlayed++;
 
-      tricksPlayed++;
+    // History: sauber userId-basiert
+    const plays = currentTrick.map(({ userId, card }) => {
+      const pl = playerByUserId(userId);
+      return { userId, name: pl?.name || "", team: pl?.team || "", card };
+    });
 
-      // ... Winner/points bereits berechnet ...
+    trickHistory.push({
+      no: tricksPlayed,
+      plays,
+      leadSuit,
+      trumpf,
+      winnerId: winner.userId,
+      winnerName: winnerPlayer?.name || "",
+      winnerTeam: winnerPlayer?.team || "",
+      points: trickPoints,
+    });
 
-      // Reihenfolge des Ausspielens für die History
-      const plays = currentTrick.map(({ playerId, card }) => {
-        const pl = players.find((p) => p.id === playerId);
-        return { playerId, name: pl?.name || "", team: pl?.team || "", card };
-      });
+    currentTrick = [];
+    currentPlayerIndex = players.findIndex((p) => p.userId === winner.userId);
 
-      trickHistory.push({
-        no: tricksPlayed, // 1..12 korrekt
-        plays,
-        leadSuit, // angespielte Farbe
-        trumpf, // aktueller Trumpf
-        winnerId: winner.playerId,
-        winnerName: winnerPlayer.name,
-        winnerTeam: winnerPlayer.team,
-        points: trickPoints,
-      });
-      currentTrick = [];
-      currentPlayerIndex = players.findIndex((p) => p.id === winner.playerId);
-
-      // Alle Stiche gespielt?
-      if (tricksPlayed === 12) {
-        endRound();
-      } else {
-        const next = players[currentPlayerIndex];
-        io.to(next.id).emit("yourTurn", { currentBid, currentPlayer: next });
-        io.emit("turnUpdate", { currentPlayer: next });
-      }
+    if (tricksPlayed === 12) {
+      endRound();
     } else {
-      if (currentTrick.length === 1 && variantPending) {
-        // Solange die Wahl "Normal/Flip" offen ist, NICHT weitergeben
-      } else {
-        // Nächster Spieler gegen Uhrzeigersinn
-        currentPlayerIndex = (currentPlayerIndex + 1) % players.length;
-        const next = players[currentPlayerIndex];
-        io.to(next.id).emit("yourTurn", { currentBid, currentPlayer: next });
-        io.emit("turnUpdate", { currentPlayer: next });
-      }
+      const next = players[currentPlayerIndex];
+      emitToUser(next.userId, "yourTurn", { currentBid, currentPlayer: next });
+      io.emit("turnUpdate", { currentPlayer: next });
     }
-  });
+
+    persistGameState();
+    return;
+  }
+
+  // <4 Karten: nächste Person dran (außer Variant pending nach erster Karte)
+  if (!(currentTrick.length === 1 && variantPending)) {
+    currentPlayerIndex = (currentPlayerIndex + 1) % players.length;
+    const next = players[currentPlayerIndex];
+
+    emitToUser(next.userId, "yourTurn", { currentBid, currentPlayer: next });
+    io.emit("turnUpdate", { currentPlayer: next });
+  }
+
+  persistGameState();
+});
+
 
   // --- Rundenauswertung ---
   function endRound() {
-    const bidder = players.find((p) => p.id === winnerPlayerId) || {};
+    const bidder = players.find((p) => p.userId === winnerUserId) || {};
     const DOUBLE_NEGATIVE_MIN = getDoubleNegativeMin();
     const bidderTeam = bidder.team;
     const otherTeam = bidderTeam === "Fire" ? "Storm" : "Fire";
-    const bid = bids[winnerPlayerId] || 0;
+    const bid = bids[winnerUserId] || 0;
 
     // Stiche zählen (für Doppel-Positiv)
     const fireTrickCount = trickHistory.filter(
@@ -1454,12 +1419,13 @@ io.on("connection", (socket) => {
 
     const roundEntry = {
       round: roundCounter,
-      bidderId: winnerPlayerId || null,
+      bidderId: winnerUserId || null,
       bidderName: bidder.name || null,
       bidderTeam: bidderTeam || null,
       bidderUsername: bidder.username || null,
-      bid, // kommt von: const bid = bids[winnerPlayerId] || 0;
+      bid, // kommt von: const bid = bids[winnerUserId] || 0;
       trumpf: trumpf || null,
+      variant: roundVariant,
 
       // Punkte & Verlauf
       roundPoints: { ...roundPoints },
@@ -1477,6 +1443,8 @@ io.on("connection", (socket) => {
     };
     roundsHistory.push(roundEntry);
 
+    persistRoundAndTricks(roundEntry);
+
     // Sieger nach Stichpunkten
     const roundWinnerTeam =
       roundPoints.Fire === roundPoints.Storm
@@ -1491,7 +1459,7 @@ io.on("connection", (socket) => {
     // direkt nach Rundenschluss HUD-Status resetten
     trumpf = null;
     roundVariant = VARIANTS.UNDECIDED;
-    winnerPlayerId = null; // Krone/„Richter“ im HUD auch weg
+    winnerUserId = null; // Krone/„Richter“ im HUD auch weg
 
     // Events an Clients
     io.emit("roundEnd", {
@@ -1522,7 +1490,7 @@ io.on("connection", (socket) => {
       hands = {};
       bottomCards = [];
       bids = {};
-      winnerPlayerId = null;
+      winnerUserId = null;
       trickHistory = [];
 
       // Spielende?
@@ -1539,43 +1507,44 @@ io.on("connection", (socket) => {
     }, 1800); // 2s passt zu Client-Animation
   }
   socket.on("disconnect", () => {
-    console.log("Player disconnected:", socket.id);
+  const leaving = players.find((p) => p.socketId === socket.id);
+  if (!leaving) return;
 
-    const leaving = players.find((p) => p.id === socket.id);
-    if (!leaving) return;
-    // Sitz NICHT sofort freigeben – Chance für Reconnect!
-    const cid = leaving.clientId || leaving.name; // Fallback
-    if (!cid) return;
-    // Falls schon ein Timer läuft, nicht doppeln
-    if (disconnectTimers.has(cid)) return;
+  const userId = leaving.userId;
 
-    disconnectTimers.set(
-      cid,
-      setTimeout(() => {
-        // nach 15s wirklich entfernen
-        const idx = players.findIndex(
-          (p) => p.clientId === cid || p.name === cid
-        );
-        if (idx !== -1) {
-          const p = players[idx];
-          if (p.seatPosition && seats[p.seatPosition]?.id === p.id) {
-            seats[p.seatPosition] = null; // jetzt Platz freigeben
-          }
-          players.splice(idx, 1);
+  if (disconnectTimers.has(userId)) return;
+
+  disconnectTimers.set(
+    userId,
+    setTimeout(() => {
+      // nach 15s wirklich entfernen
+      const idx = players.findIndex((p) => p.userId === userId);
+      if (idx !== -1) {
+        const p = players[idx];
+        if (p.seatPosition && seats[p.seatPosition]?.userId === userId) {
+          seats[p.seatPosition] = null;
         }
-        disconnectTimers.delete(cid);
-        if (players.length < 4) {
-          gamePaused = true;
-          io.emit("gamePaused", { reason: "player_left" });
-        }
-        broadcastSeats();
-        io.emit("playersUpdate", players);
-      }, 15000)
-    ); // 15 Sekunden
+        players.splice(idx, 1);
+      }
 
-    // optional: Clients informieren, dass Reconnect-Fenster läuft
-    io.emit("playerMaybeBackSoon", { clientId: cid, timeoutSec: 15 });
-  });
+      disconnectTimers.delete(userId);
+      markGamePlayerLeft(userId);
+
+      if (players.length < 4) {
+        gamePaused = true;
+        io.emit("gamePaused", { reason: "player_left" });
+      }
+
+      broadcastSeats();
+      io.emit("playersUpdate", players);
+
+      persistGameState();
+    }, 15000)
+  );
+
+  io.emit("playerMaybeBackSoon", { userId, timeoutSec: 15 });
+});
+
 
   function maybeResumeGame() {
     if (players.length === 4 && gamePaused) {
@@ -1588,26 +1557,31 @@ io.on("connection", (socket) => {
     socket.emit("roundsHistoryUpdate", { roundsHistory });
   });
   socket.on("requestState", () => {
-    socket.emit("stateSync", stateSnapshot());
-    socket.emit("roundsHistoryUpdate", { roundsHistory });
-    // ► Falls der Client das 'hand'-Event verpasst hatte:
-    if (hands[socket.id]) {
-      io.to(socket.id).emit("hand", hands[socket.id]);
-    }
-    // ► Safety: wenn er (wieder) am Zug ist, Turn erneut schicken
-    const isHisTurn = players[currentPlayerIndex]?.id === socket.id;
-    if (biddingActive && isHisTurn) {
-      io.to(socket.id).emit("yourTurn", {
-        currentBid,
-        currentPlayer: players[currentPlayerIndex],
-        mustBid: forceBidPlayerId === socket.id,
-      });
-    }
-  });
+  const userId = uid(socket);
+
+  socket.emit("stateSync", stateSnapshot());
+  socket.emit("roundsHistoryUpdate", { roundsHistory });
+
+  if (userId && hands[userId]) {
+    io.to(socket.id).emit("hand", hands[userId]);
+  }
+
+  const isHisTurn = players[currentPlayerIndex]?.userId === userId;
+  if (biddingActive && isHisTurn) {
+    io.to(socket.id).emit("yourTurn", {
+      currentBid,
+      currentPlayer: players[currentPlayerIndex],
+      mustBid: forceBidUserId === userId,
+    });
+  }
+});
+
 });
 
 // === Server Start ===
 const PORT = process.env.PORT || 3001;
+await dbPing();
+await ensureActiveGame();
 server.listen(PORT, () => {
   console.log(`Server läuft auf Port ${PORT}`);
 });
