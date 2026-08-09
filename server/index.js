@@ -1033,6 +1033,15 @@ io.on("connection", (socket) => {
     if (winnerUserId === userId && bottomCards?.length) {
       io.to(socket.id).emit("showBottomCards", { bottomCards });
     }
+    // Richter hat Kartenberg bereits übernommen (bottomCards ist schon leer),
+    // aber noch nicht abgeworfen -> Hand ist größer als die normalen 12 Karten.
+    // Ohne diesen Re-Emit verliert der Client die Abwurf-Phase bei Reconnect/Refresh.
+    if (winnerUserId === userId && hands[userId] && hands[userId].length > 12) {
+      io.to(socket.id).emit("discardPhase", {
+        hand: hands[userId],
+        bottomSize: currentBottomSize,
+      });
+    }
 
     socket.emit("stateSync", stateSnapshot());
     socket.emit("roundsHistoryUpdate", { roundsHistory });
