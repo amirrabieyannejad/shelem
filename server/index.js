@@ -1050,6 +1050,27 @@ io.on("connection", (socket) => {
         io.to(socket.id).emit("biddingResult", { winner: winnerPlayer, bid: currentBid });
       }
     }
+    // "yourTurn" ist ebenfalls nur ein einmaliger Event. Ist gerade wirklich er
+    // am Zug (Gebot ODER Stich spielen, aber Abwurf-Phase muss vorbei sein),
+    // muss das nach Reconnect erneut geschickt werden - sonst bleibt der Client
+    // hängen ("ich kann nicht mehr spielen"), obwohl der Server längst wartet.
+    {
+      const discardPending =
+        winnerUserId && hands[winnerUserId] && hands[winnerUserId].length > 12;
+      const isHisTurn = players[currentPlayerIndex]?.userId === userId;
+      if (isHisTurn && biddingActive) {
+        io.to(socket.id).emit("yourTurn", {
+          currentBid,
+          currentPlayer: players[currentPlayerIndex],
+          mustBid: forceBidUserId === userId,
+        });
+      } else if (isHisTurn && !discardPending && winnerUserId) {
+        io.to(socket.id).emit("yourTurn", {
+          currentBid,
+          currentPlayer: players[currentPlayerIndex],
+        });
+      }
+    }
 
     socket.emit("stateSync", stateSnapshot());
     socket.emit("roundsHistoryUpdate", { roundsHistory });
