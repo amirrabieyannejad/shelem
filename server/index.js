@@ -231,14 +231,46 @@ async function persistGameStateNow() {
   );
 }
 
+// ---------- Öffentlicher Client-Snapshot (Format bleibt wie vor der DB-Integration!) ----------
+// WICHTIG: bewusst NICHT dbSnapshot() wiederverwenden - das Format dort ist fürs
+// DB-Persistieren gedacht (userId-basiert, keine "id"/"currentPlayer"-Felder).
+// App.js erwartet aber weiterhin: players[].id (=socket.id), currentPlayer (Objekt),
+// winnerPlayerId, firstClientId, maxBid, maxPoints.
 function stateSnapshot() {
-  const s = dbSnapshot();
+  const cp = players[currentPlayerIndex];
+  const winnerPlayer = playerByUserId(winnerUserId);
+  const firstPlayer = playerByUserId(firstUserId);
 
-  // private Infos raus
-  delete s.hands;
-  delete s.bottomCards;
-
-  return s;
+  return {
+    players: players.map((p) => ({
+      id: p.socketId || null, // Frontend matched auf p.id === socket.id
+      userId: p.userId,
+      name: p.name,
+      username: p.username,
+      team: p.team,
+      passed: p.passed,
+      lastBid: p.lastBid,
+      seatPosition: p.seatPosition,
+    })),
+    teamScores,
+    roundPoints,
+    currentBid,
+    biddingActive,
+    currentPlayer: cp ? { ...cp, id: cp.socketId || null } : null,
+    randomTeams,
+    trumpf,
+    winnerPlayerId: winnerPlayer ? (winnerPlayer.socketId || winnerPlayer.userId) : null,
+    roundVariant,
+    tricksPlayed,
+    includeJokers,
+    currentBottomSize,
+    showRoundPoints,
+    maxBid: getMaxBid(),
+    maxPoints: getMaxPoints(),
+    // Fallback auf firstUserId, falls der erste Spieler nach einem Serverneustart
+    // noch nicht neu verbunden ist (socketId dann noch null)
+    firstClientId: firstPlayer ? (firstPlayer.socketId || firstPlayer.userId) : firstUserId,
+  };
 }
 
 function persistGameState() {
