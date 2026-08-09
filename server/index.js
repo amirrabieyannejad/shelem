@@ -1051,10 +1051,31 @@ io.on("connection", (socket) => {
     }
     // Bietrunde ist vorbei (Richter steht fest), aber der einmalige "biddingResult"-
     // Event kommt sonst nie wieder -> Client zeigt Ziel/هدف dann als 0 an.
+    // Die anderen, längst verbundenen Clients haben "winner.id" noch als die ALTE
+    // (jetzt ungültige) socket.id von diesem Spieler gespeichert -> ihr judgeId-Vergleich
+    // schlägt fehl, Krone/Ausblendung des eigenen Rundenpunkte-Feldes verschwinden fälschlich.
+    // Vor Trickstart (kein trumpf) ist ein Broadcast an alle sicher. Läuft der Stich
+    // schon, würde ein Broadcast bei ALLEN currentPlayer/isMyTurn fälschlich auf den
+    // Bietgewinner zurücksetzen -> dann nur an den reconnectenden Client selbst schicken.
     if (winnerUserId && !biddingActive) {
       const winnerPlayer = playerByUserId(winnerUserId);
       if (winnerPlayer) {
-        io.to(socket.id).emit("biddingResult", { winner: winnerPlayer, bid: currentBid });
+        if (!trumpf) {
+          io.emit("biddingResult", { winner: winnerPlayer, bid: currentBid });
+        } else {
+          io.to(socket.id).emit("biddingResult", { winner: winnerPlayer, bid: currentBid });
+        }
+      }
+    }
+    // Gleiches Problem für den Trumpf-Richter (trumpChosen). judgeId im Frontend
+    // bevorzugt trumpfSetter.id vor biddingWinner.winner.id - auch das muss also
+    // mit der aktuellen socket.id aufgefrischt werden, sobald sich irgendjemand
+    // neu verbindet (nicht nur der Richter selbst). trumpChosen rührt currentPlayer/
+    // isMyTurn nicht an, daher ist ein Broadcast hier immer unbedenklich.
+    if (trumpf && winnerUserId) {
+      const winnerPlayer = playerByUserId(winnerUserId);
+      if (winnerPlayer) {
+        io.emit("trumpChosen", { trumpf, winner: winnerPlayer });
       }
     }
     // "yourTurn" ist ebenfalls nur ein einmaliger Event. Ist gerade wirklich er
