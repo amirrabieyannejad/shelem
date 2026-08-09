@@ -400,6 +400,13 @@ function stateSnapshot() {
     includeJokers,
     currentBottomSize,
     showRoundPoints,
+    // Bereits in diesem Stich gespielte Karten - ohne dieses Feld sieht der Tisch
+    // nach einem Refresh mitten im Stich leer aus, weil "cardPlayed" nur einmalig
+    // (live) gesendet wird und beim Reconnect nie wiederholt wird.
+    currentTrick: currentTrick.map((c) => {
+      const p = playerByUserId(c.userId);
+      return { userId: c.userId, playerId: p?.socketId || null, card: c.card };
+    }),
     maxBid: getMaxBid(),
     maxPoints: getMaxPoints(),
     // Fallback auf firstUserId, falls der erste Spieler nach einem Serverneustart
