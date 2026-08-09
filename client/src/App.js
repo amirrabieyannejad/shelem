@@ -2835,7 +2835,7 @@ function App() {
                       border: "none",
                       overflow: "visible",
                       marginLeft: idx ? `${handOverlapPx}px` : "0px",
-                      zIndex: isSelected ? 1000 + idx : idx,
+                      zIndex: idx * 2 + (isSelected ? 1 : 0),
                       cursor: disabled ? "not-allowed" : "pointer",
                       flex: "0 0 26px",
                     }}
