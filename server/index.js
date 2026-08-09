@@ -1042,6 +1042,14 @@ io.on("connection", (socket) => {
         bottomSize: currentBottomSize,
       });
     }
+    // Bietrunde ist vorbei (Richter steht fest), aber der einmalige "biddingResult"-
+    // Event kommt sonst nie wieder -> Client zeigt Ziel/هدف dann als 0 an.
+    if (winnerUserId && !biddingActive) {
+      const winnerPlayer = playerByUserId(winnerUserId);
+      if (winnerPlayer) {
+        io.to(socket.id).emit("biddingResult", { winner: winnerPlayer, bid: currentBid });
+      }
+    }
 
     socket.emit("stateSync", stateSnapshot());
     socket.emit("roundsHistoryUpdate", { roundsHistory });
