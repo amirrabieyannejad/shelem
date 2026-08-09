@@ -1024,6 +1024,10 @@ function App() {
       if (s?.firstClientId) {
         setFirstClientId(s.firstClientId);
       }
+      // NEU: Karten, die in diesem Stich schon liegen, nach Reconnect wiederherstellen
+      if (Array.isArray(s?.currentTrick)) {
+        setCurrentTrick(s.currentTrick);
+      }
     });
 
     socket.on("gameOver", ({ winner, teamScores }) => {
