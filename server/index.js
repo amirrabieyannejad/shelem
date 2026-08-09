@@ -375,7 +375,6 @@ async function persistGameStateNow() {
 function stateSnapshot() {
   const cp = players[currentPlayerIndex];
   const winnerPlayer = playerByUserId(winnerUserId);
-  const firstPlayer = playerByUserId(firstUserId);
 
   return {
     players: players.map((p) => ({
