@@ -639,6 +639,30 @@ function shuffle(array) {
   return array;
 }
 
+// ---------- Sitzplätze (1..4) mit fixen Teams ----------
+const SEAT_TEAMS = { 1: "Fire", 2: "Storm", 3: "Fire", 4: "Storm" };
+
+function seatsEmpty() {
+  return !seats[1] && !seats[2] && !seats[3] && !seats[4];
+}
+function seatsFull() {
+  return !!seats[1] && !!seats[2] && !!seats[3] && !!seats[4];
+}
+// Reihenfolge aus Sitzen übernehmen (seatPosition NICHT überschreiben)
+function orderPlayersBySeats() {
+  players = [seats[1], seats[2], seats[3], seats[4]].filter(Boolean);
+}
+function broadcastSeats() {
+  io.emit("seatsUpdate", {
+    seats: {
+      1: seats[1]?.name || null,
+      2: seats[2]?.name || null,
+      3: seats[3]?.name || null,
+      4: seats[4]?.name || null,
+    },
+  });
+}
+
 // === Sitzordnung festlegen ===
 // === Sitzordnung festlegen (aus Sitz-Slots übernehmen) ===
 function assignSeats() {
