@@ -19,9 +19,145 @@ const __dirname = path.dirname(__filename);
 const JWT_SECRET = process.env.JWT_SECRET || "dev_change_me";
 
 const app = express();
-const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: "*", methods: ["GET","POST"] } });
+app.use(express.json({ limit: "2mb" }));
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+const upload = multer({ dest: path.join(__dirname, "uploads") });
 
+const server = http.createServer(app);
+
+const allowedOrigins = process.env.CORS_ORIGIN
+  ? process.env.CORS_ORIGIN.split(",").map((s) => s.trim())
+  : [
+      "http://localhost:3000",
+      "https://shelem-ruby.vercel.app",
+      "https://shelem.onrender.com",
+    ];
+app.use(cors({ origin: allowedOrigins, credentials: true }));
+
+const io = new Server(server, { cors: { origin: allowedOrigins, methods: ["GET", "POST"] } });
+
+// ---------- Auth Helpers (DB-basiert) ----------
+const publicUser = (u) => ({
+  id: u.id,
+  name: u.name,
+  username: u.username,
+  email: u.email,
+  phone: u.phone || null,
+  avatarUrl: u.avatarUrl || null,
+  createdAt: u.createdAt,
+});
+
+async function dbUserById(id) {
+  const r = await pool.query(
+    `select id, name, username, email, phone, avatar_url as "avatarUrl",
+            created_at as "createdAt", password_hash as "passwordHash"
+       from users where id = $1 limit 1`,
+    [id]
+  );
+  return r.rows[0] || null;
+}
+async function dbUserByUsernameOrEmail(key) {
+  const r = await pool.query(
+    `select id, name, username, email, phone, avatar_url as "avatarUrl",
+            created_at as "createdAt", password_hash as "passwordHash"
+       from users where lower(username) = $1 or lower(email) = $1 limit 1`,
+    [key]
+  );
+  return r.rows[0] || null;
+}
+async function dbUsernameExists(uname) {
+  const r = await pool.query(`select 1 from users where lower(username) = $1 limit 1`, [uname]);
+  return r.rowCount > 0;
+}
+async function dbEmailExists(mail) {
+  const r = await pool.query(`select 1 from users where lower(email) = $1 limit 1`, [mail]);
+  return r.rowCount > 0;
+}
+
+// ---------- Auth API ----------
+app.post("/api/auth/register", async (req, res) => {
+  const { name, username, email, password, phone = null, avatarUrl = null } = req.body || {};
+  if (!name || !username || !email || !password) {
+    return res.status(400).json({ error: "name, username, email, password sind erforderlich" });
+  }
+  const uname = String(username).trim().toLowerCase();
+  const mail = String(email).trim().toLowerCase();
+  if (String(password).length < 6) {
+    return res.status(400).json({ error: "Passwort min. 6 Zeichen" });
+  }
+  try {
+    if (await dbUsernameExists(uname)) {
+      return res.status(409).json({ error: "Benutzername belegt" });
+    }
+    if (await dbEmailExists(mail)) {
+      return res.status(409).json({ error: "E-Mail belegt" });
+    }
+    const hash = await bcrypt.hash(String(password), 10);
+    const id = randomUUID();
+    const r = await pool.query(
+      `insert into users (id, name, username, email, password_hash, phone, avatar_url, role, email_verified)
+       values ($1, $2, $3, $4, $5, $6, $7, 'player', false)
+       returning id, name, username, email, phone, avatar_url as "avatarUrl", created_at as "createdAt"`,
+      [id, String(name).trim(), uname, mail, hash, phone, avatarUrl]
+    );
+    const user = r.rows[0];
+    const token = jwt.sign(
+      { sub: user.id, name: user.name, username: user.username, email: user.email },
+      JWT_SECRET,
+      { expiresIn: "30d" }
+    );
+    return res.json({ token, profile: publicUser(user) });
+  } catch (e) {
+    if (e && e.code === "23505") {
+      return res.status(409).json({ error: "Benutzername oder E-Mail belegt" });
+    }
+    console.error("register error", e);
+    return res.status(500).json({ error: "Serverfehler" });
+  }
+});
+
+app.post("/api/auth/login", async (req, res) => {
+  const { usernameOrEmail, password } = req.body || {};
+  if (!usernameOrEmail || !password) {
+    return res.status(400).json({ error: "usernameOrEmail & password erforderlich" });
+  }
+  const key = String(usernameOrEmail).trim().toLowerCase();
+  try {
+    const user = await dbUserByUsernameOrEmail(key);
+    if (!user) return res.status(401).json({ error: "Ungültige Zugangsdaten" });
+    const ok = await bcrypt.compare(String(password), user.passwordHash);
+    if (!ok) return res.status(401).json({ error: "Ungültige Zugangsdaten" });
+    const token = jwt.sign(
+      { sub: user.id, name: user.name, username: user.username, email: user.email },
+      JWT_SECRET,
+      { expiresIn: "30d" }
+    );
+    return res.json({ token, profile: publicUser(user) });
+  } catch (e) {
+    console.error("login error", e);
+    return res.status(500).json({ error: "Serverfehler" });
+  }
+});
+
+app.post("/api/upload-avatar", upload.single("avatar"), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: "Keine Datei" });
+  const url = `/uploads/${req.file.filename}`;
+  return res.json({ url });
+});
+
+app.get("/api/me", async (req, res) => {
+  const hdr = req.headers.authorization || "";
+  const token = hdr.startsWith("Bearer ") ? hdr.slice(7) : null;
+  try {
+    const payload = token ? jwt.verify(token, JWT_SECRET) : null;
+    if (!payload) return res.status(401).json({ error: "Unauthorized" });
+    const user = await dbUserById(payload.sub);
+    if (!user) return res.status(401).json({ error: "Unauthorized" });
+    return res.json({ profile: publicUser(user) });
+  } catch {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+});
 
 // ---------- Globale Variablen (MUSS vor ensureActiveGame stehen) ----------
 let gameId = null;
@@ -356,6 +492,24 @@ async function persistRoundAndTricks(roundEntry) {
   } catch (e) {
     console.error("persistRoundAndTricks error", e);
   }
+}
+
+// ---------- Gebot-/Punkte-Obergrenzen (mit/ohne Joker) ----------
+const MAX_BID_NORMAL = 165;
+const MAX_BID_JOKERS = 200;
+const MAX_POINTS_NORMAL = 1165;
+const MAX_POINTS_JOKERS = 1600;
+
+function getMaxBid() {
+  return includeJokers ? MAX_BID_JOKERS : MAX_BID_NORMAL;
+}
+function getMaxPoints() {
+  return includeJokers ? MAX_POINTS_JOKERS : MAX_POINTS_NORMAL;
+}
+// Mindestens 80, oder die (aufgerundete) Hälfte des Maximalgebots
+function getDoubleNegativeMin() {
+  const mb = getMaxBid();
+  return Math.max(80, Math.ceil(mb / 2));
 }
 
 function resetGameState() {
