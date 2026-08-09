@@ -404,7 +404,7 @@ function stateSnapshot() {
     maxPoints: getMaxPoints(),
     // Fallback auf firstUserId, falls der erste Spieler nach einem Serverneustart
     // noch nicht neu verbunden ist (socketId dann noch null)
-    firstClientId: firstPlayer ? (firstPlayer.socketId || firstPlayer.userId) : firstUserId,
+    firstClientId: firstUserId,
   };
 }
 
