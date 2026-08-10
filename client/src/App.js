@@ -818,11 +818,17 @@ function App() {
       setMyBid(Math.max(data.currentBid + 5, 100));
     });
 
-    socket.on("turnUpdate", ({ currentPlayer }) => {
+    socket.on("turnUpdate", ({ currentPlayer, currentBid: cb }) => {
       // falls zu Beginn der Auktion nur turnUpdate kommt
       if (!biddingWinner) setBiddingActive(true);
       setCurrentPlayer(currentPlayer);
       setIsMyTurn(!!currentPlayer && currentPlayer.id === socket.id);
+      // WICHTIG: "turnUpdate" geht an ALLE Clients, nicht nur an den, der
+      // gerade dran ist ("yourTurn" ist unicast). Ohne dies blieb das "هدف"
+      // (aktuelles Gebot) bei allen anderen Spielern auf dem letzten Stand,
+      // den SIE selbst zuletzt per "yourTurn" bekommen haben - z.B. zeigte
+      // ein Spieler weiter "0", obwohl gerade jemand anders 100 geboten hat.
+      if (typeof cb === "number") setCurrentBid(cb);
     });
 
     socket.on("biddingResult", ({ winner, bid }) => {

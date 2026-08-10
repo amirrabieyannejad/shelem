@@ -837,7 +837,7 @@ function maybeEndAuction() {
         currentPlayer: notPassed,
         mustBid: true,
       });
-      io.emit("turnUpdate", { currentPlayer: notPassed });
+      io.emit("turnUpdate", { currentPlayer: notPassed, currentBid });
 
       persistGameState();
       return true;
@@ -1026,7 +1026,7 @@ function startNewRound() {
   // ersten Bieter informieren
   const next = players[currentPlayerIndex];
   emitToUser(next.userId, "yourTurn", { currentBid, currentPlayer: next });
-io.emit("turnUpdate", { currentPlayer: next });
+io.emit("turnUpdate", { currentPlayer: next, currentBid });
 
 }
 // JWT im Handshake auswerten (optional, aber empfohlen)
@@ -1341,7 +1341,7 @@ io.on("connection", (socket) => {
 
     const next = players[currentPlayerIndex];
     emitToUser(next.userId, "yourTurn", { currentBid, currentPlayer: next });
-io.emit("turnUpdate", { currentPlayer: next });
+io.emit("turnUpdate", { currentPlayer: next, currentBid });
 
     io.emit("playersUpdate", players);
   });
@@ -1442,7 +1442,7 @@ currentPlayerIndex = (leaderIdx + 1) % players.length;
   currentPlayerIndex = (leaderIdx + 1 + players.length) % players.length;
   const next = players[currentPlayerIndex];
   emitToUser(next.userId, "yourTurn", { currentBid, currentPlayer: next });
-  io.emit("turnUpdate", { currentPlayer: next });
+  io.emit("turnUpdate", { currentPlayer: next, currentBid });
   persistGameState();
 }
 
@@ -1470,7 +1470,7 @@ currentPlayerIndex = (leaderIdx + 1) % players.length;
         currentPlayer: player,
         mustBid: forceBidUserId === userId,
       });
-      io.emit("turnUpdate", { currentPlayer: player });
+      io.emit("turnUpdate", { currentPlayer: player, currentBid });
       return;
     }
   }
@@ -1481,7 +1481,7 @@ currentPlayerIndex = (leaderIdx + 1) % players.length;
       currentPlayer: player,
       mustBid: true,
     });
-    io.emit("turnUpdate", { currentPlayer: player });
+    io.emit("turnUpdate", { currentPlayer: player, currentBid });
     return;
   }
 
@@ -1516,7 +1516,7 @@ currentPlayerIndex = (leaderIdx + 1) % players.length;
 
   const next = players[currentPlayerIndex];
   emitToUser(next.userId, "yourTurn", { currentBid, currentPlayer: next, mustBid: false });
-  io.emit("turnUpdate", { currentPlayer: next });
+  io.emit("turnUpdate", { currentPlayer: next, currentBid });
 
   persistGameState();
 });
@@ -1572,7 +1572,7 @@ socket.on("takeBottomCards", () => {
   const startPlayer = players[currentPlayerIndex];
 
   emitToUser(startPlayer.userId, "yourTurn", { currentBid, currentPlayer: startPlayer });
-  io.emit("turnUpdate", { currentPlayer: startPlayer });
+  io.emit("turnUpdate", { currentPlayer: startPlayer, currentBid });
 
   persistGameState();
 });
@@ -1692,7 +1692,7 @@ socket.on("takeBottomCards", () => {
     } else {
       const next = players[currentPlayerIndex];
       emitToUser(next.userId, "yourTurn", { currentBid, currentPlayer: next });
-      io.emit("turnUpdate", { currentPlayer: next });
+      io.emit("turnUpdate", { currentPlayer: next, currentBid });
     }
 
     persistGameState();
@@ -1705,7 +1705,7 @@ socket.on("takeBottomCards", () => {
     const next = players[currentPlayerIndex];
 
     emitToUser(next.userId, "yourTurn", { currentBid, currentPlayer: next });
-    io.emit("turnUpdate", { currentPlayer: next });
+    io.emit("turnUpdate", { currentPlayer: next, currentBid });
   }
 
   persistGameState();
@@ -1903,10 +1903,10 @@ socket.on("takeBottomCards", () => {
                 currentPlayer: next,
                 mustBid: forceBidUserId === next.userId,
               });
-              io.emit("turnUpdate", { currentPlayer: next });
+              io.emit("turnUpdate", { currentPlayer: next, currentBid });
             } else if (next && winnerUserId) {
               emitToUser(next.userId, "yourTurn", { currentBid, currentPlayer: next });
-              io.emit("turnUpdate", { currentPlayer: next });
+              io.emit("turnUpdate", { currentPlayer: next, currentBid });
             }
           }
         }
