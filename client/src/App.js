@@ -1100,7 +1100,7 @@ function App() {
 
     // Registrierung nur, wenn verbunden
     socket.once("connect", () => {
-		   
+
       const prof = auth.profile;
       if (!prof?.id) return;
 
@@ -1108,8 +1108,8 @@ function App() {
       socket.emit("register", { clientId: prof.id, name: displayName });
       socket.emit("getRoundsHistory");
       socket.emit("requestState");
-		 
-				
+
+
     });
   }, [auth?.token, auth?.profile?.id]);
 
@@ -1153,6 +1153,31 @@ function App() {
 
   const getSeatingOrder = () => {
     if (!me || players.length !== 4) return [null, null, null, null];
+
+    // Bevorzugt: Sitzreihenfolge über seatPosition (server-fix: 1=unten,
+    // 2=rechts, 3=oben, 4=links), relativ zu meinem eigenen Sitzplatz gedreht.
+    // Das ist robust gegen die Reihenfolge im players[]-Array, die sich
+    // z.B. nach einem Reconnect verschieben kann (players.push() hängt
+    // reconnectete Spieler ans Ende an) - vorher hing die Tischanordnung
+    // rein an dieser Array-Reihenfolge, wodurch Partner nach einem
+    // Reconnect scheinbar vertauscht wirkten, obwohl seatPosition/team
+    // serverseitig unverändert korrekt waren.
+    if (me.seatPosition) {
+      const bySeat = {};
+      players.forEach((p) => {
+        if (p.seatPosition) bySeat[p.seatPosition] = p;
+      });
+      const seatCycle = [1, 2, 3, 4];
+      const myIdx = seatCycle.indexOf(me.seatPosition);
+      if (myIdx !== -1) {
+        return [0, 1, 2, 3].map(
+          (offset) => bySeat[seatCycle[(myIdx + offset) % 4]] || null
+        );
+      }
+    }
+
+    // Fallback (z.B. falls seatPosition ausnahmsweise mal fehlt): alte,
+    // rein Array-Index-basierte Logik.
     const myIndex = players.findIndex((p) => p.id === me.id);
     if (myIndex === -1) return [null, null, null, null];
     return [
