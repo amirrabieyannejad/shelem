@@ -1086,6 +1086,10 @@ io.on("connection", (socket) => {
     // Ohne diesen Lookup würde er mit team:null neu einsteigen und im UI
     // faelschlich in der Default-Farbe (blau) statt seiner Team-Farbe erscheinen.
     const saved = await dbGamePlayerSeat(gameId, userId);
+    console.log(
+      `[reconnect] ${finalName} (userId=${userId}, game=${gameId}) -> game_players lookup:`,
+      saved
+    );
 
     existing = {
       userId,
@@ -1107,6 +1111,27 @@ io.on("connection", (socket) => {
     if (!firstUserId) firstUserId = userId;
 
     players.push(existing);
+
+    // WICHTIG: Das Frontend bestimmt die Sitzreihenfolge am Tisch NICHT aus
+    // seatPosition, sondern rein aus der Reihenfolge im players[]-Array
+    // (getSeatingOrder() rotiert relativ zur eigenen Position im Array).
+    // Ein simples push() hängt reconnectete Spieler ans Ende an und
+    // zerstört damit die Sitzreihenfolge -> am Tisch sieht es danach so
+    // aus, als wären Teams/Partner vertauscht (Partner sitzen sich normal
+    // gegenüber, nach dem Anhängen sitzen sie plötzlich woanders), obwohl
+    // seatPosition/team serverseitig unverändert korrekt sind. Deshalb nach
+    // jedem Wiedereinstieg eines Spielers mit bekanntem Sitz die Reihenfolge
+    // konsistent nach Sitzplatz sortieren - und currentPlayerIndex dabei
+    // anhand der userId (nicht des Index!) neu verankern, damit "wer ist
+    // dran" dabei nicht verrutscht.
+    if (existing.seatPosition) {
+      const turnUserId = players[currentPlayerIndex]?.userId ?? null;
+      players.sort((a, b) => (a.seatPosition ?? 99) - (b.seatPosition ?? 99));
+      if (turnUserId) {
+        const relocated = players.findIndex((p) => p.userId === turnUserId);
+        if (relocated !== -1) currentPlayerIndex = relocated;
+      }
+    }
   }
 
   // ---- Ab hier: EIN gemeinsamer Resync-Block für Reconnect UND neu erstellte
