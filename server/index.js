@@ -735,6 +735,12 @@ function fillRandomTeamsNow() {
       p.team = SEAT_TEAMS[seat];
       p.seatPosition = seat;
       seats[seat] = p;
+      // WICHTIG: bei manueller Sitzwahl (chooseSeat) wird der Sitz/Team in
+      // game_players persistiert - bei Random-Teams fehlte das bisher komplett.
+      // Ohne das hier landet der Spieler nach einem Reconnect (z.B. nach dem
+      // 15s-Disconnect-Purge) mit team:null wieder in der Lobby und erscheint
+      // faelschlich in der Default-Farbe (blau) statt seiner Teamfarbe.
+      persistGamePlayer(p.userId, seat, p.team);
     }
   }
 
@@ -1063,112 +1069,113 @@ io.on("connection", (socket) => {
     if (socket.user?.username) existing.username = socket.user.username;
 
     if (existing.seatPosition) seats[existing.seatPosition] = existing;
-
-    if (hands[userId]) io.to(socket.id).emit("hand", hands[userId]);
-    if (winnerUserId === userId && bottomCards?.length) {
-      io.to(socket.id).emit("showBottomCards", { bottomCards });
+  } else {
+    if (players.length >= 4) {
+      socket.emit("lobbyFull", { msg: "Lobby voll (max. 4 Spieler)" });
+      return;
     }
-    // Richter hat Kartenberg bereits übernommen (bottomCards ist schon leer),
-    // aber noch nicht abgeworfen -> Hand ist größer als die normalen 12 Karten.
-    // Ohne diesen Re-Emit verliert der Client die Abwurf-Phase bei Reconnect/Refresh.
-    if (winnerUserId === userId && hands[userId] && hands[userId].length > 12) {
-      io.to(socket.id).emit("discardPhase", {
-        hand: hands[userId],
-        bottomSize: currentBottomSize,
+
+    // Spieler war evtl. schon mal in DIESEM Spiel (Sitz/Team in game_players
+    // gespeichert), wurde aber wegen des 15s-Disconnect-Timers komplett aus
+    // players[]/seats entfernt (z. B. wenn alle über Nacht offline waren).
+    // Ohne diesen Lookup würde er mit team:null neu einsteigen und im UI
+    // faelschlich in der Default-Farbe (blau) statt seiner Team-Farbe erscheinen.
+    const saved = await dbGamePlayerSeat(gameId, userId);
+
+    existing = {
+      userId,
+      socketId: socket.id,
+      id: socket.id,
+      name: finalName,
+      username: socket.user?.username || null,
+      team: saved?.team || null,
+      passed: false,
+      lastBid: null,
+      seatPosition: null,
+    };
+
+    if (saved?.seatPosition && !seats[saved.seatPosition]) {
+      seats[saved.seatPosition] = existing;
+      existing.seatPosition = saved.seatPosition;
+    }
+
+    if (!firstUserId) firstUserId = userId;
+
+    players.push(existing);
+  }
+
+  // ---- Ab hier: EIN gemeinsamer Resync-Block für Reconnect UND neu erstellte
+  // Spieler. Wichtig: ein "neuer" Spieler (oberer else-Zweig) kann trotzdem
+  // mitten in einer laufenden Runde stecken (z.B. als Richter/Bieter), wenn er
+  // zwischenzeitlich wegen des 15s-Disconnect-Timers aus players[] gelöscht
+  // wurde. Lief dieser Resync bisher NUR im "existing"-Zweig, blieben bei
+  // anderen, längst verbundenen Clients die alte (ungültige) socket.id dieses
+  // Spielers als judge/winner hängen -> "(?)" statt Name im UI, falsche
+  // Team-Zuordnung bei der Rundenpunkte-Anzeige, und er selbst bekam seine
+  // Hand/Abwurf-Phase/"du bist dran" nicht zurück.
+  if (hands[userId]) io.to(socket.id).emit("hand", hands[userId]);
+  if (winnerUserId === userId && bottomCards?.length) {
+    io.to(socket.id).emit("showBottomCards", { bottomCards });
+  }
+  // Richter hat Kartenberg bereits übernommen (bottomCards ist schon leer),
+  // aber noch nicht abgeworfen -> Hand ist größer als die normalen 12 Karten.
+  // Ohne diesen Re-Emit verliert der Client die Abwurf-Phase bei Reconnect/Refresh.
+  if (winnerUserId === userId && hands[userId] && hands[userId].length > 12) {
+    io.to(socket.id).emit("discardPhase", {
+      hand: hands[userId],
+      bottomSize: currentBottomSize,
+    });
+  }
+  // Bietrunde ist vorbei (Richter steht fest), aber der einmalige "biddingResult"-
+  // Event kommt sonst nie wieder -> Client zeigt Ziel/هدف dann als 0 an.
+  // Die anderen, längst verbundenen Clients haben "winner.id" noch als die ALTE
+  // (jetzt ungültige) socket.id von diesem Spieler gespeichert -> ihr judgeId-Vergleich
+  // schlägt fehl, Krone/Ausblendung des eigenen Rundenpunkte-Feldes verschwinden fälschlich.
+  // Vor Trickstart (kein trumpf) ist ein Broadcast an alle sicher. Läuft der Stich
+  // schon, würde ein Broadcast bei ALLEN currentPlayer/isMyTurn fälschlich auf den
+  // Bietgewinner zurücksetzen -> dann nur an den reconnectenden Client selbst schicken.
+  if (winnerUserId && !biddingActive) {
+    const winnerPlayer = playerByUserId(winnerUserId);
+    if (winnerPlayer) {
+      if (!trumpf) {
+        io.emit("biddingResult", { winner: winnerPlayer, bid: currentBid });
+      } else {
+        io.to(socket.id).emit("biddingResult", { winner: winnerPlayer, bid: currentBid });
+      }
+    }
+  }
+  // Gleiches Problem für den Trumpf-Richter (trumpChosen). judgeId im Frontend
+  // bevorzugt trumpfSetter.id vor biddingWinner.winner.id - auch das muss also
+  // mit der aktuellen socket.id aufgefrischt werden, sobald sich irgendjemand
+  // neu verbindet (nicht nur der Richter selbst). trumpChosen rührt currentPlayer/
+  // isMyTurn nicht an, daher ist ein Broadcast hier immer unbedenklich.
+  if (trumpf && winnerUserId) {
+    const winnerPlayer = playerByUserId(winnerUserId);
+    if (winnerPlayer) {
+      io.emit("trumpChosen", { trumpf, winner: winnerPlayer });
+    }
+  }
+  // "yourTurn" ist ebenfalls nur ein einmaliger Event. Ist gerade wirklich er
+  // am Zug (Gebot ODER Stich spielen, aber Abwurf-Phase muss vorbei sein),
+  // muss das nach Reconnect erneut geschickt werden - sonst bleibt der Client
+  // hängen ("ich kann nicht mehr spielen"), obwohl der Server längst wartet.
+  {
+    const discardPending =
+      winnerUserId && hands[winnerUserId] && hands[winnerUserId].length > 12;
+    const isHisTurn = players[currentPlayerIndex]?.userId === userId;
+    if (isHisTurn && biddingActive) {
+      io.to(socket.id).emit("yourTurn", {
+        currentBid,
+        currentPlayer: players[currentPlayerIndex],
+        mustBid: forceBidUserId === userId,
+      });
+    } else if (isHisTurn && !discardPending && winnerUserId) {
+      io.to(socket.id).emit("yourTurn", {
+        currentBid,
+        currentPlayer: players[currentPlayerIndex],
       });
     }
-    // Bietrunde ist vorbei (Richter steht fest), aber der einmalige "biddingResult"-
-    // Event kommt sonst nie wieder -> Client zeigt Ziel/هدف dann als 0 an.
-    // Die anderen, längst verbundenen Clients haben "winner.id" noch als die ALTE
-    // (jetzt ungültige) socket.id von diesem Spieler gespeichert -> ihr judgeId-Vergleich
-    // schlägt fehl, Krone/Ausblendung des eigenen Rundenpunkte-Feldes verschwinden fälschlich.
-    // Vor Trickstart (kein trumpf) ist ein Broadcast an alle sicher. Läuft der Stich
-    // schon, würde ein Broadcast bei ALLEN currentPlayer/isMyTurn fälschlich auf den
-    // Bietgewinner zurücksetzen -> dann nur an den reconnectenden Client selbst schicken.
-    if (winnerUserId && !biddingActive) {
-      const winnerPlayer = playerByUserId(winnerUserId);
-      if (winnerPlayer) {
-        if (!trumpf) {
-          io.emit("biddingResult", { winner: winnerPlayer, bid: currentBid });
-        } else {
-          io.to(socket.id).emit("biddingResult", { winner: winnerPlayer, bid: currentBid });
-        }
-      }
-    }
-    // Gleiches Problem für den Trumpf-Richter (trumpChosen). judgeId im Frontend
-    // bevorzugt trumpfSetter.id vor biddingWinner.winner.id - auch das muss also
-    // mit der aktuellen socket.id aufgefrischt werden, sobald sich irgendjemand
-    // neu verbindet (nicht nur der Richter selbst). trumpChosen rührt currentPlayer/
-    // isMyTurn nicht an, daher ist ein Broadcast hier immer unbedenklich.
-    if (trumpf && winnerUserId) {
-      const winnerPlayer = playerByUserId(winnerUserId);
-      if (winnerPlayer) {
-        io.emit("trumpChosen", { trumpf, winner: winnerPlayer });
-      }
-    }
-    // "yourTurn" ist ebenfalls nur ein einmaliger Event. Ist gerade wirklich er
-    // am Zug (Gebot ODER Stich spielen, aber Abwurf-Phase muss vorbei sein),
-    // muss das nach Reconnect erneut geschickt werden - sonst bleibt der Client
-    // hängen ("ich kann nicht mehr spielen"), obwohl der Server längst wartet.
-    {
-      const discardPending =
-        winnerUserId && hands[winnerUserId] && hands[winnerUserId].length > 12;
-      const isHisTurn = players[currentPlayerIndex]?.userId === userId;
-      if (isHisTurn && biddingActive) {
-        io.to(socket.id).emit("yourTurn", {
-          currentBid,
-          currentPlayer: players[currentPlayerIndex],
-          mustBid: forceBidUserId === userId,
-        });
-      } else if (isHisTurn && !discardPending && winnerUserId) {
-        io.to(socket.id).emit("yourTurn", {
-          currentBid,
-          currentPlayer: players[currentPlayerIndex],
-        });
-      }
-    }
-
-    socket.emit("stateSync", stateSnapshot());
-    socket.emit("roundsHistoryUpdate", { roundsHistory });
-    io.emit("playersUpdate", players);
-
-    persistGameState();
-    maybeResumeGame();
-    return;
   }
-
-  if (players.length >= 4) {
-    socket.emit("lobbyFull", { msg: "Lobby voll (max. 4 Spieler)" });
-    return;
-  }
-
-  // Spieler war evtl. schon mal in DIESEM Spiel (Sitz/Team in game_players
-  // gespeichert), wurde aber wegen des 15s-Disconnect-Timers komplett aus
-  // players[]/seats entfernt (z. B. wenn alle über Nacht offline waren).
-  // Ohne diesen Lookup würde er mit team:null neu einsteigen und im UI
-  // faelschlich in der Default-Farbe (blau) statt seiner Team-Farbe erscheinen.
-  const saved = await dbGamePlayerSeat(gameId, userId);
-
-  const player = {
-    userId,
-    socketId: socket.id,
-    id: socket.id,
-    name: finalName,
-    username: socket.user?.username || null,
-    team: saved?.team || null,
-    passed: false,
-    lastBid: null,
-    seatPosition: null,
-  };
-
-  if (saved?.seatPosition && !seats[saved.seatPosition]) {
-    seats[saved.seatPosition] = player;
-    player.seatPosition = saved.seatPosition;
-  }
-
-  if (!firstUserId) firstUserId = userId;
-
-  players.push(player);
 
   socket.emit("stateSync", stateSnapshot());
   socket.emit("roundsHistoryUpdate", { roundsHistory });
