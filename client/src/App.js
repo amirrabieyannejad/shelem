@@ -1007,6 +1007,11 @@ function App() {
     socket.on("stateSync", (s) => {
       if (s?.teamScores) setScores(s.teamScores);
       if (s?.roundPoints) setRoundPointsLive(s.roundPoints);
+      // WICHTIG: stateSnapshot() liefert currentBid server-seitig immer mit,
+      // aber hier wurde es bisher nie übernommen - dadurch blieb "هدف" beim
+      // Reconnect/Tab-Refresh auf dem letzten lokal bekannten Stand hängen,
+      // statt den echten aktuellen Gebotsstand zu zeigen.
+      if (typeof s?.currentBid === "number") setCurrentBid(s.currentBid);
       if (Array.isArray(s?.players)) setPlayers(s.players);
       if (s?.trumpf) setTrumpf(s.trumpf);
       if (s?.roundVariant) setRoundVariant(s.roundVariant);
@@ -1158,7 +1163,7 @@ function App() {
   };
 
   const getSeatingOrder = () => {
-    if (!me || players.length !== 4) return [null, null, null, null];
+    if (!me) return [null, null, null, null];
 
     // Bevorzugt: Sitzreihenfolge über seatPosition (server-fix: 1=unten,
     // 2=rechts, 3=oben, 4=links), relativ zu meinem eigenen Sitzplatz gedreht.
@@ -2198,7 +2203,14 @@ function App() {
           {/* Team Auswahl */}
           {seatSelect}
           {/* Spielfeld */}
-          {players.length === 4 && (
+          {/* WICHTIG: früher strikt "players.length === 4" - sobald ein Spieler
+              nach 15s Disconnect aus players[] entfernt wurde, verschwand damit
+              das GESAMTE Spielfeld (inkl. Geboten/Karten) für alle übrigen
+              Mitspieler, nicht nur die Anzeige des Ausgeloggten. Jetzt reicht
+              es, dass ich selbst einen Sitzplatz habe - Mitspieler ohne
+              aktuellen Sitz werden von getSeatingOrder()/PlayerBox einfach
+              als leere Stelle gerendert. */}
+          {(players.length === 4 || me?.seatPosition) && (
             <div style={styles.tableWrap}>
               {/* HUD Gesamt- und Rundenpunkte */}
               {/* HUD Gesamt- und Rundenpunkte */}
