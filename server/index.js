@@ -1099,7 +1099,14 @@ io.on("connection", (socket) => {
       username: socket.user?.username || null,
       team: saved?.team || null,
       passed: false,
-      lastBid: null,
+      // WICHTIG: bids{} lebt unabhängig von players[] weiter (wird erst bei
+      // startNewRound()/endRound() geleert). Ohne diesen Rückgriff wurde ein
+      // Spieler, der zwischenzeitlich wegen des 15s-Disconnect-Timers aus
+      // players[] gepurged wurde, beim Reconnect hart mit lastBid:null neu
+      // angelegt - sein zuvor abgegebenes Gebot verschwand dadurch aus der
+      // Anzeige (grüne Zahl neben seinem Kreis), obwohl es serverseitig
+      // (bids[userId]) weiterhin gültig war.
+      lastBid: bids[userId] ?? null,
       seatPosition: null,
     };
 
