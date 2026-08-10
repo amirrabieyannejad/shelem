@@ -1854,6 +1854,37 @@ socket.on("takeBottomCards", () => {
           seats[p.seatPosition] = null;
         }
         players.splice(idx, 1);
+
+        // WICHTIG: currentPlayerIndex ist ein roher Array-Index in players[].
+        // Ohne diese Korrektur zeigt er nach dem splice() auf die FALSCHE
+        // Person, weil alle nachfolgenden Spieler einen Index nach vorne
+        // rücken (Bsp.: Saman ist an Index 2 dran, amir an Index 1 fällt
+        // raus -> Index 2 zeigt danach auf shayan statt saman). Das führte
+        // dazu, dass "wer ist dran" falsch erkannt wurde und der Gebot-
+        // Dialog stattdessen bei einem neu eingeloggten Spieler auftauchte.
+        if (players.length > 0) {
+          if (idx < currentPlayerIndex) {
+            currentPlayerIndex -= 1;
+          } else if (idx === currentPlayerIndex) {
+            // Genau der Spieler, der gerade dran war, ist rausgeflogen ->
+            // Index bleibt (mit Wraparound) stehen und zeigt automatisch auf
+            // den nächsten in der Reihenfolge. Den muss man dann aber auch
+            // aktiv informieren, sonst wartet er nie auf sein "yourTurn".
+            currentPlayerIndex = currentPlayerIndex % players.length;
+            const next = players[currentPlayerIndex];
+            if (next && biddingActive) {
+              emitToUser(next.userId, "yourTurn", {
+                currentBid,
+                currentPlayer: next,
+                mustBid: forceBidUserId === next.userId,
+              });
+              io.emit("turnUpdate", { currentPlayer: next });
+            } else if (next && winnerUserId) {
+              emitToUser(next.userId, "yourTurn", { currentBid, currentPlayer: next });
+              io.emit("turnUpdate", { currentPlayer: next });
+            }
+          }
+        }
       }
 
       disconnectTimers.delete(userId);
