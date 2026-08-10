@@ -1109,19 +1109,16 @@ function App() {
     socket.disconnect();
     socket.connect();
 
-    // Registrierung nur, wenn verbunden
-    socket.once("connect", () => {
-
-      const prof = auth.profile;
-      if (!prof?.id) return;
-
-      const displayName = prof.username || prof.name;
-      socket.emit("register", { clientId: prof.id, name: displayName });
-      socket.emit("getRoundsHistory");
-      socket.emit("requestState");
-
-
-    });
+    // WICHTIG: Hier bewusst KEIN eigener socket.once("connect", ...)-Handler
+    // mehr, der zusätzlich "register" sendet. Der permanente
+    // socket.on("connect", ...) weiter oben (siehe erstes useEffect) feuert
+    // bei JEDEM connect-Event - auch bei diesem hier erzwungenen - und
+    // emittiert register/getRoundsHistory/requestState bereits selbst.
+    // Mit beiden Handlern liefen zwei nahezu zeitgleiche "register"-Aufrufe
+    // für denselben Spieler auf dem Server (der register-Handler ist async
+    // und damit unterbrechbar), wodurch er kurzzeitig doppelt in players[]
+    // angelegt wurde - sichtbar z.B. als kurz aufblitzendes und dann wieder
+    // verschwindendes Gebot-Badge nach einem (Re-)Login.
   }, [auth?.token, auth?.profile?.id]);
 
   useEffect(() => {

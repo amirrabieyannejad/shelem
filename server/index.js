@@ -1091,6 +1091,28 @@ io.on("connection", (socket) => {
       saved
     );
 
+    // WICHTIG: Race-Guard. "register" ist async (wegen des await oben) - laeuft
+    // fast zeitgleich ein ZWEITER "register" fuer denselben userId (z.B. weil
+    // der Client beim Login/Reconnect zwei "connect"-Handler feuert), sah
+    // dieser zweite Aufruf "existing" oben noch als null (der erste Aufruf
+    // hatte zu diesem Zeitpunkt noch nicht gepusht) und legte den Spieler
+    // dadurch ein ZWEITES Mal in players[] an. Ergebnis: zwei Eintraege mit
+    // derselben userId, von denen nur einer einen Sitzplatz bekam - der
+    // andere ueberschrieb kurz danach mit einem eigenen (evtl. abweichenden)
+    // Broadcast den sichtbaren Zustand, wodurch z.B. ein gerade gezeigtes
+    // Gebot-Badge gleich wieder verschwand. Fix: direkt nach dem await erneut
+    // pruefen, ob der Spieler in der Zwischenzeit schon angelegt wurde - falls
+    // ja, diesen bestehenden Eintrag einfach auffrischen statt zu duplizieren.
+    const raceCheck = playerByUserId(userId);
+    if (raceCheck) {
+      existing = raceCheck;
+      existing.socketId = socket.id;
+      existing.id = socket.id;
+      existing.name = finalName;
+      if (socket.user?.username) existing.username = socket.user.username;
+      if (existing.seatPosition) seats[existing.seatPosition] = existing;
+    } else {
+
     existing = {
       userId,
       socketId: socket.id,
@@ -1139,6 +1161,7 @@ io.on("connection", (socket) => {
         if (relocated !== -1) currentPlayerIndex = relocated;
       }
     }
+    } // Ende race-guard "else" (echter Neuanlage-Zweig)
   }
 
   // ---- Ab hier: EIN gemeinsamer Resync-Block für Reconnect UND neu erstellte
