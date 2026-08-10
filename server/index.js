@@ -205,6 +205,9 @@ let variantPending = false;
 let gamePaused = false;
 const disconnectTimers = new Map(); // userId -> Timeout
 
+// bei den globalen Variablen ergänzen
+let firstBidderIndex = 0;
+
 // ---------- Helpers ----------
 function uid(socket) {
   return socket.user?.id || null;
@@ -268,6 +271,7 @@ function dbSnapshot() {
     variantPending,
     firstUserId,
     gamePaused,
+    firstBidderIndex,
   };
 }
 
@@ -277,8 +281,8 @@ function applyLoadedState(s) {
   includeJokers = !!s.includeJokers;
   showRoundPoints = s.showRoundPoints ?? true;
   currentBottomSize = s.currentBottomSize ?? (includeJokers ? 6 : 4);
-
-  players = (s.players || []).map((p) => ({
+  firstBidderIndex = s.firstBidderIndex || 0;
+    players = (s.players || []).map((p) => ({
   ...p,
   socketId: null,
   id: null, // <- wichtig, sonst denkt UI evtl. das wäre noch gültig
@@ -530,6 +534,7 @@ function resetGameState() {
   winnerUserId = null;
   forceBidUserId = null;
   consecutivePasses = 0;
+  firstBidderIndex = 0;
 
   // Stich-Status
   currentTrick = [];
@@ -979,7 +984,9 @@ function startNewRound() {
   io.emit("playersUpdate", players);
 
   // Startspieler rotiert gegen Uhrzeigersinn
-  currentPlayerIndex = (currentPlayerIndex + 1) % players.length;
+  firstBidderIndex = (firstBidderIndex + 1) % players.length;
+  currentPlayerIndex = firstBidderIndex;
+
   biddingActive = true;
 
   deal(); // schickt auch roundPoints=0
@@ -1256,6 +1263,7 @@ io.on("connection", (socket) => {
     bids = {};
     currentBid = 0;
     currentPlayerIndex = 0; // Sitz 1 beginnt
+    firstBidderIndex = 0;   
     biddingActive = true;
 
     deal(); // teilt aus & sendet Hands/RoundPoints
