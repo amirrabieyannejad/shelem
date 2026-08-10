@@ -507,8 +507,13 @@ async function persistRoundAndTricks(roundEntry) {
         roundEntry.teamScoresAfter,
         roundEntry.ruleApplied,
         roundEntry.deltaApplied,
-        roundEntry.bottomCards,
-        roundEntry.discarded,
+        // WICHTIG: bottomCards/discarded sind JS-Arrays. Der pg-Treiber serialisiert
+        // rohe Arrays als Postgres-Array-Literal ({"a","b"}), nicht als JSON - das
+        // scheitert dann am ::jsonb-Cast ("invalid input syntax for type json").
+        // Objekte (roundPoints, teamScoresAfter, deltaApplied) serialisiert pg
+        // automatisch per JSON.stringify, Arrays müssen wir daher explizit stringifyen.
+        JSON.stringify(roundEntry.bottomCards),
+        JSON.stringify(roundEntry.discarded),
       ]
     );
     const roundId = r.rows[0].id;
@@ -517,7 +522,7 @@ async function persistRoundAndTricks(roundEntry) {
       await pool.query(
         `insert into tricks (round_id, trick_no, lead_suit, trumpf, winner_user_id, winner_team, points, plays)
          values ($1,$2,$3,$4,$5,$6,$7,$8::jsonb)`,
-        [roundId, t.no, t.leadSuit, t.trumpf, t.winnerId, t.winnerTeam, t.points, t.plays]
+        [roundId, t.no, t.leadSuit, t.trumpf, t.winnerId, t.winnerTeam, t.points, JSON.stringify(t.plays)]
       );
     }
   } catch (e) {
