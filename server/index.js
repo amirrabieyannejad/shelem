@@ -465,6 +465,27 @@ async function markGamePlayerLeft(userId) {
   }
 }
 
+// Sitz/Team eines Users für das aktuelle Spiel aus der DB nachladen.
+// Wird beim Reconnect gebraucht, wenn der Spieler zwischenzeitlich wegen
+// Inaktivität (15s-Disconnect-Timer) komplett aus players[]/seats gelöscht wurde,
+// damit er nicht faelschlich mit team:null (=> falsche Farbe im UI) neu einsteigt.
+async function dbGamePlayerSeat(gId, userId) {
+  if (!gId || !userId) return null;
+  try {
+    const r = await pool.query(
+      `select seat_position as "seatPosition", team
+         from game_players
+        where game_id = $1 and user_id = $2
+        limit 1`,
+      [gId, userId]
+    );
+    return r.rows[0] || null;
+  } catch (e) {
+    console.error("dbGamePlayerSeat error", e);
+    return null;
+  }
+}
+
 async function persistRoundAndTricks(roundEntry) {
   if (!gameId) return;
   try {
@@ -1018,7 +1039,7 @@ io.use((socket, next) => {
 // === Socket.io Events ===
 io.on("connection", (socket) => {
   console.log("Player connected:", socket.id);
-  socket.on("register", (payload) => {
+  socket.on("register", async (payload) => {
   const userId = uid(socket);
   const payloadName = typeof payload === "string" ? payload : (payload?.name || "");
   const finalName = String(socket.user?.name || payloadName || "").trim();
@@ -1121,17 +1142,29 @@ io.on("connection", (socket) => {
     return;
   }
 
+  // Spieler war evtl. schon mal in DIESEM Spiel (Sitz/Team in game_players
+  // gespeichert), wurde aber wegen des 15s-Disconnect-Timers komplett aus
+  // players[]/seats entfernt (z. B. wenn alle über Nacht offline waren).
+  // Ohne diesen Lookup würde er mit team:null neu einsteigen und im UI
+  // faelschlich in der Default-Farbe (blau) statt seiner Team-Farbe erscheinen.
+  const saved = await dbGamePlayerSeat(gameId, userId);
+
   const player = {
     userId,
     socketId: socket.id,
     id: socket.id,
     name: finalName,
     username: socket.user?.username || null,
-    team: null,
+    team: saved?.team || null,
     passed: false,
     lastBid: null,
     seatPosition: null,
   };
+
+  if (saved?.seatPosition && !seats[saved.seatPosition]) {
+    seats[saved.seatPosition] = player;
+    player.seatPosition = saved.seatPosition;
+  }
 
   if (!firstUserId) firstUserId = userId;
 
@@ -1141,6 +1174,7 @@ io.on("connection", (socket) => {
   socket.emit("roundsHistoryUpdate", { roundsHistory });
   players.forEach(p => { if (p.socketId) p.id = p.socketId; });
   io.emit("playersUpdate", players);
+  broadcastSeats();
 
   persistGameState();
   maybeResumeGame();
@@ -1263,7 +1297,7 @@ io.on("connection", (socket) => {
     bids = {};
     currentBid = 0;
     currentPlayerIndex = 0; // Sitz 1 beginnt
-    firstBidderIndex = 0;   
+    firstBidderIndex = 0;
     biddingActive = true;
 
     deal(); // teilt aus & sendet Hands/RoundPoints
