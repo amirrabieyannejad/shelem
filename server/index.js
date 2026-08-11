@@ -1173,6 +1173,22 @@ io.on("connection", (socket) => {
     } // Ende race-guard "else" (echter Neuanlage-Zweig)
   }
 
+  // WICHTIG: Sonderfall Zwangsgebot (forceBidUserId). War dieser Spieler der
+  // EINZIGE, der noch nicht gepasst hatte, und wurde er zwischenzeitlich wegen
+  // des 15s-Disconnect-Timers gepurged, gab es beim Purge KEINEN anderen noch
+  // aktiven Spieler mehr, auf den currentPlayerIndex hätte umspringen können -
+  // er blieb dadurch auf einem bereits gepassten Spieler stehen (siehe disconnect-
+  // Handler weiter unten) und wurde beim Wiedereinstieg auch nicht korrigiert,
+  // weil das Sortieren dort nur den ALTEN (falschen) currentPlayer erneut sucht.
+  // Da forceBidUserId aber unverändert korrekt auf ihn zeigt, hier currentPlayerIndex
+  // direkt auf ihn zurücksetzen, statt sich auf die Index-Verankerung oben zu
+  // verlassen - sonst bekommt er sein Zwangsgebot-Popup nach dem Reconnect nie
+  // wieder und das Spiel bleibt hängen (niemand kann mehr bieten).
+  if (biddingActive && forceBidUserId === userId) {
+    const meIdx = players.findIndex((p) => p.userId === userId);
+    if (meIdx !== -1) currentPlayerIndex = meIdx;
+  }
+
   // ---- Ab hier: EIN gemeinsamer Resync-Block für Reconnect UND neu erstellte
   // Spieler. Wichtig: ein "neuer" Spieler (oberer else-Zweig) kann trotzdem
   // mitten in einer laufenden Runde stecken (z.B. als Richter/Bieter), wenn er
@@ -1231,7 +1247,11 @@ io.on("connection", (socket) => {
   {
     const discardPending =
       winnerUserId && hands[winnerUserId] && hands[winnerUserId].length > 12;
-    const isHisTurn = players[currentPlayerIndex]?.userId === userId;
+    // WICHTIG: zusätzlich "|| forceBidUserId === userId" als Absicherung -
+    // siehe Kommentar weiter oben zum Zwangsgebot-Sonderfall.
+    const isHisTurn =
+      players[currentPlayerIndex]?.userId === userId ||
+      (biddingActive && forceBidUserId === userId);
     if (isHisTurn && biddingActive) {
       io.to(socket.id).emit("yourTurn", {
         currentBid,
@@ -2010,11 +2030,15 @@ socket.on("takeBottomCards", () => {
     io.to(socket.id).emit("hand", hands[userId]);
   }
 
-  const isHisTurn = players[currentPlayerIndex]?.userId === userId;
+  const isHisTurn =
+    players[currentPlayerIndex]?.userId === userId ||
+    (biddingActive && forceBidUserId === userId);
   if (biddingActive && isHisTurn) {
     io.to(socket.id).emit("yourTurn", {
       currentBid,
-      currentPlayer: players[currentPlayerIndex],
+      currentPlayer: players[currentPlayerIndex]?.userId === userId
+        ? players[currentPlayerIndex]
+        : playerByUserId(userId),
       mustBid: forceBidUserId === userId,
     });
   }
