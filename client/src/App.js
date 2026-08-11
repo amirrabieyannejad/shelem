@@ -541,6 +541,18 @@ function App() {
   const [players, setPlayers] = useState([]);
   const [me, setMe] = useState(null);
   const [isMyTurn, setIsMyTurn] = useState(false);
+  // WICHTIG: "wer ist dran" kam bisher AUSSCHLIESSLICH aus dem einmaligen
+  // "yourTurn"-Event und lebte nur im lokalen State "isMyTurn". Ging dieses
+  // Event einmal verloren (Refresh/Reconnect mit ungünstigem Timing), gab es
+  // keinerlei Möglichkeit mehr, den Zustand zu rekonstruieren - das Bieten-
+  // Popup blieb dauerhaft weg und das Spiel hing. Hier zusätzlich der
+  // server-autoritative Zug-Zustand aus stateSync (userId-basiert, damit er
+  // Socket-ID-Wechsel bei Reconnects übersteht). Das Popup wird daraus
+  // abgeleitet, sodass ein Refresh den korrekten Zustand IMMER wiederherstellt.
+  const [serverTurn, setServerTurn] = useState({
+    currentPlayerUserId: null,
+    forceBidUserId: null,
+  });
   const [currentBid, setCurrentBid] = useState(0);
   const [currentPlayer, setCurrentPlayer] = useState(null);
   const [biddingWinner, setBiddingWinner] = useState(null);
@@ -841,6 +853,8 @@ function App() {
       setCurrentPlayer(winner);
       setIsMyTurn(false);
       setBiddingActive(false);
+      // Auktion vorbei -> Zwangsgebot-/Zug-Zustand der Bietrunde verwerfen
+      setServerTurn({ currentPlayerUserId: null, forceBidUserId: null });
     });
 
     socket.on("showBottomCards", ({ bottomCards }) => {
@@ -972,6 +986,7 @@ function App() {
         setCurrentTrick([]);
         setIsMyTurn(false);
         setMustBid(false);
+        setServerTurn({ currentPlayerUserId: null, forceBidUserId: null });
         setRoundVariant(VARIANTS.UNDECIDED);
         // Nur fertige Runden-Ansicht (Stiche, Boden, Abwurf)
 
@@ -1051,6 +1066,15 @@ function App() {
       // davon, ob "yourTurn" separat je angekommen ist. "myself" wird hier
       // bewusst aus s.players (nicht dem evtl. noch nicht aktualisierten
       // React-State "me") über die aktuelle socket.id ermittelt.
+      // Server-autoritativen Zug-Zustand IMMER übernehmen (auch wenn gerade
+      // nicht ich dran bin - sonst bliebe ein veralteter Wert stehen).
+      setServerTurn({
+        currentPlayerUserId: s?.biddingActive
+          ? s?.currentPlayerUserId || null
+          : null,
+        forceBidUserId: s?.biddingActive ? s?.forceBidUserId || null : null,
+      });
+
       if (s?.biddingActive && Array.isArray(s?.players)) {
         const myself = s.players.find((p) => p.id === socket.id);
         if (myself && !myself.passed) {
@@ -1100,6 +1124,7 @@ function App() {
       // rein UI-lokale Felder leeren
       setHand([]);
       setIsMyTurn(false);
+      setServerTurn({ currentPlayerUserId: null, forceBidUserId: null });
       setBiddingWinner(null);
       setDiscardPhase(false);
       setSelectedDiscard([]);
@@ -1163,6 +1188,10 @@ function App() {
   const makeBid = (bid) => {
     socket.emit("makeBid", bid);
     setIsMyTurn(false);
+    // WICHTIG: auch den server-abgeleiteten Zug-Zustand lokal sofort löschen -
+    // sonst würde das Popup direkt wieder aufgehen, weil serverTurn bis zum
+    // nächsten stateSync noch auf mich zeigt.
+    setServerTurn({ currentPlayerUserId: null, forceBidUserId: null });
   };
 
   const toggleDiscard = (card) => {
@@ -1907,6 +1936,30 @@ function App() {
         );
       })()
     : null;
+
+  // WICHTIG: Das Bieten-Popup hing bisher allein an "isMyTurn", das NUR durch
+  // das einmalige "yourTurn"-Event gesetzt wird. Ging dieses Event verloren
+  // (typisch: Refresh/Reconnect genau in dem Moment, in dem ich als letzter
+  // Spieler zwangsweise bieten muss), konnte der Zustand nie wiederhergestellt
+  // werden -> Popup blieb für immer weg, niemand konnte mehr bieten, das Spiel
+  // hing. Deshalb zusätzlich direkt aus dem server-autoritativen stateSync-
+  // Zustand ableiten (userId-basiert, übersteht Socket-ID-Wechsel).
+  const serverSaysMyTurn =
+    !!me?.userId &&
+    !me?.passed &&
+    (serverTurn.forceBidUserId === me.userId ||
+      serverTurn.currentPlayerUserId === me.userId);
+
+  const showBidModal =
+    (isMyTurn || serverSaysMyTurn) &&
+    biddingActive &&
+    !biddingWinner &&
+    !anyModalOpen &&
+    !me?.passed;
+
+  // "پاس"-Button sperren, wenn ich laut Server zwingend bieten muss - auch das
+  // muss einen Refresh überleben (mustBid kam bisher nur via "yourTurn").
+  const mustBidNow = mustBid || serverTurn.forceBidUserId === me?.userId;
 
   // direkt über dem JSX vom Bieten-Modal
   const maxBid = includeJokers ? 200 : 165;
@@ -2730,7 +2783,7 @@ function App() {
               obwohl dieser Spieler schon gepasst hat (z.B. bei einem stale
               currentPlayerIndex nach Reconnect). Ein Spieler, der gepasst hat,
               soll das Gebot-Popup nie wieder sehen. */}
-          {isMyTurn && !biddingWinner && !anyModalOpen && !me?.passed && (
+          {showBidModal && (
             <div style={styles.modalBackdrop}>
               <div style={styles.modal}>
                 <h3
@@ -2811,7 +2864,7 @@ function App() {
                       fontSize: 15,
                     }}
                     onClick={() => makeBid(0)}
-                    disabled={mustBid}
+                    disabled={mustBidNow}
                   >
                     پاس
                   </button>
