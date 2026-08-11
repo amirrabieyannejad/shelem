@@ -1028,6 +1028,10 @@ function App() {
       // statt den echten aktuellen Gebotsstand zu zeigen.
       if (typeof s?.currentBid === "number") setCurrentBid(s.currentBid);
       if (Array.isArray(s?.players)) setPlayers(s.players);
+      // WICHTIG: currentPlayer wurde hier bisher NIE übernommen - dadurch war
+      // nach jedem Refresh der gelbe "ist am Zug"-Ring verschwunden, obwohl
+      // der Server sehr wohl weiß, wer dran ist.
+      if (s?.currentPlayer !== undefined) setCurrentPlayer(s.currentPlayer);
       if (s?.trumpf) setTrumpf(s.trumpf);
       if (s?.roundVariant) setRoundVariant(s.roundVariant);
       if (typeof s?.biddingActive === "boolean")
@@ -1950,8 +1954,26 @@ function App() {
     (serverTurn.forceBidUserId === me.userId ||
       serverTurn.currentPlayerUserId === me.userId);
 
+  // WICHTIG (Zwangsgebot-Fall): Wenn alle ANDEREN gepasst haben und die
+  // Auktion trotzdem noch läuft, kann rein logisch nur noch ich am Zug sein -
+  // und ich MUSS bieten (hätte jemand geboten, wäre die Auktion mit einem
+  // Sieger beendet und biddingActive/biddingWinner entsprechend gesetzt).
+  // Diese Ableitung braucht WEDER "yourTurn" NOCH forceBidUserId, sondern nur
+  // die passed-Flags aus players[] - und genau die kommen beim Refresh
+  // nachweislich korrekt an (die پاس-Badges werden ja richtig angezeigt).
+  // Dadurch stellt sich das Popup nach einem Refresh selbst dann wieder her,
+  // wenn der Zug-Zustand über die Events verloren gegangen ist.
+  const activeBidders = players.filter((p) => !p.passed);
+  const iAmLastActiveBidder =
+    biddingActive &&
+    !biddingWinner &&
+    players.length === 4 &&
+    activeBidders.length === 1 &&
+    !!me?.userId &&
+    activeBidders[0]?.userId === me.userId;
+
   const showBidModal =
-    (isMyTurn || serverSaysMyTurn) &&
+    (isMyTurn || serverSaysMyTurn || iAmLastActiveBidder) &&
     biddingActive &&
     !biddingWinner &&
     !anyModalOpen &&
@@ -1959,7 +1981,8 @@ function App() {
 
   // "پاس"-Button sperren, wenn ich laut Server zwingend bieten muss - auch das
   // muss einen Refresh überleben (mustBid kam bisher nur via "yourTurn").
-  const mustBidNow = mustBid || serverTurn.forceBidUserId === me?.userId;
+  const mustBidNow =
+    mustBid || serverTurn.forceBidUserId === me?.userId || iAmLastActiveBidder;
 
   // direkt über dem JSX vom Bieten-Modal
   const maxBid = includeJokers ? 200 : 165;
