@@ -1039,6 +1039,32 @@ function App() {
       if (Array.isArray(s?.currentTrick)) {
         setCurrentTrick(s.currentTrick);
       }
+
+      // WICHTIG: "wer ist dran"/"wer muss zwingend bieten" bisher NUR über das
+      // einmalige "yourTurn"-Event bekannt. Kam das (aus welchem Grund auch
+      // immer - z.B. ein zweiter, schneller Reconnect mittendrin) nicht an,
+      // blieb das Bieten-Popup dauerhaft weg, obwohl der Server längst auf
+      // genau diesen Spieler wartete - das Spiel hing dann komplett fest,
+      // weil "isMyTurn" nirgendwo sonst neu gesetzt wurde. Jetzt bei JEDEM
+      // stateSync (u.a. bei Reconnect/Refresh) direkt aus dem Snapshot selbst
+      // ableiten, ob ich dran bin bzw. zwingend bieten muss - unabhängig
+      // davon, ob "yourTurn" separat je angekommen ist. "myself" wird hier
+      // bewusst aus s.players (nicht dem evtl. noch nicht aktualisierten
+      // React-State "me") über die aktuelle socket.id ermittelt.
+      if (s?.biddingActive && Array.isArray(s?.players)) {
+        const myself = s.players.find((p) => p.id === socket.id);
+        if (myself && !myself.passed) {
+          const iAmForced = !!s.forceBidUserId && s.forceBidUserId === myself.userId;
+          const iAmCurrent =
+            !!s.currentPlayerUserId && s.currentPlayerUserId === myself.userId;
+          if (iAmForced || iAmCurrent) {
+            setIsMyTurn(true);
+            setMustBid(iAmForced);
+            const cb = typeof s.currentBid === "number" ? s.currentBid : 0;
+            setMyBid(Math.max(cb + 5, 100));
+          }
+        }
+      }
     });
 
     socket.on("gameOver", ({ winner, teamScores }) => {

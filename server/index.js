@@ -396,6 +396,19 @@ function stateSnapshot() {
     currentBid,
     biddingActive,
     currentPlayer: cp ? { ...cp, id: cp.socketId || null } : null,
+    // WICHTIG: "wer ist dran / wer muss zwangsweise bieten" wurde bisher
+    // ausschließlich über das einmalige "yourTurn"-Event kommuniziert - kam
+    // dieses aus irgendeinem Grund nicht (korrupter Reconnect-Zustand,
+    // verpasstes Event, zweiter Disconnect mittendrin) beim Client an, gab es
+    // KEINE Möglichkeit, sich davon zu erholen: das Bieten-Popup blieb
+    // dauerhaft weg und niemand konnte mehr bieten. Jetzt zusätzlich userId-
+    // basiert (stabil, unabhängig von socket.id-Wechseln) im wiederholbaren
+    // stateSync-Snapshot mitschicken, damit der Client sich JEDERZEIT (auch
+    // rein aus einem Refresh/Reconnect heraus, ohne "yourTurn" abzuwarten)
+    // selbst korrekt als "ich bin dran"/"ich muss zwingend bieten" erkennen
+    // kann.
+    currentPlayerUserId: cp ? cp.userId : null,
+    forceBidUserId: forceBidUserId || null,
     randomTeams,
     trumpf,
     winnerPlayerId: winnerPlayer ? (winnerPlayer.socketId || winnerPlayer.userId) : null,
