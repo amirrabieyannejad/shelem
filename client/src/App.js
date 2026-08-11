@@ -2699,7 +2699,12 @@ function App() {
           )}
 
           {/* Bieten */}
-          {isMyTurn && !biddingWinner && !anyModalOpen && (
+          {/* WICHTIG: zusätzlich "!me?.passed" prüfen - reine Absicherung gegen
+              serverseitige Fälle, in denen "isMyTurn" fälschlich true wird,
+              obwohl dieser Spieler schon gepasst hat (z.B. bei einem stale
+              currentPlayerIndex nach Reconnect). Ein Spieler, der gepasst hat,
+              soll das Gebot-Popup nie wieder sehen. */}
+          {isMyTurn && !biddingWinner && !anyModalOpen && !me?.passed && (
             <div style={styles.modalBackdrop}>
               <div style={styles.modal}>
                 <h3

@@ -831,6 +831,15 @@ function maybeEndAuction() {
     const notPassed = players.find((p) => !p.passed);
     if (notPassed) {
       forceBidUserId = notPassed.userId;
+      // WICHTIG: makeBid() bricht bei "if (maybeEndAuction()) return;" VOR der
+      // eigentlichen Index-Weiterschaltung (do{currentPlayerIndex=...}while) ab.
+      // Ohne dieses explizite Nachziehen blieb currentPlayerIndex auf dem zuletzt
+      // passenden Spieler stehen, obwohl "notPassed" (hier) korrekt per yourTurn/
+      // turnUpdate informiert wurde. Bei einem Reconnect/Refresh dieses zuletzt
+      // passenden Spielers prüfen register/requestState aber players[currentPlayerIndex]
+      // - fanden dort faelschlich wieder IHN und schickten ihm erneut "yourTurn",
+      // obwohl er bereits gepasst hatte.
+      currentPlayerIndex = players.findIndex((p) => p.userId === notPassed.userId);
 
       emitToUser(notPassed.userId, "yourTurn", {
         currentBid,
