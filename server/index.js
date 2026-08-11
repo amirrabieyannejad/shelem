@@ -1935,7 +1935,27 @@ socket.on("takeBottomCards", () => {
             // den nächsten in der Reihenfolge. Den muss man dann aber auch
             // aktiv informieren, sonst wartet er nie auf sein "yourTurn".
             currentPlayerIndex = currentPlayerIndex % players.length;
-            const next = players[currentPlayerIndex];
+            let next = players[currentPlayerIndex];
+            // WICHTIG: "next" ist hier rein per Array-Index bestimmt und kann
+            // bereits gepasst haben - z.B. wenn genau der Spieler gepurged
+            // wird, der als letzter noch nicht gepasst hatte (Zwangsgebot-
+            // Fall). Ohne diese Korrektur bekäme faelschlich ein bereits
+            // gepasster Spieler "yourTurn", während der eigentlich aktive
+            // Bieter (falls er zwischenzeitlich wieder verbindet) nie wieder
+            // benachrichtigt wird - das Spiel blieb dann komplett hängen,
+            // weil niemand mehr das Bieten-Popup bekam.
+            if (next && biddingActive && next.passed) {
+              const stillActive = players.find((p) => !p.passed);
+              if (stillActive) {
+                currentPlayerIndex = players.findIndex(
+                  (p) => p.userId === stillActive.userId
+                );
+                next = stillActive;
+                if (forceBidUserId && forceBidUserId === userId) {
+                  forceBidUserId = stillActive.userId;
+                }
+              }
+            }
             if (next && biddingActive) {
               emitToUser(next.userId, "yourTurn", {
                 currentBid,
