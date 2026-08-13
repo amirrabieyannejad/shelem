@@ -602,6 +602,7 @@ function WinProbBlock({ winProb, bid, bidSuccess, compact = false }) {
         border: "1px solid #e5e7eb",
         borderRadius: 10,
         background: "#fff",
+        color: "#111", // styles.page setzt white -> sonst unsichtbar
         display: "grid",
         gap: 8,
       }}
@@ -712,7 +713,9 @@ function PlayerLevelPanel({ players, meId }) {
   const td = { padding: "6px 8px", fontSize: 13, borderTop: "1px solid #eee" };
 
   return (
-    <div style={{ marginTop: 12, overflowX: "auto" }}>
+    // WICHTIG: styles.page setzt color:"white" – ohne eigene Farbe wäre der
+    // Tabellentext weiß auf weiß und damit unsichtbar.
+    <div style={{ marginTop: 12, overflowX: "auto", color: "#111" }}>
       <table style={{ width: "100%", borderCollapse: "collapse", background: "#fff", borderRadius: 10 }}>
         <thead>
           <tr>
@@ -800,14 +803,15 @@ function PairStatsPanel({ pairs }) {
   }
 
   return (
-    <div style={{ marginTop: 12 }}>
+    // color: styles.page setzt white – sonst unsichtbarer Text auf weiß
+    <div style={{ marginTop: 12, color: "#111" }}>
       {/* Direkter Vergleich zweier Duos */}
       <div style={{ padding: 10, border: "1px solid #e5e7eb", borderRadius: 10, background: "#fff" }}>
         <div style={{ fontWeight: 900, fontSize: 14, marginBottom: 8 }}>
           ⚔️ پیش‌بینی بازی · Duo gegen Duo
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-          <select value={a} onChange={(e) => setA(e.target.value)} style={{ padding: 6, borderRadius: 8 }}>
+          <select value={a} onChange={(e) => setA(e.target.value)} style={{ padding: 6, borderRadius: 8, color: "#111", background: "#fff" }}>
             <option value="">— تیم ۱ —</option>
             {pairs.map((p) => (
               <option key={keyOf(p)} value={keyOf(p)}>
@@ -816,7 +820,7 @@ function PairStatsPanel({ pairs }) {
             ))}
           </select>
           <span style={{ fontWeight: 800 }}>vs</span>
-          <select value={b} onChange={(e) => setB(e.target.value)} style={{ padding: 6, borderRadius: 8 }}>
+          <select value={b} onChange={(e) => setB(e.target.value)} style={{ padding: 6, borderRadius: 8, color: "#111", background: "#fff" }}>
             <option value="">— تیم ۲ —</option>
             {pairs.map((p) => (
               <option key={keyOf(p)} value={keyOf(p)}>

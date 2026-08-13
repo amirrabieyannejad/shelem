@@ -240,21 +240,25 @@ export async function computePlayerStats() {
     e.gamesFinished = g.games_finished;
   }
 
-  const out = [...byId.values()].map((e) => {
-    const xp = computeXp(e);
-    const lvl = levelForXp(xp);
-    const roundWinRate = e.roundsPlayed ? e.roundsWon / e.roundsPlayed : null;
-    const gameWinRate = e.gamesFinished ? e.gamesWon / e.gamesFinished : null;
-    return {
-      ...e,
-      xp,
-      ...lvl,
-      roundWinRate: roundWinRate === null ? null : r3(roundWinRate),
-      gameWinRate: gameWinRate === null ? null : r3(gameWinRate),
-      hakemSuccessRate: e.hakemRounds ? r3(e.hakemSuccess / e.hakemRounds) : null,
-      avgPointsPerRound: e.roundsPlayed ? Math.round(e.pointsFor / e.roundsPlayed) : 0,
-    };
-  });
+  // Nur wer tatsächlich gespielt hat, taucht in der Rangliste auf – sonst
+  // stehen dort alle je registrierten Konten mit lauter Nullen.
+  const out = [...byId.values()]
+    .filter((e) => e.roundsPlayed > 0 || e.gamesPlayed > 0)
+    .map((e) => {
+      const xp = computeXp(e);
+      const lvl = levelForXp(xp);
+      const roundWinRate = e.roundsPlayed ? e.roundsWon / e.roundsPlayed : null;
+      const gameWinRate = e.gamesFinished ? e.gamesWon / e.gamesFinished : null;
+      return {
+        ...e,
+        xp,
+        ...lvl,
+        roundWinRate: roundWinRate === null ? null : r3(roundWinRate),
+        gameWinRate: gameWinRate === null ? null : r3(gameWinRate),
+        hakemSuccessRate: e.hakemRounds ? r3(e.hakemSuccess / e.hakemRounds) : null,
+        avgPointsPerRound: e.roundsPlayed ? Math.round(e.pointsFor / e.roundsPlayed) : 0,
+      };
+    });
 
   out.sort((a, b) => b.xp - a.xp || b.gamesWon - a.gamesWon);
   return out;
