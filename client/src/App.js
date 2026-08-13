@@ -640,6 +640,48 @@ function WinProbBlock({ winProb, bid, bidSuccess, compact = false }) {
   );
 }
 
+/** Gut lesbare Fehlerbox für die Statistik-Reiter (mit Wiederholen-Knopf) */
+function StatsError({ msg, onRetry }) {
+  return (
+    <div
+      style={{
+        marginTop: 12,
+        padding: 12,
+        border: "1px solid #fecaca",
+        background: "#fef2f2",
+        color: "#991b1b",
+        borderRadius: 10,
+        fontSize: 13,
+        lineHeight: 1.5,
+        wordBreak: "break-word",
+        whiteSpace: "pre-wrap",
+        direction: "ltr",
+        textAlign: "left",
+      }}
+    >
+      <div style={{ fontWeight: 800, marginBottom: 4 }}>خطا · Fehler</div>
+      <div>{msg}</div>
+      {onRetry && (
+        <button
+          onClick={onRetry}
+          style={{
+            marginTop: 10,
+            padding: "6px 12px",
+            borderRadius: 8,
+            border: "1px solid #991b1b",
+            background: "#fff",
+            color: "#991b1b",
+            fontWeight: 700,
+            cursor: "pointer",
+          }}
+        >
+          دوباره تلاش کن · Erneut versuchen
+        </button>
+      )}
+    </div>
+  );
+}
+
 function LevelBadge({ level, title, small }) {
   return (
     <span
@@ -971,16 +1013,46 @@ function App() {
   const loadOverview = React.useCallback(async () => {
     if (!auth?.token) return;
     setOverviewState({ loading: true, error: null });
+    const url = `${API_BASE}/api/stats/overview`;
     try {
-      const res = await fetch(`${API_BASE}/api/stats/overview`, {
+      const res = await fetch(url, {
         headers: { Authorization: `Bearer ${auth.token}` },
       });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.error || "Fehler");
+      const raw = await res.text();
+      let data = null;
+      try {
+        data = JSON.parse(raw);
+      } catch {
+        /* keine JSON-Antwort (z. B. 404-HTML) */
+      }
+
+      if (!res.ok) {
+        // Aussagekräftige Meldung statt eines nackten "Fehler":
+        // 404 = Server läuft noch mit altem Code (Routen fehlen)
+        if (res.status === 404) {
+          throw new Error(
+            `404 – ${url} nicht gefunden. Server neu starten (neue /api/stats-Routen).`
+          );
+        }
+        if (res.status === 401) throw new Error("401 – nicht angemeldet");
+        throw new Error(
+          data?.error
+            ? `${res.status} – ${data.error}`
+            : `${res.status} ${res.statusText || ""}`.trim()
+        );
+      }
+      if (!data) throw new Error("Antwort war kein JSON");
+
       setOverview({ players: data.players || [], pairs: data.pairs || [] });
       setOverviewState({ loading: false, error: null });
     } catch (e) {
-      setOverviewState({ loading: false, error: e.message || "Fehler" });
+      // fetch selbst gescheitert -> Server nicht erreichbar / CORS
+      const msg =
+        e?.name === "TypeError"
+          ? `Server nicht erreichbar (${url})`
+          : e?.message || "Unbekannter Fehler";
+      console.error("stats/overview:", msg, e);
+      setOverviewState({ loading: false, error: msg });
     }
   }, [auth?.token]);
 
@@ -3478,32 +3550,26 @@ function App() {
                   )}
                 </div>
 
-                {statsTab === "players" && (
-                  overviewState.loading ? (
+                {statsTab === "players" &&
+                  (overviewState.loading ? (
                     <div style={{ marginTop: 12 }}>در حال بارگذاری…</div>
                   ) : overviewState.error ? (
-                    <div style={{ marginTop: 12, color: "#b91c1c" }}>
-                      خطا: {overviewState.error}
-                    </div>
+                    <StatsError msg={overviewState.error} onRetry={loadOverview} />
                   ) : (
                     <PlayerLevelPanel
                       players={overview.players}
                       meId={auth?.profile?.id}
                     />
-                  )
-                )}
+                  ))}
 
-                {statsTab === "pairs" && (
-                  overviewState.loading ? (
+                {statsTab === "pairs" &&
+                  (overviewState.loading ? (
                     <div style={{ marginTop: 12 }}>در حال بارگذاری…</div>
                   ) : overviewState.error ? (
-                    <div style={{ marginTop: 12, color: "#b91c1c" }}>
-                      خطا: {overviewState.error}
-                    </div>
+                    <StatsError msg={overviewState.error} onRetry={loadOverview} />
                   ) : (
                     <PairStatsPanel pairs={overview.pairs} />
-                  )
-                )}
+                  ))}
 
                 {statsTab !== "rounds" ? null : !roundsHistory ||
                   roundsHistory.length === 0 ? (
