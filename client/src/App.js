@@ -536,6 +536,334 @@ function AuthGate({ onAuthed }) {
   );
 }
 
+/* ===========================================================================
+   Statistik-Bausteine: Gewinnwahrscheinlichkeit, Spieler-Level, Partner-Bericht
+   =========================================================================== */
+
+const pct = (p) => (p === null || p === undefined ? "–" : `${Math.round(p * 100)}%`);
+
+const probColor = (p) =>
+  p === null || p === undefined
+    ? "#9ca3af"
+    : p >= 0.66
+    ? "#16a34a"
+    : p >= 0.34
+    ? "#d97706"
+    : "#b91c1c";
+
+function ProbBar({ label, hint, p }) {
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "170px 1fr 56px", gap: 8, alignItems: "center" }}>
+      <div style={{ fontSize: 12, fontWeight: 700, color: "#374151" }} title={hint}>
+        {label}
+      </div>
+      <div style={{ height: 12, borderRadius: 999, background: "#e5e7eb", overflow: "hidden" }}>
+        <div
+          style={{
+            width: `${Math.round((p || 0) * 100)}%`,
+            height: "100%",
+            background: probColor(p),
+            transition: "width .4s ease",
+          }}
+        />
+      </div>
+      <div style={{ fontWeight: 800, fontSize: 13, textAlign: "right", color: probColor(p) }}>
+        {pct(p)}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Zeigt, wie wahrscheinlich es war, dass das Hakem-Team sein Gebot erfüllt.
+ * Zwei Sichtweisen (Monte-Carlo, Server-seitig berechnet):
+ *  - hakem: nur die eigenen Karten waren bekannt  -> "War das Gebot riskant?"
+ *  - deal:  die tatsächliche Verteilung aller Hände -> "Wie lagen die Karten?"
+ */
+function WinProbBlock({ winProb, bid, bidSuccess, compact = false }) {
+  if (!winProb) return null;
+  const pHakem = winProb.hakem?.p ?? null;
+  const pDeal = winProb.deal?.p ?? null;
+  const ref = pDeal ?? pHakem;
+
+  let verdict = null;
+  if (ref !== null && typeof bidSuccess === "boolean") {
+    if (bidSuccess && ref < 0.35) verdict = { txt: "خوش‌شانس · Glück gehabt", c: "#16a34a" };
+    else if (!bidSuccess && ref > 0.65) verdict = { txt: "بدشانس · Pech gehabt", c: "#b91c1c" };
+    else if (bidSuccess) verdict = { txt: "طبق انتظار · wie erwartet", c: "#16a34a" };
+    else verdict = { txt: "طبق انتظار · wie erwartet", c: "#b91c1c" };
+  }
+
+  return (
+    <div
+      style={{
+        marginTop: compact ? 8 : 14,
+        padding: 10,
+        border: "1px solid #e5e7eb",
+        borderRadius: 10,
+        background: "#fff",
+        display: "grid",
+        gap: 8,
+      }}
+    >
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        <div style={{ fontWeight: 900, fontSize: 14, color: "#111" }}>
+          🎲 شانس موفقیت حاکم · Gewinnchance (هدف {bid})
+        </div>
+        {verdict && (
+          <span style={{ fontWeight: 800, fontSize: 12, color: verdict.c }}>{verdict.txt}</span>
+        )}
+      </div>
+
+      <ProbBar
+        label="با برگ‌های حاکم"
+        hint="Nur die Karten des Hakem waren bekannt – der Rest wurde zufällig verteilt (Risiko des Gebots)."
+        p={pHakem}
+      />
+      <ProbBar
+        label="با پخش واقعی برگ‌ها"
+        hint="Die tatsächliche Verteilung aller vier Hände – wie gut lagen die Karten wirklich?"
+        p={pDeal}
+      />
+
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", fontSize: 11, color: "#6b7280" }}>
+        {winProb.deal?.avgPoints != null && (
+          <span>Ø امتیاز شبیه‌سازی: {winProb.deal.avgPoints} / هدف {bid}</span>
+        )}
+        {winProb.pShutout != null && <span>شانس دوبل مثبت: {pct(winProb.pShutout)}</span>}
+        {winProb.pDoubleNegative != null && <span>خطر دوبل منفی: {pct(winProb.pDoubleNegative)}</span>}
+        <span>
+          Monte-Carlo · {(winProb.iterations?.deal || 0) + (winProb.iterations?.hakem || 0)} شبیه‌سازی
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function LevelBadge({ level, title, small }) {
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 6,
+        padding: small ? "2px 8px" : "4px 10px",
+        borderRadius: 999,
+        background: "linear-gradient(135deg,#f59e0b,#b45309)",
+        color: "#fff",
+        fontWeight: 800,
+        fontSize: small ? 11 : 13,
+        whiteSpace: "nowrap",
+      }}
+      title={`Level ${level}`}
+    >
+      <span style={{ opacity: 0.9 }}>Lv {level}</span>
+      <span>{title}</span>
+    </span>
+  );
+}
+
+/** Lebenslange Spieler-Stufen: gespielt / gewonnen / Punkte -> XP -> Level */
+function PlayerLevelPanel({ players, meId }) {
+  if (!players?.length) return <div style={{ marginTop: 12 }}>هنوز داده‌ای وجود ندارد</div>;
+  const th = { textAlign: "left", padding: "6px 8px", fontSize: 12, color: "#6b7280", fontWeight: 800 };
+  const td = { padding: "6px 8px", fontSize: 13, borderTop: "1px solid #eee" };
+
+  return (
+    <div style={{ marginTop: 12, overflowX: "auto" }}>
+      <table style={{ width: "100%", borderCollapse: "collapse", background: "#fff", borderRadius: 10 }}>
+        <thead>
+          <tr>
+            <th style={th}>#</th>
+            <th style={th}>بازیکن</th>
+            <th style={th}>سطح</th>
+            <th style={th}>XP</th>
+            <th style={th}>بازی‌ها</th>
+            <th style={th}>برد</th>
+            <th style={th}>دست‌ها (برد)</th>
+            <th style={th}>حاکم موفق</th>
+            <th style={th}>امتیاز کل</th>
+          </tr>
+        </thead>
+        <tbody>
+          {players.map((p, i) => (
+            <tr key={p.userId} style={{ background: p.userId === meId ? "#fff7ed" : "transparent" }}>
+              <td style={td}>{i + 1}</td>
+              <td style={{ ...td, fontWeight: 700 }}>{p.username || p.name}</td>
+              <td style={td}>
+                <LevelBadge level={p.level} title={p.title} small />
+                <div style={{ marginTop: 4, height: 5, background: "#e5e7eb", borderRadius: 999 }}>
+                  <div
+                    style={{
+                      width: `${Math.round((p.progress || 0) * 100)}%`,
+                      height: "100%",
+                      background: "#f59e0b",
+                      borderRadius: 999,
+                    }}
+                  />
+                </div>
+                <div style={{ fontSize: 10, color: "#6b7280", marginTop: 2 }}>
+                  {p.nextLevelXp ? `${p.xp} / ${p.nextLevelXp} XP` : "حداکثر سطح"}
+                </div>
+              </td>
+              <td style={{ ...td, fontWeight: 800 }}>{p.xp}</td>
+              <td style={td}>{p.gamesPlayed}</td>
+              <td style={td}>
+                {p.gamesWon}
+                {p.gameWinRate !== null && (
+                  <span style={{ color: "#6b7280", fontSize: 11 }}> ({pct(p.gameWinRate)})</span>
+                )}
+              </td>
+              <td style={td}>
+                {p.roundsPlayed} ({p.roundsWon})
+              </td>
+              <td style={td}>
+                {p.hakemSuccess}/{p.hakemRounds}
+                {p.hakemSuccessRate !== null && (
+                  <span style={{ color: "#6b7280", fontSize: 11 }}> ({pct(p.hakemSuccessRate)})</span>
+                )}
+              </td>
+              <td style={td}>{p.pointsFor}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <div style={{ fontSize: 11, color: "#6b7280", marginTop: 8 }}>
+        XP = 10·بازی + 60·برد + 3·دست برده + 6·حاکم موفق + 20·دوبل مثبت − 12·دوبل منفی + امتیاز/150
+      </div>
+    </div>
+  );
+}
+
+const teamLabel = (t) => (t === "Fire" ? "🔥 Fire" : t === "Storm" ? "🌩️ Storm" : "–");
+
+/** Partner-Bericht: wer mit wem, Siege/Niederlagen, Team, Prognose */
+function PairStatsPanel({ pairs }) {
+  const [a, setA] = useState("");
+  const [b, setB] = useState("");
+
+  if (!pairs?.length) return <div style={{ marginTop: 12 }}>هنوز داده‌ای وجود ندارد</div>;
+
+  const th = { textAlign: "left", padding: "6px 8px", fontSize: 12, color: "#6b7280", fontWeight: 800 };
+  const td = { padding: "6px 8px", fontSize: 13, borderTop: "1px solid #eee" };
+  const keyOf = (p) => `${p.userA}|${p.userB}`;
+
+  const pa = pairs.find((p) => keyOf(p) === a) || null;
+  const pb = pairs.find((p) => keyOf(p) === b) || null;
+  let duel = null;
+  if (pa && pb && a !== b) {
+    const s = (pa.predictedWinProb || 0) + (pb.predictedWinProb || 0);
+    const p1 = s > 0 ? pa.predictedWinProb / s : 0.5;
+    duel = { p1, p2: 1 - p1 };
+  }
+
+  return (
+    <div style={{ marginTop: 12 }}>
+      {/* Direkter Vergleich zweier Duos */}
+      <div style={{ padding: 10, border: "1px solid #e5e7eb", borderRadius: 10, background: "#fff" }}>
+        <div style={{ fontWeight: 900, fontSize: 14, marginBottom: 8 }}>
+          ⚔️ پیش‌بینی بازی · Duo gegen Duo
+        </div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          <select value={a} onChange={(e) => setA(e.target.value)} style={{ padding: 6, borderRadius: 8 }}>
+            <option value="">— تیم ۱ —</option>
+            {pairs.map((p) => (
+              <option key={keyOf(p)} value={keyOf(p)}>
+                {p.nameA} + {p.nameB}
+              </option>
+            ))}
+          </select>
+          <span style={{ fontWeight: 800 }}>vs</span>
+          <select value={b} onChange={(e) => setB(e.target.value)} style={{ padding: 6, borderRadius: 8 }}>
+            <option value="">— تیم ۲ —</option>
+            {pairs.map((p) => (
+              <option key={keyOf(p)} value={keyOf(p)}>
+                {p.nameA} + {p.nameB}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {pa && !pb && (
+          <div style={{ marginTop: 10 }}>
+            <ProbBar
+              label={`${pa.nameA} + ${pa.nameB}`}
+              hint="Prognose, das nächste Spiel zu gewinnen"
+              p={pa.predictedWinProb}
+            />
+            <div style={{ fontSize: 11, color: "#6b7280", marginTop: 4 }}>
+              اطمینان: {pa.confidence} · {pa.gamesWon}/{pa.gamesPlayed} بازی برده
+            </div>
+          </div>
+        )}
+
+        {duel && (
+          <div style={{ marginTop: 10, display: "grid", gap: 6 }}>
+            <ProbBar label={`${pa.nameA} + ${pa.nameB}`} p={duel.p1} />
+            <ProbBar label={`${pb.nameA} + ${pb.nameB}`} p={duel.p2} />
+            <div style={{ fontSize: 11, color: "#6b7280" }}>
+              اطمینان: {pa.confidence} / {pb.confidence} — بر پایه {pa.gamesPlayed} و {pb.gamesPlayed} بازی
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Tabelle aller Paare */}
+      <div style={{ marginTop: 12, overflowX: "auto" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", background: "#fff", borderRadius: 10 }}>
+          <thead>
+            <tr>
+              <th style={th}>یار (Duo)</th>
+              <th style={th}>تیم</th>
+              <th style={th}>بازی</th>
+              <th style={th}>برد</th>
+              <th style={th}>باخت</th>
+              <th style={th}>دست‌ها ب/ب</th>
+              <th style={th}>اختلاف امتیاز</th>
+              <th style={th}>شانس برد</th>
+            </tr>
+          </thead>
+          <tbody>
+            {pairs.map((p) => (
+              <tr key={keyOf(p)}>
+                <td style={{ ...td, fontWeight: 700 }}>
+                  {p.nameA} + {p.nameB}
+                </td>
+                <td style={td}>
+                  {teamLabel(p.lastTeam)}
+                  <div style={{ fontSize: 10, color: "#6b7280" }}>
+                    🔥{p.winsAsFire}/{p.gamesAsFire} · 🌩️{p.winsAsStorm}/{p.gamesAsStorm}
+                  </div>
+                </td>
+                <td style={td}>{p.gamesPlayed}</td>
+                <td style={{ ...td, color: "#16a34a", fontWeight: 800 }}>{p.gamesWon}</td>
+                <td style={{ ...td, color: "#b91c1c", fontWeight: 800 }}>{p.gamesLost}</td>
+                <td style={td}>
+                  {p.roundsWon}/{p.roundsLost}
+                </td>
+                <td style={{ ...td, color: p.pointsDiff >= 0 ? "#16a34a" : "#b91c1c" }}>
+                  {p.pointsDiff >= 0 ? `+${p.pointsDiff}` : p.pointsDiff}
+                </td>
+                <td style={td}>
+                  <span style={{ fontWeight: 800, color: probColor(p.predictedWinProb) }}>
+                    {pct(p.predictedWinProb)}
+                  </span>
+                  <div style={{ fontSize: 10, color: "#6b7280" }}>
+                    {pct(p.ci95?.low)}–{pct(p.ci95?.high)} · {p.confidence}
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div style={{ fontSize: 11, color: "#6b7280", marginTop: 8 }}>
+        Prognose = Bayes-geglättete Siegquote (wenige Spiele ziehen Richtung Rundenquote), 95 %-Intervall nach Wilson.
+      </div>
+    </div>
+  );
+}
+
 function App() {
   const [hand, setHand] = useState([]);
   const [players, setPlayers] = useState([]);
@@ -571,6 +899,10 @@ function App() {
   const [roundPointsLive, setRoundPointsLive] = useState({ Fire: 0, Storm: 0 });
   const [showStats, setShowStats] = useState(false);
   const [showRecap, setShowRecap] = useState(false);
+  // Statistik-Reiter: Runden | Spieler-Level | Partner-Statistik
+  const [statsTab, setStatsTab] = useState("rounds");
+  const [overview, setOverview] = useState({ players: [], pairs: [] });
+  const [overviewState, setOverviewState] = useState({ loading: false, error: null });
   const [variantModal, setVariantModal] = useState({
     open: false,
     trigger: null,
@@ -634,6 +966,46 @@ function App() {
       }
     })();
   }, [auth?.token]);
+
+  // --- Lebenslange Statistik (Level + Partner-Bericht) laden ---
+  const loadOverview = React.useCallback(async () => {
+    if (!auth?.token) return;
+    setOverviewState({ loading: true, error: null });
+    try {
+      const res = await fetch(`${API_BASE}/api/stats/overview`, {
+        headers: { Authorization: `Bearer ${auth.token}` },
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || "Fehler");
+      setOverview({ players: data.players || [], pairs: data.pairs || [] });
+      setOverviewState({ loading: false, error: null });
+    } catch (e) {
+      setOverviewState({ loading: false, error: e.message || "Fehler" });
+    }
+  }, [auth?.token]);
+
+  // Einmal nach dem Login (für das Level im Kopfbereich) und bei jedem Öffnen
+  // der Statistik neu holen.
+  useEffect(() => {
+    if (auth?.token) loadOverview();
+  }, [auth?.token, loadOverview]);
+
+  useEffect(() => {
+    if (showStats) loadOverview();
+  }, [showStats, loadOverview]);
+
+  // Ref, damit der zentrale Socket-Effekt (dessen Cleanup socket.off() ALLE
+  // Listener entfernt) die aktuelle Ladefunktion aufrufen kann, ohne selbst neu
+  // aufgesetzt werden zu müssen.
+  const loadOverviewRef = useRef(loadOverview);
+  useEffect(() => {
+    loadOverviewRef.current = loadOverview;
+  }, [loadOverview]);
+
+  // Eigene Lebenszeit-Statistik (für das Level-Abzeichen im Kopfbereich)
+  const myStats =
+    (overview.players || []).find((p) => p.userId === auth?.profile?.id) || null;
+
   const handleLogout = () => {
     // Token/Profile aus dem Storage entfernen
     localStorage.removeItem("shelem_token");
@@ -938,6 +1310,8 @@ function App() {
         bidderTeam,
         bid,
         trumpf,
+        bidSuccess,
+        winProb, // Monte-Carlo-Schätzung der Gewinnchance des Hakem-Teams
       }) => {
         // Sicher kopieren, damit spätere Updates (neue Runde) die Anzeige nicht beeinflussen
         const rp = {
@@ -1007,6 +1381,8 @@ function App() {
             Fire: teamScores?.Fire ?? 0,
             Storm: teamScores?.Storm ?? 0,
           },
+          bidSuccess: !!bidSuccess,
+          winProb: winProb || null,
         });
         setShowRecap(true);
       }
@@ -1100,6 +1476,11 @@ function App() {
       alert(
         `Spielende! Gewinner: Team ${winner}\nFire: ${teamScores.Fire}, Storm: ${teamScores.Storm}`
       );
+    });
+
+    // Server hat die lebenslange Statistik (Level/Partner) neu berechnet
+    socket.on("statsUpdated", () => {
+      loadOverviewRef.current?.();
     });
     socket.on("gameReset", (s) => {
       // Zustand aus dem Snapshot
@@ -2006,8 +2387,20 @@ function App() {
               gap: 0,
             }}
           >
-            <div style={{ fontSize: 14 }}>
-              👤 {auth.profile?.username || auth.profile?.name || "?"}
+            <div style={{ fontSize: 14, display: "flex", alignItems: "center", gap: 8 }}>
+              <span>👤 {auth.profile?.username || auth.profile?.name || "?"}</span>
+              {myStats && (
+                <button
+                  onClick={() => {
+                    setStatsTab("players");
+                    setShowStats(true);
+                  }}
+                  style={{ border: "none", background: "transparent", padding: 0, cursor: "pointer" }}
+                  title={`${myStats.xp} XP · ${myStats.gamesWon}/${myStats.gamesPlayed} بازی برده`}
+                >
+                  <LevelBadge level={myStats.level} title={myStats.title} small />
+                </button>
+              )}
             </div>
 
             {/* Rechts: Statistik, Neues Spiel, Logout */}
@@ -2199,6 +2592,13 @@ function App() {
                       امتیاز کل طوفان: {recap.teamScoresAfter.Storm}
                     </span>
                   </div>
+
+                  {/* Gewinnwahrscheinlichkeit des Hakem-Teams für diese Runde */}
+                  <WinProbBlock
+                    winProb={recap.winProb}
+                    bid={recap.bid}
+                    bidSuccess={recap.bidSuccess}
+                  />
                 </div>
 
                 {/* Boden- und Abwurfkarten klar getrennt mit Titeln links */}
@@ -3045,7 +3445,68 @@ function App() {
                   </button>
                 </div>
 
-                {!roundsHistory || roundsHistory.length === 0 ? (
+                {/* Reiter */}
+                <div style={{ display: "flex", gap: 6, marginTop: 12, flexWrap: "wrap" }}>
+                  {[
+                    { k: "rounds", t: "دست‌ها · Runden" },
+                    { k: "players", t: "سطح بازیکنان · Level" },
+                    { k: "pairs", t: "آمار یاران · Duos" },
+                  ].map((tab) => (
+                    <button
+                      key={tab.k}
+                      onClick={() => setStatsTab(tab.k)}
+                      style={{
+                        ...styles.btn,
+                        padding: "6px 12px",
+                        borderRadius: 999,
+                        fontWeight: 800,
+                        background: statsTab === tab.k ? "#111" : "#e5e7eb",
+                        color: statsTab === tab.k ? "#fff" : "#111",
+                      }}
+                    >
+                      {tab.t}
+                    </button>
+                  ))}
+                  {statsTab !== "rounds" && (
+                    <button
+                      onClick={loadOverview}
+                      style={{ ...styles.btn, padding: "6px 12px", borderRadius: 999 }}
+                      title="Statistik neu laden"
+                    >
+                      ⟳
+                    </button>
+                  )}
+                </div>
+
+                {statsTab === "players" && (
+                  overviewState.loading ? (
+                    <div style={{ marginTop: 12 }}>در حال بارگذاری…</div>
+                  ) : overviewState.error ? (
+                    <div style={{ marginTop: 12, color: "#b91c1c" }}>
+                      خطا: {overviewState.error}
+                    </div>
+                  ) : (
+                    <PlayerLevelPanel
+                      players={overview.players}
+                      meId={auth?.profile?.id}
+                    />
+                  )
+                )}
+
+                {statsTab === "pairs" && (
+                  overviewState.loading ? (
+                    <div style={{ marginTop: 12 }}>در حال بارگذاری…</div>
+                  ) : overviewState.error ? (
+                    <div style={{ marginTop: 12, color: "#b91c1c" }}>
+                      خطا: {overviewState.error}
+                    </div>
+                  ) : (
+                    <PairStatsPanel pairs={overview.pairs} />
+                  )
+                )}
+
+                {statsTab !== "rounds" ? null : !roundsHistory ||
+                  roundsHistory.length === 0 ? (
                   <div style={{ marginTop: 12 }}>دستی وجود ندارد</div>
                 ) : (
                   <div style={{ display: "grid", gap: 12, marginTop: 12 }}>
@@ -3120,6 +3581,18 @@ function App() {
                               <span className="pill" style={styles.pill}>
                                 هدف: {r.bid || 0}
                               </span>
+                              {r.winProb?.deal?.p != null && (
+                                <span
+                                  className="pill"
+                                  style={{
+                                    ...styles.pill,
+                                    color: probColor(r.winProb.deal.p),
+                                  }}
+                                  title="Wahrscheinlichkeit, dass der Hakem sein Gebot erfüllt (Monte-Carlo)"
+                                >
+                                  🎲 شانس: {pct(r.winProb.deal.p)}
+                                </span>
+                              )}
                               <span
                                 className="pill"
                                 style={{ ...styles.pill, color: fireColor }}
@@ -3178,6 +3651,14 @@ function App() {
                                   هدف: {r.bid || 0}
                                 </span>
                               </div>
+
+                              {/* Gewinnwahrscheinlichkeit dieser Runde */}
+                              <WinProbBlock
+                                winProb={r.winProb}
+                                bid={r.bid || 0}
+                                bidSuccess={r.bidSuccess}
+                                compact
+                              />
 
                               {/* Chronologische Liste der 12 Stiche */}
                               <div style={{ display: "grid", gap: 8 }}>

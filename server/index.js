@@ -12,6 +12,9 @@ import path from "path";
 import multer from "multer";
 import { randomUUID } from "crypto";
 import { fileURLToPath } from "url";
+import { runMigrations } from "./migrate.js";
+import { estimateRoundWinProbability } from "./probability.js";
+import { registerStatsRoutes, persistStats } from "./stats.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -159,6 +162,25 @@ app.get("/api/me", async (req, res) => {
   }
 });
 
+// Auth-Middleware für die Statistik-Endpunkte (gleiche Logik wie /api/me)
+async function requireAuth(req, res, next) {
+  const hdr = req.headers.authorization || "";
+  const token = hdr.startsWith("Bearer ") ? hdr.slice(7) : null;
+  try {
+    const payload = token ? jwt.verify(token, JWT_SECRET) : null;
+    if (!payload) return res.status(401).json({ error: "Unauthorized" });
+    const user = await dbUserById(payload.sub);
+    if (!user) return res.status(401).json({ error: "Unauthorized" });
+    req.user = user;
+    next();
+  } catch {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+}
+
+// /api/stats/players, /api/stats/pairs, /api/stats/overview, /api/stats/matchup
+registerStatsRoutes(app, requireAuth);
+
 // ---------- Globale Variablen (MUSS vor ensureActiveGame stehen) ----------
 let gameId = null;
 let persistQueued = false;
@@ -197,6 +219,11 @@ let roundDiscarded = [];
 let trickHistory = [];
 let roundsHistory = [];
 let roundCounter = 0;
+
+// Kartenlage beim ersten Stich (nach Boden-Tausch/Abwurf). Basis für die
+// Monte-Carlo-Schätzung "Wie wahrscheinlich war es, dass der Hakem sein Gebot
+// erfüllt?" – wird am Rundenende ausgewertet und mit der Runde persistiert.
+let roundStartSnapshot = null;
 
 const VARIANTS = { UNDECIDED: "UNDECIDED", NORMAL: "NORMAL", FLIP: "FLIP" };
 let roundVariant = VARIANTS.UNDECIDED;
@@ -267,6 +294,7 @@ function dbSnapshot() {
     trickHistory,
     roundsHistory,
     roundCounter,
+    roundStartSnapshot,
     roundVariant,
     variantPending,
     firstUserId,
@@ -323,6 +351,7 @@ function applyLoadedState(s) {
   trickHistory = s.trickHistory || [];
   roundsHistory = s.roundsHistory || [];
   roundCounter = s.roundCounter || 0;
+  roundStartSnapshot = s.roundStartSnapshot || null;
 
   roundVariant = s.roundVariant || VARIANTS.UNDECIDED;
   variantPending = !!s.variantPending;
@@ -442,6 +471,62 @@ function persistGameState() {
   }, 50);
 }
 
+// ---------- Spielabschluss & neues Spiel ----------
+// Ohne einen echten Abschluss liesse sich "gewonnene Spiele" nie auswerten:
+// bisher wurde immer dieselbe games-Zeile weiterbenutzt, dadurch kollidierten
+// nach einem "بازی جدید" auch die rounds (unique game_id/round_no) und gingen
+// still verloren.
+async function finishCurrentGame(winnerTeam, maxPoints) {
+  if (!gameId) return;
+  try {
+    await pool.query(
+      `update games
+          set winner_team  = coalesce(winner_team, $1),
+              final_scores = coalesce(final_scores, $2::jsonb),
+              max_points   = coalesce(max_points, $3),
+              finished_at  = coalesce(finished_at, now()),
+              status       = case when coalesce(winner_team, $1) is not null
+                                  then 'finished' else 'archived' end,
+              updated_at   = now()
+        where id = $4`,
+      [winnerTeam || null, JSON.stringify(teamScores), maxPoints || null, gameId]
+    );
+  } catch (e) {
+    console.error("finishCurrentGame error", e);
+  }
+}
+
+async function startFreshGame() {
+  try {
+    const newId = randomUUID();
+    await pool.query(
+      `insert into games (id, status, first_user_id, include_jokers, show_round_points, current_bottom_size, current_state)
+       values ($1,'active',$2,$3,$4,$5,$6::jsonb)`,
+      [newId, firstUserId, includeJokers, showRoundPoints, currentBottomSize, dbSnapshot()]
+    );
+    gameId = newId;
+    // Sitzplätze/Teams ins neue Spiel übernehmen
+    for (const pos of [1, 2, 3, 4]) {
+      const pl = seats[pos];
+      if (pl?.userId) await persistGamePlayer(pl.userId, pos, pl.team);
+    }
+    console.log("Neues Spiel angelegt:", gameId);
+  } catch (e) {
+    console.error("startFreshGame error", e);
+  }
+}
+
+// Nach Spielende: Ergebnis sichern, Lebenszeit-Statistik neu berechnen
+async function finalizeGameAndStats(winnerTeam, maxPoints) {
+  await finishCurrentGame(winnerTeam, maxPoints);
+  try {
+    await persistStats();
+    io.emit("statsUpdated", { reason: "gameOver", winner: winnerTeam || null });
+  } catch (e) {
+    console.error("persistStats error", e);
+  }
+}
+
 // ---------- game_players / rounds / tricks Persistenz ----------
 async function persistGamePlayer(userId, seatPosition, team) {
   if (!gameId || !userId) return;
@@ -505,8 +590,10 @@ async function persistRoundAndTricks(roundEntry) {
     const r = await pool.query(
       `insert into rounds
         (game_id, round_no, bidder_user_id, bidder_team, bid, trumpf, round_variant,
-         round_points, team_scores_after, rule_applied, delta_applied, bottom_cards, discarded)
-       values ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9::jsonb,$10,$11::jsonb,$12::jsonb,$13::jsonb)
+         round_points, team_scores_after, rule_applied, delta_applied, bottom_cards, discarded,
+         bid_success, round_winner_team, win_prob)
+       values ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9::jsonb,$10,$11::jsonb,$12::jsonb,$13::jsonb,
+               $14,$15,$16::jsonb)
        returning id`,
       [
         gameId,
@@ -527,6 +614,9 @@ async function persistRoundAndTricks(roundEntry) {
         // automatisch per JSON.stringify, Arrays müssen wir daher explizit stringifyen.
         JSON.stringify(roundEntry.bottomCards),
         JSON.stringify(roundEntry.discarded),
+        roundEntry.bidSuccess ?? null,
+        roundEntry.roundWinnerTeam ?? null,
+        roundEntry.winProb ? JSON.stringify(roundEntry.winProb) : null,
       ]
     );
     const roundId = r.rows[0].id;
@@ -586,6 +676,7 @@ function resetGameState() {
   roundPoints = { Fire: 0, Storm: 0 };
   roundsHistory = [];
   roundCounter = 0;
+  roundStartSnapshot = null;
 
   // Varianten
   roundVariant = VARIANTS.UNDECIDED;
@@ -789,6 +880,7 @@ function deal() {
   bottomCards = deck.slice(cardsForHands);
   roundBottomCards = bottomCards.slice();
   roundDiscarded = [];
+  roundStartSnapshot = null;
 
   players.forEach((p, idx) => {
   const start = idx * cardsPerPlayer;
@@ -1445,15 +1537,31 @@ io.emit("turnUpdate", { currentPlayer: next, currentBid });
   });
 
   // Spiel hart zurücksetzen (Spieler/Seats bleiben)
-  socket.on("resetGame", () => {
+  socket.on("resetGame", async () => {
     if (!isFirstPlayerSocket(socket)) {
       return;
     }
+    // Altes Spiel abschliessen (Sieger falls erreicht, sonst archivieren) und
+    // eine NEUE games-Zeile anlegen. Sonst kollidieren die Runden des neuen
+    // Spiels mit unique(game_id, round_no) und würden nicht gespeichert.
+    const maxPoints = getMaxPoints();
+    const reachedWinner =
+      teamScores.Fire >= maxPoints ? "Fire"
+      : teamScores.Storm >= maxPoints ? "Storm"
+      : null;
+    await finishCurrentGame(reachedWinner, maxPoints);
+
     resetGameState();
+    await startFreshGame();
+
     // allen sofort den neuen Grundzustand schicken
     io.emit("gameReset", stateSnapshot());
     io.emit("roundsHistoryUpdate", { roundsHistory });
     broadcastSeats(); // falls UI sich darauf verlässt
+
+    persistStats()
+      .then(() => io.emit("statsUpdated", { reason: "resetGame" }))
+      .catch((e) => console.error("persistStats error", e));
   });
 
   socket.on("setVariant", ({ variant }) => {
@@ -1636,6 +1744,21 @@ socket.on("takeBottomCards", () => {
 
   io.to(player.socketId).emit("hand", hands[userId]);
   io.to(player.socketId).emit("discardDone");
+
+  // Kartenlage einfrieren: ab hier stehen alle vier Hände fest. Das ist die
+  // Ausgangslage für die Gewinnwahrscheinlichkeit am Rundenende.
+  roundStartSnapshot = {
+    hands: Object.fromEntries(
+      players.map((p) => [p.userId, [...(hands[p.userId] || [])]])
+    ),
+    order: players.map((p) => p.userId),
+    teamOf: Object.fromEntries(players.map((p) => [p.userId, p.team])),
+    bidderId: winnerUserId,
+    bid: bids[winnerUserId] || 0,
+    basePoints: { ...roundPoints },
+    discarded: roundDiscarded.slice(),
+    includeJokers,
+  };
 
   trumpf = null;
 
@@ -1840,6 +1963,36 @@ socket.on("takeBottomCards", () => {
     teamScores.Fire += delta.Fire;
     teamScores.Storm += delta.Storm;
 
+    // Gebot erfüllt?
+    const bidSuccess = shutout || bidderPts >= bid;
+
+    // Sieger der Runde nach Stichpunkten
+    const roundWinnerTeam =
+      roundPoints.Fire === roundPoints.Storm
+        ? null
+        : roundPoints.Fire > roundPoints.Storm
+        ? "Fire"
+        : "Storm";
+
+    // --- Gewinnwahrscheinlichkeit (Monte-Carlo) ---
+    // Wichtig: VOR dem Zurücksetzen von trumpf/roundVariant auswerten.
+    let winProb = null;
+    try {
+      if (roundStartSnapshot && roundStartSnapshot.bidderId === winnerUserId) {
+        winProb = estimateRoundWinProbability({
+          ...roundStartSnapshot,
+          trumpSuit: trumpf,
+          isFlip: roundVariant === VARIANTS.FLIP,
+          doubleNegativeMin: DOUBLE_NEGATIVE_MIN,
+          iterations: Number(process.env.WIN_PROB_ITERATIONS || 300),
+          budgetMs: Number(process.env.WIN_PROB_BUDGET_MS || 400),
+        });
+      }
+    } catch (e) {
+      console.error("winProb error", e);
+      winProb = null;
+    }
+
     // Chronik-Eintrag
     roundCounter += 1;
 
@@ -1866,18 +2019,15 @@ socket.on("takeBottomCards", () => {
       ruleApplied,
       doubleNegativeThreshold: DOUBLE_NEGATIVE_MIN,
       deltaApplied: { ...delta },
+
+      // Auswertung
+      bidSuccess,
+      roundWinnerTeam,
+      winProb,
     };
     roundsHistory.push(roundEntry);
 
     persistRoundAndTricks(roundEntry);
-
-    // Sieger nach Stichpunkten
-    const roundWinnerTeam =
-      roundPoints.Fire === roundPoints.Storm
-        ? null
-        : roundPoints.Fire > roundPoints.Storm
-        ? "Fire"
-        : "Storm";
 
     const finalTrumpf = roundEntry.trumpf; // Trumpf der beendeten Runde merken
     const finalVariant = roundVariant; // (falls du ihn später brauchst)
@@ -1902,6 +2052,8 @@ socket.on("takeBottomCards", () => {
       ruleApplied,
       deltaApplied: roundEntry.deltaApplied,
       doubleNegativeThreshold: DOUBLE_NEGATIVE_MIN,
+      bidSuccess,
+      winProb,
     });
     io.emit("roundsHistoryUpdate", { roundsHistory });
 
@@ -1925,6 +2077,10 @@ socket.on("takeBottomCards", () => {
       if (teamScores.Fire >= maxPoints || teamScores.Storm >= maxPoints) {
         const winner = teamScores.Fire >= maxPoints ? "Fire" : "Storm";
         io.emit("gameOver", { winner, teamScores, maxPoints });
+        // Ergebnis festschreiben + lebenslange Statistik/Level neu berechnen
+        finalizeGameAndStats(winner, maxPoints).catch((e) =>
+          console.error("finalizeGameAndStats", e)
+        );
         return;
       }
 
@@ -2062,6 +2218,7 @@ socket.on("takeBottomCards", () => {
 // === Server Start ===
 const PORT = process.env.PORT || 3001;
 await dbPing();
+await runMigrations();
 await ensureActiveGame();
 server.listen(PORT, () => {
   console.log(`Server läuft auf Port ${PORT}`);
