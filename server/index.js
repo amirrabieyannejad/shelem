@@ -2218,7 +2218,20 @@ socket.on("takeBottomCards", () => {
 // === Server Start ===
 const PORT = process.env.PORT || 3001;
 await dbPing();
-await runMigrations();
+
+// Migrationen dürfen den Serverstart NICHT verhindern: schlägt hier etwas fehl,
+// wäre sonst das ganze Spiel offline (Render würde in eine Crash-Schleife
+// laufen). Lieber ohne Statistik-Schema starten und den Fehler laut loggen.
+try {
+  await runMigrations();
+} catch (e) {
+  console.error(
+    "!!! Migrationen fehlgeschlagen – Server startet trotzdem. " +
+      "Statistik-Endpunkte funktionieren erst nach einer erfolgreichen Migration:",
+    e.message
+  );
+}
+
 await ensureActiveGame();
 server.listen(PORT, () => {
   console.log(`Server läuft auf Port ${PORT}`);
