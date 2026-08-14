@@ -1321,6 +1321,19 @@ function App() {
         if (data?.profile) {
           localStorage.setItem("shelem_profile", JSON.stringify(data.profile));
           setAuth((a) => ({ ...a, profile: data.profile }));
+          // Falls die Socket-Verbindung schon vor diesem Refresh stand,
+          // hat "register" (im connect-Handler) evtl. ein veraltetes/leeres
+          // avatarUrl aus dem localStorage-Snapshot mitgeschickt (Race
+          // zwischen Socket-Connect und diesem Fetch). Jetzt mit dem
+          // frischen DB-Stand nachsynchronisieren, damit das Bild am
+          // Sitzplatz sicher ankommt.
+          if (socket.connected) {
+            socket.emit("register", {
+              clientId: data.profile.id,
+              name: data.profile.name,
+              avatarUrl: data.profile.avatarUrl || null,
+            });
+          }
         }
       } catch {
         // Token ungültig → logout
