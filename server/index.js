@@ -57,15 +57,46 @@ const upload = multer({
 const server = http.createServer(app);
 
 const allowedOrigins = process.env.CORS_ORIGIN
-  ? process.env.CORS_ORIGIN.split(",").map((s) => s.trim())
+  ? process.env.CORS_ORIGIN.split(",").map((s) => s.trim()).filter(Boolean)
   : [
       "http://localhost:3000",
       "https://shelem-ruby.vercel.app",
       "https://shelem.onrender.com",
     ];
-app.use(cors({ origin: allowedOrigins, credentials: true }));
 
-const io = new Server(server, { cors: { origin: allowedOrigins, methods: ["GET", "POST"] } });
+// Vercel legt für jeden Branch eine eigene Adresse an:
+//   https://<projekt>-git-<branch>-<konto>.vercel.app
+// Die steht naturgemäß in keiner festen Liste, weshalb bisher jeder
+// API-Aufruf aus einer Preview am CORS-Check scheiterte. Aus jeder
+// erlaubten *.vercel.app-Adresse leiten wir daher das Muster für die
+// Previews DESSELBEN Projekts ab - fremde Projekte bleiben ausgesperrt.
+const previewPatterns = allowedOrigins
+  .map((o) => /^https:\/\/([a-z0-9-]+)\.vercel\.app$/i.exec(o))
+  .filter(Boolean)
+  .map((m) => new RegExp(`^https://${m[1]}-[a-z0-9-]+\\.vercel\\.app$`, "i"));
+
+const rejectedOrigins = new Set();
+
+function isAllowedOrigin(origin) {
+  // Kein Origin: curl, Server-zu-Server, native Clients - nicht blockieren.
+  if (!origin) return true;
+  if (allowedOrigins.includes(origin)) return true;
+  if (previewPatterns.some((re) => re.test(origin))) return true;
+  if (!rejectedOrigins.has(origin)) {
+    rejectedOrigins.add(origin);
+    console.warn(`CORS abgelehnt: ${origin}`);
+  }
+  return false;
+}
+
+const corsOrigin = (origin, cb) =>
+  isAllowedOrigin(origin)
+    ? cb(null, true)
+    : cb(new Error(`CORS: Origin nicht erlaubt (${origin})`));
+
+app.use(cors({ origin: corsOrigin, credentials: true }));
+
+const io = new Server(server, { cors: { origin: corsOrigin, methods: ["GET", "POST"] } });
 
 // ---------- Auth Helpers (DB-basiert) ----------
 const publicUser = (u) => ({
