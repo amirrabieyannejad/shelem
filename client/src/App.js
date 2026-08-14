@@ -3169,18 +3169,6 @@ function App() {
                   // Standard: Normal / Flip
                   return (
                     <>
-                      <h3
-                        style={{
-                          margin: 0,
-                          fontWeight: 800,
-                          textAlign: "center",
-                        }}
-                      >
-                        Runde: Normal oder Flip?
-                      </h3>
-                      <p style={{ textAlign: "center", marginTop: 8 }}>
-                        Entscheidung nach der ersten Karte des Startspielers.
-                      </p>
                       <div
                         style={{
                           display: "flex",
@@ -3195,6 +3183,7 @@ function App() {
                               ...styles.btn,
                               background: "#dbeafe",
                               fontWeight: 800,
+                              color: "#000000",
                             }}
                             onClick={() =>
                               socket.emit("setVariant", {
@@ -3211,6 +3200,7 @@ function App() {
                               ...styles.btn,
                               background: "#fde68a",
                               fontWeight: 800,
+                              color: "#000000",
                             }}
                             onClick={() =>
                               socket.emit("setVariant", { variant: "FLIP" })
