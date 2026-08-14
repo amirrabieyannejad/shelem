@@ -1491,8 +1491,14 @@ function App() {
         alert("Nicht eingeloggt.");
         return;
       }
-      // stabile ID & Name kommen vom Profil (server-side verifiziert)
-      socket.emit("register", { clientId: prof.id, name: prof.name });
+      // stabile ID & Name kommen vom Profil (server-side verifiziert).
+      // avatarUrl explizit mitschicken: der Server kennt sonst nur den
+      // Stand von Verbindungsaufbau/JWT, das lokale Profil ist aktueller.
+      socket.emit("register", {
+        clientId: prof.id,
+        name: prof.name,
+        avatarUrl: prof.avatarUrl || null,
+      });
       socket.emit("getRoundsHistory");
       socket.emit("requestState");
     });
