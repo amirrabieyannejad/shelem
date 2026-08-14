@@ -3225,7 +3225,7 @@ function App() {
               soll das Gebot-Popup nie wieder sehen. */}
           {showBidModal && (
             <div className="sh-sheet">
-              <div className="sh-sheetbox" style={{ maxWidth: 420 }}>
+              <div className="sh-sheetbox sh-sheetbox--center" style={{ maxWidth: 420 }}>
                 <div className="sh-sheethd">
                   <h2>مزایده</h2>
                 </div>

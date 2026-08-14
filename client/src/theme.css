@@ -276,8 +276,8 @@
   background:var(--panel);border:1px solid var(--line);text-align:center;
   box-shadow:0 10px 30px rgba(0,0,0,.4);
 }
-.sh-actions .sh-title{font-size:13px;color:#a9b7c7;margin-bottom:10px}
-.sh-actions .sh-title b{color:var(--gold)}
+.sh-title{font-size:13px;color:#a9b7c7;margin-bottom:10px;text-align:center}
+.sh-title b{color:var(--gold)}
 .sh-bidbtn{
   font-size:14px;font-weight:700;min-height:var(--tap);padding:0 16px;border-radius:10px;cursor:pointer;
   background:#1f2b3a;border:1px solid #33455c;color:#dce6f1;
@@ -292,7 +292,7 @@
 .sh-step:disabled{opacity:.32;cursor:not-allowed}
 .sh-bidval{
   min-width:96px;padding:6px;border-radius:11px;background:#0f1720;border:1.5px solid var(--gold);
-  font-size:24px;font-weight:900;color:var(--gold);line-height:1.15;
+  font-size:24px;font-weight:900;color:var(--gold);line-height:1.15;text-align:center;
 }
 .sh-bidval small{display:block;font-size:10px;font-weight:600;color:#8d9cb0}
 .sh-suitbtn{
@@ -334,6 +334,8 @@
 }
 .sh-sheethd{display:flex;align-items:center;margin-bottom:16px}
 .sh-sheethd h2{font-size:17px;font-weight:800;margin:0}
+.sh-sheetbox--center{text-align:center}
+.sh-sheetbox--center .sh-sheethd{justify-content:center;margin-bottom:12px}
 .sh-xbtn{
   margin-inline-start:auto;width:var(--tap);height:var(--tap);border-radius:11px;cursor:pointer;font-size:20px;
   background:#1b2531;border:1px solid var(--line);color:#b9c5d2;line-height:1;
