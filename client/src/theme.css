@@ -136,6 +136,8 @@
 }
 .sh-seat--fire .sh-name{color:#ffc9c9}
 .sh-seat--storm .sh-name{color:#bcdcff}
+.sh-seat--s .sh-name{order:2;margin-top:4px}
+.sh-seat--s .sh-ring{order:1}
 .sh-ring{position:relative;width:var(--ava);height:var(--ava);border-radius:50%;padding:3px;box-shadow:0 8px 20px rgba(0,0,0,.55)}
 .sh-seat--fire  .sh-ring{background:linear-gradient(155deg,var(--fire),var(--fire-d))}
 .sh-seat--storm .sh-ring{background:linear-gradient(155deg,var(--storm),var(--storm-d))}
@@ -222,17 +224,14 @@
 }
 .sh-team{display:flex;align-items:center;gap:7px;font-size:12.5px;white-space:nowrap}
 .sh-team .sh-dot{width:9px;height:9px;border-radius:50%;flex:none}
-.sh-team--fire  .sh-dot{background:var(--fire)}
-.sh-team--storm .sh-dot{background:var(--storm)}
+.sh-team--fire{grid-column:1;grid-row:1;justify-self:start}
+.sh-team--storm{grid-column:3;grid-row:1;justify-self:end;text-align:end}
 .sh-team .sh-n{font-size:16px;font-weight:800}
 .sh-track{flex:1;min-width:22px;height:6px;border-radius:99px;background:#202a36;overflow:hidden}
 .sh-track i{display:block;height:100%;border-radius:99px}
 .sh-track i.sh-fire{background:linear-gradient(90deg,var(--fire-d),var(--fire))}
 .sh-track i.sh-storm{background:linear-gradient(90deg,var(--storm-d),var(--storm))}
-.sh-goal{
-  display:flex;align-items:center;gap:6px;padding:4px 12px;border-radius:999px;white-space:nowrap;
-  background:#1d2634;border:1px solid #334052;font-size:12.5px;
-}
+.sh-goal{grid-column:2;grid-row:1;justify-self:center}
 .sh-goal b{font-size:15px;color:var(--gold)}
 .sh-decl{font-size:11px;font-weight:800;padding:2px 8px;border-radius:999px}
 .sh-decl--fire{background:rgba(224,75,75,.18);color:#ff9d9d;border:1px solid rgba(224,75,75,.45)}
@@ -266,7 +265,10 @@
 .sh-slot--w{transform:translate(-50%,-50%) translateX(calc(var(--card-w)*-1.1)) rotate(-7deg)}
 .sh-slot--e{transform:translate(-50%,-50%) translateX(calc(var(--card-w)*1.1)) rotate(7deg)}
 .sh-slot.is-win img{box-shadow:0 0 0 3px var(--gold),0 8px 22px rgba(0,0,0,.55)}
-.sh-tablemsg{text-align:center;max-width:min(340px,74vw)}
+.sh-tablemsg{
+  position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+  text-align:center;max-width:min(340px,74vw);
+}
 .sh-tablemsg h3{font-size:clamp(14px,3vw,17px);font-weight:800;margin:0 0 6px;color:#fff;text-shadow:0 2px 6px rgba(0,0,0,.5)}
 .sh-tablemsg p{font-size:clamp(11px,2.4vw,13px);color:rgba(255,255,255,.72);line-height:1.85;margin:0}
 
@@ -358,8 +360,14 @@
 
 /* ---------- Handy ---------- */
 @media (max-width:600px){
-  .sh-scorebar{flex-wrap:wrap;gap:6px 8px}
-  .sh-track{order:5;flex-basis:calc(50% - 4px);min-width:0}
+  .sh-scorebar{
+  display:grid;
+  grid-template-columns:1fr auto 1fr;
+  align-items:center;
+  row-gap:6px; column-gap:8px;
+}
+  .sh-track:first-of-type{grid-column:1;grid-row:2}
+  .sh-track:last-of-type{grid-column:3;grid-row:2}
   .sh-table{aspect-ratio:1/1.02;border-radius:46%/40%}
   .sh-seat--w{left:2%;top:44%}  .sh-seat--e{left:98%;top:44%}
   .sh-seat--n{top:0}            .sh-seat--s{top:100%}
