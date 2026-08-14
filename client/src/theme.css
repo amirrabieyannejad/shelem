@@ -316,7 +316,7 @@
   background:none;border:none;padding:0;cursor:pointer;flex:none;
   transition:transform .16s ease, filter .16s;transform-origin:bottom center;
 }
-.sh-cardbtn:not(:first-child){margin-left:calc(var(--card-w) * -0.52)}
+.sh-cardbtn:not(:first-child){margin-left:calc(var(--card-w) * -0.42)}
 .sh-cardbtn.is-sel img{box-shadow:0 0 0 3px var(--gold),0 10px 24px rgba(0,0,0,.5)}
 .sh-cardbtn.is-dim{filter:grayscale(.55) brightness(.62)}
 .sh-cardbtn:disabled{cursor:not-allowed}
@@ -370,7 +370,7 @@
   .sh-actions{padding:10px;margin-top:10px}
   .sh-bidval{min-width:80px;font-size:21px}
   .sh-fan{padding-top:14px}
-  .sh-cardbtn:not(:first-child){margin-left:calc(var(--card-w) * -0.58)}
+  .sh-cardbtn:not(:first-child){margin-left:calc(var(--card-w) * -0.48)}
   .sh-sheet{padding:0;align-items:flex-end}
   .sh-sheetbox{max-height:92dvh;border-radius:18px 18px 0 0;width:100%}
   /* Sitzauswahl klappt in ein 2x2-Raster; die Diagonale bleibt die Team-Achse */
@@ -382,7 +382,7 @@
   .sh-seats .sh-seatbox{width:auto}
   .sh-seats .sh-tablecore{position:static;margin-bottom:14px}
 }
-@media (max-width:400px){ .sh-cardbtn:not(:first-child){margin-left:calc(var(--card-w) * -0.66)} }
+@media (max-width:400px){ .sh-cardbtn:not(:first-child){margin-left:calc(var(--card-w) * -0.56)} }
 @media (max-height:520px) and (orientation:landscape){
   .sh-table{aspect-ratio:16/7.4}
   .sh-tablewrap{padding-block:calc(var(--ava)*0.5)}

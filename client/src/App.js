@@ -2618,7 +2618,11 @@ function App() {
                 setAuth((a) => ({ ...a, profile }));
                 localStorage.setItem("shelem_profile", JSON.stringify(profile));
                 // Name/Bild sofort auch am Tisch aktualisieren
-                socket.emit("register", { clientId: profile.id, name: profile.name });
+                socket.emit("register", {
+                  clientId: profile.id,
+                  name: profile.name,
+                  avatarUrl: profile.avatarUrl,
+                });
               }}
             />
           )}

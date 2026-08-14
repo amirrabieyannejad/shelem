@@ -1230,6 +1230,14 @@ io.on("connection", (socket) => {
   const userId = uid(socket);
   const payloadName = typeof payload === "string" ? payload : (payload?.name || "");
   const finalName = String(socket.user?.name || payloadName || "").trim();
+  // Bild kann sich waehrend der Session aendern (Profil-Speichern), waehrend
+  // socket.user.avatarUrl nur einmal beim Verbindungsaufbau aus der DB kommt.
+  // Der Client schickt bei jedem "register" den aktuellen Wert mit - den
+  // bevorzugen wir, damit ein neues Foto sofort am Tisch sichtbar wird.
+  const payloadAvatarUrl =
+    payload && typeof payload === "object" && payload.avatarUrl !== undefined
+      ? payload.avatarUrl
+      : undefined;
 
   if (!userId || !finalName) {
     socket.emit("invalidAction", { msg: "Bitte zuerst anmelden." });
@@ -1248,6 +1256,8 @@ io.on("connection", (socket) => {
     existing.id = socket.id;
     existing.name = finalName;
     if (socket.user?.username) existing.username = socket.user.username;
+    existing.avatarUrl =
+      payloadAvatarUrl ?? socket.user?.avatarUrl ?? existing.avatarUrl;
 
     if (existing.seatPosition) seats[existing.seatPosition] = existing;
   } else {
@@ -1286,6 +1296,8 @@ io.on("connection", (socket) => {
       existing.id = socket.id;
       existing.name = finalName;
       if (socket.user?.username) existing.username = socket.user.username;
+      existing.avatarUrl =
+        payloadAvatarUrl ?? socket.user?.avatarUrl ?? existing.avatarUrl;
       if (existing.seatPosition) seats[existing.seatPosition] = existing;
     } else {
 
@@ -1295,7 +1307,7 @@ io.on("connection", (socket) => {
       id: socket.id,
       name: finalName,
       username: socket.user?.username || null,
-      avatarUrl: socket.user?.avatarUrl || null,
+      avatarUrl: payloadAvatarUrl ?? socket.user?.avatarUrl ?? null,
       team: saved?.team || null,
       passed: false,
       // WICHTIG: bids{} lebt unabhängig von players[] weiter (wird erst bei
