@@ -2082,7 +2082,7 @@ function App() {
       >
         <span className="sh-name">
           {p.username || p.name}
-          {youLabel ? " · تو" : ""}
+          {youLabel}
         </span>
         <span className="sh-ring">
           <Avatar user={p} size="100%" />
