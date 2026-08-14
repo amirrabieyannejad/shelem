@@ -22,9 +22,26 @@ const __dirname = path.dirname(__filename);
 const JWT_SECRET = process.env.JWT_SECRET || "dev_change_me";
 
 const app = express();
-app.use(express.json({ limit: "2mb" }));
+app.use(express.json({ limit: "6mb" })); // Avatar kommt als base64 im PATCH /api/me mit
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
-const upload = multer({ dest: path.join(__dirname, "uploads") });
+// WICHTIG: Render (und die meisten Hosting-Plattformen) haben ein FLÜCHTIGES
+// Dateisystem - Dateien, die zur Laufzeit auf die Festplatte geschrieben
+// werden (wie es "dest:"-basiertes multer bisher tat), gehen bei jedem
+// Neustart/Redeploy/Idle-Sleep verloren. Genau das war der Bug: avatar_url
+// zeigte auf eine Datei, die es serverseitig gar nicht mehr gab -> 404,
+// kaputtes <img>. Fix: Bild direkt als base64 data-URL in der DB speichern
+// (avatarSrc() im Client unterstützt data:-URLs bereits nativ), kein Datei-
+// system-Zwischenspeicher mehr nötig.
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 1.2 * 1024 * 1024 }, // 1.2MB Original (~1.6MB als base64)
+  fileFilter: (req, file, cb) => {
+    if (!/^image\/(png|jpe?g|webp|gif)$/i.test(file.mimetype)) {
+      return cb(new Error("Nur Bilddateien (png/jpg/webp/gif) erlaubt"));
+    }
+    cb(null, true);
+  },
+});
 
 const server = http.createServer(app);
 
@@ -142,10 +159,14 @@ app.post("/api/auth/login", async (req, res) => {
   }
 });
 
-app.post("/api/upload-avatar", upload.single("avatar"), (req, res) => {
-  if (!req.file) return res.status(400).json({ error: "Keine Datei" });
-  const url = `/uploads/${req.file.filename}`;
-  return res.json({ url });
+app.post("/api/upload-avatar", (req, res) => {
+  upload.single("avatar")(req, res, (err) => {
+    if (err) return res.status(400).json({ error: err.message || "Upload fehlgeschlagen" });
+    if (!req.file) return res.status(400).json({ error: "Keine Datei" });
+    const base64 = req.file.buffer.toString("base64");
+    const url = `data:${req.file.mimetype};base64,${base64}`;
+    return res.json({ url });
+  });
 });
 
 // Profil ändern: Anzeigename, E-Mail, Avatar und optional das Passwort.
