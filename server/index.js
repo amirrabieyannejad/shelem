@@ -23,8 +23,36 @@ const JWT_SECRET = process.env.JWT_SECRET || "dev_change_me";
 
 const app = express();
 app.use(express.json({ limit: "2mb" }));
-app.use("/uploads", express.static(path.join(__dirname, "uploads")));
-const upload = multer({ dest: path.join(__dirname, "uploads") });
+const UPLOAD_DIR = path.join(__dirname, "uploads");
+
+// Ältere Uploads wurden ohne Dateiendung abgelegt und deshalb als
+// application/octet-stream ausgeliefert - im <img> blieben sie leer.
+// Für endungslose Dateien setzen wir daher einen Bild-Content-Type.
+app.use(
+  "/uploads",
+  express.static(UPLOAD_DIR, {
+    setHeaders: (res, filePath) => {
+      if (!path.extname(filePath)) res.setHeader("Content-Type", "image/jpeg");
+    },
+  })
+);
+
+// Endung erhalten, sonst kennt der Browser den Typ nicht.
+const upload = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => cb(null, UPLOAD_DIR),
+    filename: (req, file, cb) => {
+      const ext = path.extname(file.originalname || "").toLowerCase();
+      const safe = /^\.(jpe?g|png|webp|gif)$/.test(ext) ? ext : ".jpg";
+      cb(null, `${randomUUID()}${safe}`);
+    },
+  }),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (req, file, cb) =>
+    /^image\//.test(file.mimetype)
+      ? cb(null, true)
+      : cb(new Error("Nur Bilddateien erlaubt")),
+});
 
 const server = http.createServer(app);
 
@@ -142,10 +170,15 @@ app.post("/api/auth/login", async (req, res) => {
   }
 });
 
-app.post("/api/upload-avatar", upload.single("avatar"), (req, res) => {
-  if (!req.file) return res.status(400).json({ error: "Keine Datei" });
-  const url = `/uploads/${req.file.filename}`;
-  return res.json({ url });
+app.post("/api/upload-avatar", (req, res) => {
+  upload.single("avatar")(req, res, (err) => {
+    if (err)
+      return res
+        .status(400)
+        .json({ error: err.message || "آپلود ناموفق بود" });
+    if (!req.file) return res.status(400).json({ error: "Keine Datei" });
+    return res.json({ url: `/uploads/${req.file.filename}` });
+  });
 });
 
 // Profil ändern: Anzeigename, E-Mail, Avatar und optional das Passwort.
@@ -228,6 +261,16 @@ async function requireAuth(req, res, next) {
 
 // /api/stats/players, /api/stats/pairs, /api/stats/overview, /api/stats/matchup
 registerStatsRoutes(app, requireAuth);
+
+// Unbekannte /api-Pfade als JSON abweisen. Express liefert sonst eine
+// HTML-Fehlerseite, an der jedes res.json() im Client scheitert
+// ("Unexpected token '<', '<!DOCTYPE ...' is not valid JSON").
+// Muss NACH allen API-Routen stehen.
+app.use("/api", (req, res) => {
+  res.status(404).json({
+    error: `Unbekannter Endpunkt: ${req.method} /api${req.path}`,
+  });
+});
 
 // ---------- Globale Variablen (MUSS vor ensureActiveGame stehen) ----------
 let gameId = null;

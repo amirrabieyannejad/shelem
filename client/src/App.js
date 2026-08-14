@@ -80,6 +80,22 @@ const initialsOf = (u) =>
     .trim()
     .slice(0, 2);
 
+// Antwort als JSON lesen - aber niemals am Parser scheitern.
+// Fehlt eine Route, liefert Express eine HTML-Seite; ohne diese Hülle
+// landete das als "Unexpected token '<'" beim Benutzer.
+async function readJson(res) {
+  const text = await res.text();
+  try {
+    return JSON.parse(text);
+  } catch {
+    if (res.status === 404)
+      throw new Error(
+        "این مسیر روی سرور وجود ندارد — احتمالاً بک‌اند هنوز به‌روز نشده است"
+      );
+    throw new Error(`پاسخ نامعتبر از سرور (${res.status})`);
+  }
+}
+
 // Rundes Profilbild mit Initialen als Rückfallebene.
 function Avatar({ user, size = 34, className = "" }) {
   const src = avatarSrc(user);
@@ -390,17 +406,22 @@ function AuthGate({ onAuthed }) {
   };
 
   const login = async () => {
-    const res = await fetch(`${host}/api/auth/login`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        usernameOrEmail: form.usernameOrEmail,
-        password: form.password,
-      }),
-    });
-    const data = await res.json();
-    if (!res.ok) return alert(data?.error || "Login fehlgeschlagen");
-    saveAuth(data);
+    setErr("");
+    try {
+      const res = await fetch(`${host}/api/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          usernameOrEmail: form.usernameOrEmail,
+          password: form.password,
+        }),
+      });
+      const data = await readJson(res);
+      if (!res.ok) return setErr(data?.error || "ورود ناموفق بود");
+      saveAuth(data);
+    } catch (e) {
+      setErr(e.message);
+    }
   };
 
   const register = async () => {
@@ -412,14 +433,19 @@ function AuthGate({ onAuthed }) {
       phone: form.phone || undefined,
       avatarUrl: form.avatarUrl || undefined,
     };
-    const res = await fetch(`${host}/api/auth/register`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    const data = await res.json();
-    if (!res.ok) return alert(data?.error || "Registrierung fehlgeschlagen");
-    saveAuth(data); // Auto-Login
+    setErr("");
+    try {
+      const res = await fetch(`${host}/api/auth/register`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await readJson(res);
+      if (!res.ok) return setErr(data?.error || "ثبت نام ناموفق بود");
+      saveAuth(data); // Auto-Login
+    } catch (e) {
+      setErr(e.message);
+    }
   };
 
   const [showPw, setShowPw] = React.useState(false);
@@ -435,7 +461,7 @@ function AuthGate({ onAuthed }) {
       const fd = new FormData();
       fd.append("avatar", file);
       const res = await fetch(`${host}/api/upload-avatar`, { method: "POST", body: fd });
-      const data = await res.json();
+      const data = await readJson(res);
       if (!res.ok) throw new Error(data?.error || "Upload fehlgeschlagen");
       setForm((f) => ({ ...f, avatarUrl: data.url }));
     } catch (e) {
@@ -1059,7 +1085,7 @@ function ProfileSheet({ auth, onClose, onSaved, level }) {
         method: "POST",
         body: fd,
       });
-      const data = await res.json();
+      const data = await readJson(res);
       if (!res.ok) throw new Error(data?.error || "Upload fehlgeschlagen");
       setAva(data.url);
     } catch (e) {
@@ -1091,7 +1117,7 @@ function ProfileSheet({ auth, onClose, onSaved, level }) {
           newPassword: pw1 || undefined,
         }),
       });
-      const data = await res.json();
+      const data = await readJson(res);
       if (!res.ok) throw new Error(data?.error || "ذخیره نشد");
       onSaved(data.profile);
       setPw0("");

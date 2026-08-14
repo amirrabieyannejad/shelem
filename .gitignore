@@ -8,3 +8,6 @@ server/make-hash.js
 
 # Build-Output
 /client/build
+
+# Hochgeladene Avatare
+/server/uploads
