@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef } from "react";
 import { io } from "socket.io-client";
+import "./theme.css";
 // CRA liest nur process.env.REACT_APP_*
 const API_BASE = (
   process.env.REACT_APP_BACKEND_URL ||
@@ -10,65 +11,6 @@ const API_BASE = (
 const socket = io(API_BASE, { autoConnect: false });
 
 // simple, crisp crown
-const CrownIcon = ({ size = 40 }) => (
-  <svg
-    width={size}
-    height={size}
-    viewBox="0 0 64 64"
-    aria-hidden
-    style={{ display: "block" }}
-    shapeRendering="geometricPrecision"
-  >
-    <defs>
-      <linearGradient id="gold" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stopColor="#FFE082" />
-        <stop offset="100%" stopColor="#F59E0B" />
-      </linearGradient>
-    </defs>
-    <path
-      d="M8 50 L16 20 L28 34 L36 18 L48 34 L56 20 L64 50 Z"
-      fill="url(#gold)"
-      stroke="#A16207"
-      strokeWidth="3"
-      strokeLinejoin="round"
-    />
-    <rect
-      x="13"
-      y="45"
-      width="44"
-      height="15"
-      rx="8"
-      fill="url(#gold)"
-      stroke="#A16207"
-      strokeWidth="3"
-    />
-    {/* jewels */}
-    <circle
-      cx="16"
-      cy="28"
-      r="4"
-      fill="#ef4444"
-      stroke="#9f1239"
-      strokeWidth="2"
-    />
-    <circle
-      cx="36"
-      cy="26"
-      r="4"
-      fill="#60a5fa"
-      stroke="#1d4ed8"
-      strokeWidth="2"
-    />
-    <circle
-      cx="52"
-      cy="28"
-      r="4"
-      fill="#22c55e"
-      stroke="#166534"
-      strokeWidth="2"
-    />
-  </svg>
-);
 
 // crisp suits
 const SuitIcon = ({ suit = "♠", size = 32 }) => {
@@ -118,9 +60,38 @@ const SuitIcon = ({ suit = "♠", size = 32 }) => {
   );
 };
 
-// Handkarten-Größe (kannst du später einfach ändern)
-const HAND_CARD_SCALE_X = 0.86; // Breite (1 = normal, >1 = breiter, <1 = schmaler)
-const HAND_CARD_SCALE_Y = 0.85; // Höhe  (1 = normal, <1 = kürzer, >1 = höher)
+// --- Layout-Helfer (layout_neu) -------------------------------------------
+
+// Persische Ziffern für Zahlen, die in persischen Sätzen stehen.
+// Die großen Punktestände bleiben bewusst lateinisch.
+const faNum = (n) =>
+  String(n ?? "").replace(/\d/g, (d) => "\u06F0\u06F1\u06F2\u06F3\u06F4\u06F5\u06F6\u06F7\u06F8\u06F9"[d]);
+
+// Absolute URL für ein Avatarbild bauen (Server liefert "/uploads/…").
+const avatarSrc = (u) => {
+  const raw = u && (u.avatarUrl || u.avatar_url);
+  if (!raw) return null;
+  if (raw.startsWith("http") || raw.startsWith("data:")) return raw;
+  return `${API_BASE}${raw}`;
+};
+
+const initialsOf = (u) =>
+  String((u && (u.username || u.name)) || "\u061F")
+    .trim()
+    .slice(0, 2);
+
+// Rundes Profilbild mit Initialen als Rückfallebene.
+function Avatar({ user, size = 34, className = "" }) {
+  const src = avatarSrc(user);
+  const style = { width: size, height: size };
+  return src ? (
+    <img className={className} src={src} alt="" style={style} />
+  ) : (
+    <span className={"sh-ph " + className} style={style}>
+      {initialsOf(user)}
+    </span>
+  );
+}
 
 // --- einfache Styles ohne Tailwind ---
 const styles = {
@@ -139,9 +110,9 @@ const styles = {
     fontWeight: 800,
   },
   card: {
-    color: "black",
+    color: "#e9eef4",
     padding: 16,
-    borderRadius: 8,
+    borderRadius: 14,
     marginTop: 16,
     textAlign: "center",
     justifyContent: "center",
@@ -185,17 +156,25 @@ const styles = {
   modalBackdrop: {
     position: "fixed",
     inset: 0,
-    background: "rgba(0,0,0,.55)",
+    background: "rgba(4,8,12,.72)",
+    backdropFilter: "blur(4px)",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
     zIndex: 50,
+    padding: 14,
   },
   modal: {
-    background: "#ffffffff",
+    background: "#121a23",
+    color: "#e9eef4",
+    border: "1px solid #26313f",
+    boxShadow: "0 30px 70px rgba(0,0,0,.65)",
     padding: 0,
-    borderRadius: 10,
+    borderRadius: 18,
     width: 350,
+    maxWidth: "100%",
+    maxHeight: "calc(100dvh - 28px)",
+    overflow: "auto",
     paddingBottom: 4,
   },
   infoBar: {
@@ -255,9 +234,12 @@ const styles = {
   // optional: größere Touch-Ziele für Buttons
   btn: {
     padding: "10px 14px",
-    borderRadius: 8,
-    border: "1px solid #e5e7eb",
-    background: "#e5e7eb",
+    minHeight: 44,
+    borderRadius: 10,
+    border: "1px solid #33455c",
+    background: "#1f2b3a",
+    color: "#dce6f1",
+    fontWeight: 700,
     cursor: "pointer",
     touchAction: "manipulation",
     justifyContent: "center",
@@ -440,98 +422,236 @@ function AuthGate({ onAuthed }) {
     saveAuth(data); // Auto-Login
   };
 
+  const [showPw, setShowPw] = React.useState(false);
+  const [busy, setBusy] = React.useState(false);
+  const [err, setErr] = React.useState("");
+
+  // Datei -> /api/upload-avatar -> URL in form.avatarUrl
+  const pickAvatar = async (file) => {
+    if (!file) return;
+    setBusy(true);
+    setErr("");
+    try {
+      const fd = new FormData();
+      fd.append("avatar", file);
+      const res = await fetch(`${host}/api/upload-avatar`, { method: "POST", body: fd });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "Upload fehlgeschlagen");
+      setForm((f) => ({ ...f, avatarUrl: data.url }));
+    } catch (e) {
+      setErr(e.message || "Upload fehlgeschlagen");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const avaPreview = form.avatarUrl
+    ? form.avatarUrl.startsWith("http") || form.avatarUrl.startsWith("data:")
+      ? form.avatarUrl
+      : `${host}${form.avatarUrl}`
+    : null;
+  const initials = (form.name || form.username || "؟").trim().slice(0, 2);
+
+
   return (
-    <div style={{ ...styles.card, maxWidth: 420, margin: "40px auto" }}>
-      <h3 style={{ marginTop: 0, textAlign: "center" }}>
-        {mode === "login" ? "ورود" : "ثبت نام"}
-      </h3>
-      <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
-        <button
-          style={styles.btn}
-          onClick={() => setMode("login")}
-          disabled={mode === "login"}
-        >
-          ورود
-        </button>
-        <button
-          style={styles.btn}
-          onClick={() => setMode("register")}
-          disabled={mode === "register"}
-        >
-          ثبت نام
-        </button>
-      </div>
-      {mode === "login" ? (
-        <div style={{ marginTop: 12, display: "grid", gap: 8 }}>
-          <input
-            placeholder="نام مستعار یا آدرس ایمیل"
-            value={form.usernameOrEmail}
-            onChange={(e) =>
-              setForm((f) => ({ ...f, usernameOrEmail: e.target.value }))
-            }
-          />
-          <input
-            placeholder="رمز عبور"
-            type="password"
-            value={form.password}
-            onChange={(e) =>
-              setForm((f) => ({ ...f, password: e.target.value }))
-            }
-          />
+    <div className="sh-authwrap">
+      <div className="sh-authcard">
+        <div className="sh-brand">
+          <div className="sh-logo">♠♥</div>
+          <h1>شلم</h1>
+          <p>بازی چهار نفره · دو تیم</p>
+        </div>
+
+        <div className="sh-tabs">
           <button
-            style={{ ...styles.btn, background: "#86efac", fontWeight: 800 }}
-            onClick={login}
+            className={mode === "login" ? "is-on" : ""}
+            onClick={() => setMode("login")}
           >
             ورود
           </button>
-        </div>
-      ) : (
-        <div style={{ marginTop: 12, display: "grid", gap: 8 }}>
-          <input
-            placeholder="نام"
-            value={form.name}
-            onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-          />
-          <input
-            placeholder="نام مستعار در بازی"
-            value={form.username}
-            onChange={(e) =>
-              setForm((f) => ({ ...f, username: e.target.value }))
-            }
-          />
-          <input
-            placeholder="ایمیل"
-            value={form.email}
-            onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
-          />
-          <input
-            placeholder="رمز عبور (حداقل 6 کاراکتر)"
-            type="password"
-            value={form.password}
-            onChange={(e) =>
-              setForm((f) => ({ ...f, password: e.target.value }))
-            }
-          />
-          <input
-            placeholder="موبایل (اختیاری)"
-            value={form.phone}
-            onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
-          />
-          <input
-            placeholder="آواتار (اختیاری)"
-            value={form.avatarUrl}
-            onChange={(e) =>
-              setForm((f) => ({ ...f, avatarUrl: e.target.value }))
-            }
-          />
           <button
-            style={{ ...styles.btn, background: "#86efac", fontWeight: 800 }}
-            onClick={register}
+            className={mode === "register" ? "is-on" : ""}
+            onClick={() => setMode("register")}
           >
             ثبت نام
           </button>
         </div>
-      )}
+
+        {mode === "login" ? (
+          <div>
+            <div className="sh-fld">
+              <label htmlFor="sh-lUser">نام کاربری یا ایمیل</label>
+              <input
+                id="sh-lUser"
+                autoComplete="username"
+                value={form.usernameOrEmail}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, usernameOrEmail: e.target.value }))
+                }
+              />
+            </div>
+            <div className="sh-fld">
+              <label htmlFor="sh-lPw">رمز عبور</label>
+              <div className="sh-wrap">
+                <input
+                  id="sh-lPw"
+                  type={showPw ? "text" : "password"}
+                  autoComplete="current-password"
+                  value={form.password}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, password: e.target.value }))
+                  }
+                  onKeyDown={(e) => e.key === "Enter" && login()}
+                />
+                <button
+                  type="button"
+                  className="sh-eye"
+                  onClick={() => setShowPw((v) => !v)}
+                  aria-label="نمایش رمز"
+                >
+                  {showPw ? "🙈" : "👁"}
+                </button>
+              </div>
+            </div>
+            <button
+              className="sh-btn sh-btn--gold"
+              style={{ width: "100%", marginTop: 6, minHeight: 48, fontSize: 15 }}
+              onClick={login}
+            >
+              ورود
+            </button>
+            <div className="sh-authfoot">
+              حساب نداری؟{" "}
+              <button
+                type="button"
+                className="sh-linkbtn"
+                onClick={() => setMode("register")}
+              >
+                ثبت نام کن
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div>
+            <div className="sh-avpick">
+              <label className="sh-avbig" htmlFor="sh-rPhoto">
+                {avaPreview ? (
+                  <img src={avaPreview} alt="" />
+                ) : (
+                  <span
+                    style={{
+                      width: "100%",
+                      height: "100%",
+                      borderRadius: "50%",
+                      background: "#223040",
+                      display: "grid",
+                      placeItems: "center",
+                      fontSize: 24,
+                      fontWeight: 800,
+                    }}
+                  >
+                    {initials}
+                  </span>
+                )}
+                <span className="sh-cam">{busy ? "…" : "📷"}</span>
+              </label>
+              <input
+                id="sh-rPhoto"
+                type="file"
+                accept="image/*"
+                hidden
+                onChange={(e) => pickAvatar(e.target.files && e.target.files[0])}
+              />
+              <span className="sh-opt">عکس پروفایل — اختیاری</span>
+            </div>
+
+            <div className="sh-fld">
+              <label htmlFor="sh-rName">نام</label>
+              <input
+                id="sh-rName"
+                value={form.name}
+                onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+              />
+            </div>
+            <div className="sh-fld">
+              <label htmlFor="sh-rUser">نام کاربری</label>
+              <input
+                id="sh-rUser"
+                value={form.username}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, username: e.target.value }))
+                }
+              />
+              <div className="sh-hint">
+                بعداً قابل تغییر نیست. نام نمایشی سر میز را می‌توانی هر وقت عوض کنی.
+              </div>
+            </div>
+            <div className="sh-fld">
+              <label htmlFor="sh-rMail">ایمیل</label>
+              <input
+                id="sh-rMail"
+                type="email"
+                value={form.email}
+                onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+              />
+            </div>
+            <div className="sh-fld">
+              <label htmlFor="sh-rPhone">
+                شماره تماس <span className="sh-opt">اختیاری</span>
+              </label>
+              <input
+                id="sh-rPhone"
+                type="tel"
+                inputMode="tel"
+                value={form.phone}
+                onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
+              />
+            </div>
+            <div className="sh-fld">
+              <label htmlFor="sh-rPw">رمز عبور</label>
+              <div className="sh-wrap">
+                <input
+                  id="sh-rPw"
+                  type={showPw ? "text" : "password"}
+                  autoComplete="new-password"
+                  value={form.password}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, password: e.target.value }))
+                  }
+                />
+                <button
+                  type="button"
+                  className="sh-eye"
+                  onClick={() => setShowPw((v) => !v)}
+                  aria-label="نمایش رمز"
+                >
+                  {showPw ? "🙈" : "👁"}
+                </button>
+              </div>
+            </div>
+
+            <button
+              className="sh-btn sh-btn--gold"
+              style={{ width: "100%", marginTop: 6, minHeight: 48, fontSize: 15 }}
+              onClick={register}
+            >
+              ساختن حساب
+            </button>
+            <div className="sh-authfoot">
+              حساب داری؟{" "}
+              <button
+                type="button"
+                className="sh-linkbtn"
+                onClick={() => setMode("login")}
+              >
+                وارد شو
+              </button>
+            </div>
+          </div>
+        )}
+
+        {err ? <div className="sh-msg sh-msg--err">{err}</div> : null}
+      </div>
     </div>
   );
 }
@@ -910,6 +1030,200 @@ function PairStatsPanel({ pairs }) {
   );
 }
 
+// --- Profil: Foto, Anzeigename, Kontaktdaten, Passwort, Level ----------------
+function ProfileSheet({ auth, onClose, onSaved, level }) {
+  const profile = auth?.profile || {};
+  const [nick, setNick] = React.useState(profile.name || "");
+  const [mail, setMail] = React.useState(profile.email || "");
+  const [ava, setAva] = React.useState(profile.avatarUrl || null);
+  const [pw0, setPw0] = React.useState("");
+  const [pw1, setPw1] = React.useState("");
+  const [pw2, setPw2] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+  const [msg, setMsg] = React.useState(null);
+
+  const preview = ava
+    ? ava.startsWith("http") || ava.startsWith("data:")
+      ? ava
+      : `${API_BASE}${ava}`
+    : null;
+
+  const pickPhoto = async (file) => {
+    if (!file) return;
+    setBusy(true);
+    setMsg(null);
+    try {
+      const fd = new FormData();
+      fd.append("avatar", file);
+      const res = await fetch(`${API_BASE}/api/upload-avatar`, {
+        method: "POST",
+        body: fd,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "Upload fehlgeschlagen");
+      setAva(data.url);
+    } catch (e) {
+      setMsg({ ok: false, text: e.message });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const save = async () => {
+    if (pw1 && pw1 !== pw2) {
+      setMsg({ ok: false, text: "تکرار رمز جدید یکسان نیست" });
+      return;
+    }
+    setBusy(true);
+    setMsg(null);
+    try {
+      const res = await fetch(`${API_BASE}/api/me`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${auth.token}`,
+        },
+        body: JSON.stringify({
+          name: nick,
+          email: mail,
+          avatarUrl: ava,
+          currentPassword: pw0 || undefined,
+          newPassword: pw1 || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "ذخیره نشد");
+      onSaved(data.profile);
+      setPw0("");
+      setPw1("");
+      setPw2("");
+      setMsg({ ok: true, text: "ذخیره شد" });
+    } catch (e) {
+      setMsg({ ok: false, text: e.message });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div
+      className="sh-sheet"
+      onClick={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <div className="sh-sheetbox">
+        <div className="sh-sheethd">
+          <h2>پروفایل</h2>
+          <button className="sh-xbtn" onClick={onClose}>
+            ✕
+          </button>
+        </div>
+
+        <div className="sh-avarea">
+          <label className="sh-avbig" htmlFor="sh-pPhoto" style={{ width: 104, height: 104 }}>
+            {preview ? (
+              <img src={preview} alt="" />
+            ) : (
+              <span className="sh-ph" style={{ width: "100%", height: "100%", fontSize: 26 }}>
+                {initialsOf(profile)}
+              </span>
+            )}
+            <span className="sh-cam">{busy ? "…" : "📷"}</span>
+          </label>
+          <input
+            id="sh-pPhoto"
+            type="file"
+            accept="image/*"
+            hidden
+            onChange={(e) => pickPhoto(e.target.files && e.target.files[0])}
+          />
+          {level != null && (
+            <div className="sh-lvbox">
+              <span className="sh-pill">Lv {level}</span>
+            </div>
+          )}
+        </div>
+
+        <fieldset className="sh-fset">
+          <legend>مشخصات</legend>
+          <div className="sh-fld">
+            <label htmlFor="sh-nick">نام نمایشی</label>
+            <input
+              id="sh-nick"
+              maxLength={40}
+              value={nick}
+              onChange={(e) => setNick(e.target.value)}
+            />
+            <div className="sh-hint">
+              این نامی است که سر میز به بقیه نشان داده می‌شود.
+            </div>
+          </div>
+          <div className="sh-fld">
+            <label htmlFor="sh-uname">نام کاربری</label>
+            <input id="sh-uname" value={profile.username || ""} disabled />
+            <div className="sh-hint">قابل تغییر نیست.</div>
+          </div>
+          <div className="sh-fld">
+            <label htmlFor="sh-mail">ایمیل</label>
+            <input
+              id="sh-mail"
+              type="email"
+              value={mail}
+              onChange={(e) => setMail(e.target.value)}
+            />
+          </div>
+        </fieldset>
+
+        <fieldset className="sh-fset">
+          <legend>تغییر رمز عبور</legend>
+          <div className="sh-fld">
+            <label htmlFor="sh-pw0">رمز فعلی</label>
+            <input
+              id="sh-pw0"
+              type="password"
+              value={pw0}
+              onChange={(e) => setPw0(e.target.value)}
+            />
+          </div>
+          <div className="sh-fld">
+            <label htmlFor="sh-pw1">رمز جدید</label>
+            <input
+              id="sh-pw1"
+              type="password"
+              placeholder="حداقل ۸ نویسه"
+              value={pw1}
+              onChange={(e) => setPw1(e.target.value)}
+            />
+          </div>
+          <div className="sh-fld">
+            <label htmlFor="sh-pw2">تکرار رمز جدید</label>
+            <input
+              id="sh-pw2"
+              type="password"
+              value={pw2}
+              onChange={(e) => setPw2(e.target.value)}
+            />
+          </div>
+        </fieldset>
+
+        <div className="sh-sheetft">
+          <button className="sh-btn" onClick={onClose}>
+            انصراف
+          </button>
+          <button className="sh-btn sh-btn--gold" onClick={save} disabled={busy}>
+            {busy ? "…" : "ذخیره"}
+          </button>
+        </div>
+
+        {msg && (
+          <div className={"sh-msg " + (msg.ok ? "sh-msg--ok" : "sh-msg--err")}>
+            {msg.text}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function App() {
   const [hand, setHand] = useState([]);
   const [players, setPlayers] = useState([]);
@@ -945,6 +1259,9 @@ function App() {
   const [roundPointsLive, setRoundPointsLive] = useState({ Fire: 0, Storm: 0 });
   const [showStats, setShowStats] = useState(false);
   const [showRecap, setShowRecap] = useState(false);
+  const [showProfile, setShowProfile] = useState(false);
+
+
   // Statistik-Reiter: Runden | Spieler-Level | Partner-Statistik
   const [statsTab, setStatsTab] = useState("rounds");
   const [overview, setOverview] = useState({ players: [], pairs: [] });
@@ -987,6 +1304,7 @@ function App() {
       }
     })(),
   });
+
   // Token vorhanden → Profil serverseitig verifizieren (kommt aus DB)
   useEffect(() => {
     if (!auth?.token) return;
@@ -1114,23 +1432,8 @@ function App() {
   );
   const canStartRandom = !randomTeams && !anyChosen && isFirstPlayer;
 
-  // responsive Kartengröße für den Tisch (63:88 Verhältnis)
-  const trickAreaRef = useRef(null);
-  const [cardSize, setCardSize] = useState({ w: 72, h: 100 });
-
-  useEffect(() => {
-    const el = trickAreaRef.current;
-    if (!el) return;
-    const ro = new ResizeObserver(([entry]) => {
-      const { width, height } = entry.contentRect;
-      const base = Math.min(width, height); // an Tisch-Mitte ausrichten
-      const w = Math.round(Math.max(48, Math.min(110, base * 0.22))); // clamp
-      const h = Math.round(w * (88 / 63));
-      setCardSize({ w, h });
-    });
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
+  // Die Kartengröße kommt jetzt aus theme.css (--card-w / --card-h) und
+  // skaliert per clamp() mit dem Viewport - der ResizeObserver entfällt.
 
   // Varianten wie am Server
   const VARIANTS = { UNDECIDED: "UNDECIDED", NORMAL: "NORMAL", FLIP: "FLIP" };
@@ -1715,115 +2018,54 @@ function App() {
   const seated = getSeatingOrder();
 
   // --- PlayerBox (zeigt Krone oben außen, Trumpf unten außen oder "Flip"-Badge)
-  const PlayerBox = ({ p, youLabel }) => {
-    if (!p) return <div />;
+  // Ein Sitz am Tisch: Name ÜBER dem Kreis, Foto IM Kreis.
+  // Team steckt nur noch in der Ringfarbe - keine Text-Chips mehr.
+  const PlayerBox = ({ p, side = "s", youLabel }) => {
+    if (!p) {
+      return (
+        <div className={"sh-seat sh-seat--" + side}>
+          <span className="sh-name" style={{ opacity: 0.45 }}>
+            — آزاد —
+          </span>
+          <span className="sh-ring" style={{ background: "#2a3644" }}>
+            <span className="sh-ph" />
+          </span>
+        </div>
+      );
+    }
 
-    // ACHTUNG: diese Props/States müssen in App() existieren:
-    // - styles.playerBoxBase (mit overflow:"visible")
-    // - currentPlayer (für Zug-Highlight)
-    // - judgeId (id des Richters; aus trumpfSetter oder biddingWinner)
-    // - trumpf (z.B. "♠" | "♥" | "♣" | "♦" oder null)
-    // - roundVariant (VARIANTS.NORMAL | VARIANTS.FLIP | VARIANTS.UNDECIDED)
+    const kind = p.team === "Fire" ? "fire" : "storm";
+    const isTurn = currentPlayer && currentPlayer.id === p.id;
+    const isJudge = judgeId && p.id === judgeId;
 
-    const boxStyle = {
-      ...styles.playerBoxBase,
-      ...(p.team === "Fire" ? styles.fire : styles.storm),
-      ...(currentPlayer && currentPlayer.id === p.id ? styles.turn : {}),
-    };
-
-    const isJudge = judgeId === p.id;
+    // Reihenfolge der Abzeichen: Auktion zeigt پاس/Gebot, danach حاکم.
+    let badge = null;
+    if (biddingActive && !biddingWinner) {
+      if (p.passed) badge = { text: "پاس", kind: "pass" };
+      else if (p.lastBid) badge = { text: String(p.lastBid), kind: "bid" };
+    } else if (isJudge) {
+      badge = { text: "حاکم", kind: "judge" };
+    }
 
     return (
-      <div style={boxStyle}>
-        {/* 👑 oben außen */}
-        {isJudge && (
-          <div
-            style={{
-              position: "absolute",
-              top: 0,
-              left: "50%",
-              transform: "translate(-50%, -82%)",
-              pointerEvents: "none",
-              zIndex: 40,
-              filter: "drop-shadow(0 2px 6px rgba(0,0,0,.35))",
-            }}
-            aria-hidden
-          >
-            <CrownIcon size={44} />
-          </div>
-        )}
-
-        {/* Bei FLIP: Badge unten außen */}
-        {isJudge && roundVariant === VARIANTS.FLIP && (
-          <div
-            style={{
-              position: "absolute",
-              bottom: 0,
-              left: "50%",
-              transform: "translate(-50%, 66%)",
-              pointerEvents: "none",
-              zIndex: 40,
-              background: "#111",
-              color: "#fff",
-              padding: "4px 10px",
-              borderRadius: 999,
-              fontWeight: 900,
-              fontSize: 12,
-              boxShadow: "0 2px 6px rgba(0,0,0,.25)",
-              border: "1px solid rgba(255,255,255,.25)",
-            }}
-            aria-hidden
-            title="Flip"
-          >
-            نرس
-          </div>
-        )}
-
-        {/* Name + (Du) */}
-        <div style={{ fontWeight: 900, fontSize: 12 }}>
+      <div
+        className={
+          "sh-seat sh-seat--" + side + " sh-seat--" + kind +
+          (isTurn ? " is-active" : "")
+        }
+      >
+        <span className="sh-name">
           {p.username || p.name}
-        </div>
-
-        {/* Bietindikatoren nur während Auktion */}
-        {biddingActive &&
-          !biddingWinner &&
-          (p.passed ? (
-            <div
-              style={{
-                position: "absolute",
-                top: "-10px",
-                right: "-10px",
-                background: "#ef4444",
-                color: "#fff",
-                fontWeight: 900,
-                fontSize: 11,
-                padding: "2px 6px",
-                borderRadius: 8,
-                boxShadow: "0 2px 6px rgba(0,0,0,.25)",
-              }}
-              title="Pass"
-            >
-              پاس
-            </div>
-          ) : p.lastBid ? (
-            <div
-              style={{
-                position: "absolute",
-                top: "-10px",
-                right: "-10px",
-                background: "#22c55e",
-                color: "#052e12",
-                fontWeight: 900,
-                fontSize: 11,
-                padding: "2px 6px",
-                borderRadius: 8,
-                boxShadow: "0 2px 6px rgba(0,0,0,.25)",
-              }}
-              title="Letztes Gebot"
-            >
-              {p.lastBid}
-            </div>
-          ) : null)}
+          {youLabel ? " · تو" : ""}
+        </span>
+        <span className="sh-ring">
+          <Avatar user={p} size="100%" />
+          {badge && (
+            <span className={"sh-badge sh-badge--" + badge.kind}>
+              {badge.text}
+            </span>
+          )}
+        </span>
       </div>
     );
   };
@@ -2107,292 +2349,154 @@ function App() {
         const seatsAllEmpty =
           !seatMap[1] && !seatMap[2] && !seatMap[3] && !seatMap[4];
         const mySeat = me?.seatPosition || null;
+        const takenCount = [1, 2, 3, 4].filter((i) => seatMap[i]).length;
 
+        // Sitze 1+3 = آتش, 2+4 = طوفان — Partner sitzen gegenüber.
         const SEAT_TEAMS = { 1: "آتش", 2: "طوفان", 3: "آتش", 4: "طوفان" };
-        const seatLabel = (i) => `(${i}) تیم ${SEAT_TEAMS[i]}`;
+        const SEAT_SIDE = { 3: "n", 2: "e", 4: "w", 1: "s" };
 
-        // die Größe der Sitzboxen ändern
-        const SEAT_BOX_WIDTH = 90; // Breite der Box
-        const SEAT_FONT_SIZE = 9; // Basisschriftgröße
-
-        // gleiche Funktionalität, nur anders platziert
-        const seatStyle = (i) => ({
-          width: SEAT_BOX_WIDTH,
-          maxWidth: "100%",
-          borderRadius: 12,
-          padding: 8,
-          border: "2px solid #e5e7eb",
-          background: SEAT_TEAMS[i] === "آتش" ? "#ffe4e6" : "#eff6ff",
-          boxShadow: "0 2px 6px rgba(0,0,0,0.1)",
-          fontSize: SEAT_FONT_SIZE,
-        });
-
-        const seatButtonStyle = (disabled) => ({
-          ...styles.btn,
-          background: disabled ? "#e5e7eb" : "#dcfce7",
-          cursor: disabled ? "not-allowed" : "pointer",
-          width: "100%",
-          fontWeight: 800,
-          fontSize: SEAT_FONT_SIZE,
-          padding: "6px 8px",
-        });
-
-        const renderSeat = (i, posStyle) => {
-          const occupant = seatMap[i];
-          const mine = mySeat === i;
-          const occupiedByOther = occupant && occupant.id !== me?.id;
+        const renderSeat = (i) => {
+          const team = SEAT_TEAMS[i];
+          const kind = team === "آتش" ? "fire" : "storm";
+          const occ = seatMap[i];
+          const mine = !!occ && occ.seatPosition === mySeat && occ.id === me?.id;
+          const occupiedByOther = !!occ && !mine;
 
           return (
             <div
               key={i}
-              style={{
-                position: "absolute",
-                ...posStyle,
-              }}
+              className={
+                "sh-seat sh-seat--" + SEAT_SIDE[i] + (mine ? " is-mine" : "")
+              }
             >
-              <div style={seatStyle(i)}>
-                <div style={{ fontWeight: 900, fontSize: SEAT_FONT_SIZE + 1 }}>
-                  {seatLabel(i)}
-                </div>
-                <div
-                  style={{
-                    marginTop: 4,
-                    padding: "6px 8px",
-                    borderRadius: 8,
-                    background: "#fff",
-                    border: "1px solid #e5e7eb",
-                    minHeight: 30,
-                    display: "flex",
-                    alignItems: "center",
-                    fontSize: SEAT_FONT_SIZE,
-                    justifyContent: "center",
-                    fontWeight: 800,
-                  }}
-                >
-                  {occupant ? occupant.username : "— آزاد —"}
+              <div className={"sh-seatbox sh-seatbox--" + kind}>
+                <div className="sh-hd">
+                  ({faNum(i)}) تیم {team}
                 </div>
 
-                <div style={{ marginTop: 0, display: "flex", gap: 0 }}>
-                  <button
-                    style={seatButtonStyle(occupiedByOther)}
-                    disabled={occupiedByOther}
-                    onClick={() => socket.emit("chooseSeat", { seat: i })}
-                    title={
-                      occupiedByOther
-                        ? "Platz ist belegt."
-                        : "اینجا بنشین / تغییر مکان"
-                    }
-                  >
-                    {occupiedByOther
-                      ? "Belegt"
-                      : mine
-                      ? "اینجا نشسته ام"
-                      : "اینجا بنشین"}
-                  </button>
-
-                  {mine && (
-                    <button
-                      style={{
-                        ...styles.btn,
-                        background: "#fde68a",
-                        fontWeight: 800,
-                        fontSize: SEAT_FONT_SIZE,
-                        padding: "6px 8px",
-                      }}
-                      onClick={() => socket.emit("leaveSeat")}
-                      title="Diesen Platz freigeben"
-                    >
-                      آزاد کردن
-                    </button>
+                <div className={"sh-who" + (occ ? "" : " is-free")}>
+                  {occ ? (
+                    <>
+                      <Avatar user={occ} size={32} />
+                      <span>{occ.username || occ.name}</span>
+                    </>
+                  ) : (
+                    "— آزاد —"
                   )}
                 </div>
+
+                <button
+                  className={"sh-sbtn" + (mine ? " sh-sbtn--leave" : "")}
+                  disabled={occupiedByOther}
+                  onClick={() =>
+                    mine
+                      ? socket.emit("leaveSeat")
+                      : socket.emit("chooseSeat", { seat: i })
+                  }
+                  title={
+                    occupiedByOther
+                      ? "Platz ist belegt"
+                      : mine
+                      ? "Diesen Platz freigeben"
+                      : "اینجا بنشین"
+                  }
+                >
+                  {mine ? "آزاد کردن" : occupiedByOther ? "اشغال شده" : "اینجا بنشین"}
+                </button>
               </div>
             </div>
           );
         };
 
         return (
-          <div style={styles.card}>
-            {/* Joker-Option nur vor Rundenstart */}
-            <div
-              style={{
-                marginTop: 0,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: 8,
-                flexWrap: "wrap",
-              }}
-            >
-              <label
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                  fontSize: 14,
-                  padding: "4px 8x",
-                  borderRadius: 6,
-                  backgroundColor: includeJokers ? "#064e3b" : "#065f46", // z.B. dunkles Grün vs. Grau
-                  color: "white", // Schriftfarbe
-                }}
-              >
-                <input
-                  type="checkbox"
-                  checked={includeJokers}
-                  disabled={!isFirstPlayer}
-                  onChange={(e) =>
-                    socket.emit("setIncludeJokers", { value: e.target.checked })
-                  }
-                />
-                <span>بازی با جوکر</span>
-              </label>
-
-              {/*  Rundenpunkte sichtbar / unsichtbar */}
-              <label
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                  fontSize: 12,
-                  padding: "4px 8x",
-                  borderRadius: 6,
-                  backgroundColor: showRoundPoints ? "#064e3b" : "#065f46", // z.B. dunkles Grün vs. Grau
-                  color: "white", // Schriftfarbe
-                }}
-              >
-                <input
-                  type="checkbox"
-                  checked={showRoundPoints}
-                  disabled={!isFirstPlayer}
-                  onChange={(e) =>
-                    socket.emit("setShowRoundPoints", {
-                      value: e.target.checked,
-                    })
-                  }
-                />
-
-                <span>نمایش امتیاز دست‌ها</span>
-              </label>
-
-              {!isFirstPlayer &&
-                ((<span></span>),
-                (
-                  <span
-                    style={{
-                      fontSize: 11,
-                      opacity: 0.7,
-                      color: "white",
-                      textAlign: "center",
-                    }}
-                  >
-                    فقط بازیکن اول می‌تواند این گزینه ها را عوض کند
-                  </span>
-                ))}
+          <div className="sh-seats">
+            <div className="sh-tablewrap">
+              <div className="sh-table">
+                <div className="sh-tablecore">
+                  <div>
+                    <div className="sh-t">میز</div>
+                    <div className="sh-s">
+                      {faNum(takenCount)} از ۴ نفر نشسته‌اند
+                    </div>
+                  </div>
+                </div>
+                <div className="sh-seatgrid">
+                  {[3, 4, 2, 1].map((i) => renderSeat(i))}
+                </div>
+              </div>
             </div>
 
-            {/* Random nur für ersten Spieler und nur wenn alle Plätze leer */}
-            {isFirstPlayer && seatsAllEmpty && (
-              <div style={{ marginTop: 8, textAlign: "center" }}>
+            <div className="sh-optpanel">
+              <div
+                className={
+                  "sh-switchrow" + (isFirstPlayer ? "" : " is-locked")
+                }
+                onClick={() =>
+                  isFirstPlayer &&
+                  socket.emit("setIncludeJokers", { value: !includeJokers })
+                }
+              >
+                <span className={"sh-sw" + (includeJokers ? " is-on" : "")} />
+                <span className="sh-txt">
+                  بازی با جوکر
+                  <small>دو جوکر به دسته اضافه می‌شود</small>
+                </span>
+              </div>
+
+              <div
+                className={
+                  "sh-switchrow" + (isFirstPlayer ? "" : " is-locked")
+                }
+                onClick={() =>
+                  isFirstPlayer &&
+                  socket.emit("setShowRoundPoints", { value: !showRoundPoints })
+                }
+              >
+                <span className={"sh-sw" + (showRoundPoints ? " is-on" : "")} />
+                <span className="sh-txt">
+                  نمایش امتیاز دست‌ها
+                  <small>امتیاز تیم مقابلِ حاکم در جریان دست نشان داده می‌شود</small>
+                </span>
+              </div>
+
+              {!isFirstPlayer && (
+                <div className="sh-lockhint">
+                  فقط بازیکن اول می‌تواند این گزینه‌ها را عوض کند
+                </div>
+              )}
+            </div>
+
+            <div className="sh-row" style={{ marginTop: 14 }}>
+              {isFirstPlayer && seatsAllEmpty && (
                 <button
-                  style={{ ...styles.btn, ...styles.btnGreen }}
+                  className="sh-btn"
                   onClick={() => socket.emit("chooseTeam", "Random")}
                   title="Zufällig und balanciert auf freie Plätze verteilen"
                 >
-                  انتخاب تیم تصادفی
+                  🎲 انتخاب تیم تصادفی
                 </button>
-              </div>
-            )}
+              )}
 
-            {/* NEUES Layout: Sitze wie am Tisch (oben/unten/links/rechts) */}
-            <div
-              style={{
-                marginTop: 4,
-                display: "flex",
-                justifyContent: "center",
-              }}
-            >
-              <div
-                style={{
-                  position: "relative",
-                  width: 300,
-                  maxWidth: "100%",
-                  height: 390,
-                  margin: "0 auto",
-                }}
-              >
-                {/* Mini-Tisch in der Mitte (nur Deko) */}
-                <div
-                  style={{
-                    position: "absolute",
-                    top: "50%",
-                    left: "50%",
-                    transform: "translate(-50%, -50%)",
-                    width: 120,
-                    height: 80,
-                    borderRadius: 16,
-                    background: "#065f46",
-                    border: "2px solid #10b981",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    fontSize: 12,
-                    color: "#fff",
-                    opacity: 0.85,
-                  }}
-                >
-                  میز
-                </div>
-
-                {/* oben = Sitz 3 */}
-                {renderSeat(3, {
-                  top: 0,
-                  left: "50%",
-                  transform: "translate(-50%, 0)",
-                })}
-
-                {/* unten = Sitz 1 */}
-                {renderSeat(1, {
-                  bottom: 0,
-                  left: "50%",
-                  transform: "translate(-50%, 0)",
-                })}
-
-                {/* links = Sitz 4 */}
-                {renderSeat(4, {
-                  top: "50%",
-                  left: 0,
-                  transform: "translate(0, -50%)",
-                })}
-
-                {/* rechts = Sitz 2 */}
-                {renderSeat(2, {
-                  top: "50%",
-                  right: 0,
-                  transform: "translate(0, -50%)",
-                })}
-              </div>
-            </div>
-
-            {/* Manuelles Starten: sichtbar für alle, sobald 4/4 sitzen */}
-            {seatsAllFilled && isFirstPlayer && (
-              <div style={{ marginTop: 12, textAlign: "center" }}>
+              {isFirstPlayer ? (
                 <button
-                  style={{
-                    ...styles.btn,
-                    background: "#86efac",
-                    fontWeight: 900,
-                  }}
+                  className="sh-btn sh-btn--gold"
+                  style={{ minWidth: 180, minHeight: 48 }}
+                  disabled={!seatsAllFilled}
                   onClick={() => socket.emit("startGame")}
                   title="Spiel starten"
                 >
-                  شروع بازی
+                  {seatsAllFilled
+                    ? "شروع بازی"
+                    : `منتظر ${faNum(4 - takenCount)} بازیکن دیگر`}
                 </button>
-
-                <div style={{ marginTop: 6, fontSize: 12, color: "#fafafaff" }}>
-                  ناخدا⚓ : بادبان ها را بکشید
+              ) : (
+                <div className="sh-lockhint" style={{ border: 0, marginTop: 0 }}>
+                  {seatsAllFilled
+                    ? "منتظر شروع بازی توسط بازیکن اول"
+                    : `منتظر ${faNum(4 - takenCount)} بازیکن دیگر`}
                 </div>
-              </div>
-            )}
+              )}
+            </div>
           </div>
         );
       })()
@@ -2444,89 +2548,80 @@ function App() {
   // direkt über dem JSX vom Bieten-Modal
   const maxBid = includeJokers ? 200 : 165;
   const minBid = Math.max(100, currentBid + 5);
-  const handOverlapPx = -8 - hand.length * 1.3;
   // -8 ist fast keine Überlappung
   // 1.3 bestimmt, wie stark es bei vielen Karten zusammenrückt
   return (
-    <div style={styles.page}>
+    <div className="sh-root" style={{ ...styles.page, background: "transparent" }}>
       {!auth?.token ? (
         <AuthGate onAuthed={setAuth} />
       ) : (
         <>
-          <div
-            style={{
-              maxWidth: "min(92vw, 900px)",
-              margin: "0 auto 8px",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: 0,
-            }}
-          >
-            <div style={{ fontSize: 14, display: "flex", alignItems: "center", gap: 8 }}>
-              <span>👤 {auth.profile?.username || auth.profile?.name || "?"}</span>
-              {myStats && (
-                <button
-                  onClick={() => {
-                    setStatsTab("players");
-                    setShowStats(true);
-                  }}
-                  style={{ border: "none", background: "transparent", padding: 0, cursor: "pointer" }}
-                  title={`${myStats.xp} XP · ${myStats.gamesWon}/${myStats.gamesPlayed} بازی برده`}
-                >
-                  <LevelBadge level={myStats.level} title={myStats.title} small />
-                </button>
-              )}
-            </div>
-
-            {/* Rechts: Statistik, Neues Spiel, Logout */}
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
-              }}
-            >
+          <div className="sh-app" style={{ paddingBottom: 0 }}>
+            <div className="sh-topbar">
               <button
-                style={{
-                  ...styles.btn,
-                  padding: "6px 10px",
-                  borderRadius: 999,
-                  fontWeight: 700,
-                }}
-                onClick={() => setShowStats(true)}
+                className="sh-mechip"
+                onClick={() => setShowProfile(true)}
+                title="پروفایل"
               >
-                آمار
+                <Avatar user={auth?.profile} size={34} />
+                <span className="sh-nm">
+                  {auth?.profile?.username || auth?.profile?.name || "بازیکن"}
+                </span>
+                {myStats && (
+                  <span
+                    className="sh-lv"
+                    title={`${myStats.xp} XP · ${myStats.gamesWon}/${myStats.gamesPlayed} بازی برده`}
+                  >
+                    <LevelBadge level={myStats.level} title={myStats.title} small />
+                  </span>
+                )}
+              </button>
+
+              <span className="sh-grow" />
+
+              {paused && (
+                <span className="sh-lv" title="بازی متوقف است">
+                  ⏸ توقف
+                </span>
+              )}
+
+              <button className="sh-btn" onClick={() => setShowStats(true)}>
+                📊 آمار
               </button>
 
               {isFirstPlayer && (
                 <button
-                  style={{
-                    ...styles.btn,
-                    padding: "6px 10px",
-                    borderRadius: 999,
-                    fontWeight: 700,
-                  }}
+                  className="sh-btn"
                   onClick={() => socket.emit("resetGame")}
-                  title="Spiel komplett zurücksetzen (ohne Spieler zu entfernen)"
+                  title="بازی جدید"
                 >
-                  بازی جدید
+                  ♻ بازی جدید
                 </button>
               )}
+
               <button
+                className="sh-btn sh-btn--red"
                 onClick={handleLogout}
                 title="خروج از حساب"
-                style={{
-                  ...styles.btn,
-                  padding: "6px 10px",
-                  borderRadius: 999,
-                  fontWeight: 800,
-                }}
               >
-                ⎋ خروج
+                خروج
               </button>
             </div>
           </div>
+
+          {showProfile && (
+            <ProfileSheet
+              auth={auth}
+              level={myStats?.level ?? null}
+              onClose={() => setShowProfile(false)}
+              onSaved={(profile) => {
+                setAuth((a) => ({ ...a, profile }));
+                localStorage.setItem("shelem_profile", JSON.stringify(profile));
+                // Name/Bild sofort auch am Tisch aktualisieren
+                socket.emit("register", { clientId: profile.id, name: profile.name });
+              }}
+            />
+          )}
 
           {/* Popup Boden-Karten */}
           {showBottom && (
@@ -2785,333 +2880,163 @@ function App() {
               es, dass ich selbst einen Sitzplatz habe - Mitspieler ohne
               aktuellen Sitz werden von getSeatingOrder()/PlayerBox einfach
               als leere Stelle gerendert. */}
-          {(players.length === 4 || me?.seatPosition) && (
-            <div style={styles.tableWrap}>
-              {/* HUD Gesamt- und Rundenpunkte */}
-              {/* HUD Gesamt- und Rundenpunkte */}
-              <div style={styles.hudGrid}>
-                {/* Fire – Gesamt + Hand, rot */}
+          {/* Tisch und Sitzauswahl schließen sich jetzt gegenseitig aus.
+              Vorher standen beide gleichzeitig im DOM - mit dem großen
+              ovalen Tisch sah man dadurch zwei Tische untereinander. */}
+          {!roundNotStarted && (players.length === 4 || me?.seatPosition) && (
+            <>
+              {/* --- Punktestand: Gebot und Rundenpunkte gehören dem TEAM --- */}
+              {(() => {
+                const judge = (players || []).find((p) => p.id === judgeId);
+                const declTeam = judge ? judge.team : null;          // "Fire" | "Storm"
+                const oppTeam =
+                  declTeam === "Fire" ? "Storm" : declTeam === "Storm" ? "Fire" : null;
+                const label = (t) => (t === "Fire" ? "آتش" : "طوفان");
+                const kind = (t) => (t === "Fire" ? "fire" : "storm");
+                const pctOf = (v) =>
+                  Math.max(0, Math.min(100, ((Number(v) || 0) / 1165) * 100));
 
-                <div style={styles.hudTL}>
-                  <div
-                    style={{
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: 4,
-                    }}
-                  >
-                    {/* Gesamtpunkte Fire */}
-                    <span
-                      style={{
-                        ...styles.hudPill,
-                        background: "rgba(243, 61, 61, 0.67)", // rot-transparent
-                        borderColor: "#fecaca",
-                      }}
-                    >
-                      آتش: {scores.Fire}
-                    </span>
+                return (
+                  <>
+                    <div className="sh-scorebar">
+                      <span className="sh-team sh-team--fire">
+                        <span className="sh-dot" />
+                        آتش <span className="sh-n">{scores.Fire}</span>
+                      </span>
+                      <div className="sh-track">
+                        <i className="sh-fire" style={{ width: pctOf(scores.Fire) + "%" }} />
+                      </div>
 
-                    {/* Fire Punkte dieser Runde */}
-                    {showRoundPoints &&
-                      (judgeId &&
-                      players.find((p) => p.id === judgeId)?.team ===
-                        "Fire" ? null : (
-                        <span
-                          style={{
-                            ...styles.hudPill,
-                            background: "rgba(243, 61, 61, 0.67)",
-                            borderColor: "#fecaca",
-                            fontSize: 12,
-                          }}
-                        >
-                          دست: {roundPointsLive.Fire}
+                      <span className="sh-goal">
+                        هدف <b>{currentBid || "—"}</b>
+                        {declTeam && (
+                          <span className={"sh-decl sh-decl--" + kind(declTeam)}>
+                            {label(declTeam)}
+                          </span>
+                        )}
+                      </span>
+
+                      <div className="sh-track">
+                        <i className="sh-storm" style={{ width: pctOf(scores.Storm) + "%" }} />
+                      </div>
+                      <span className="sh-team sh-team--storm">
+                        <span className="sh-n">{scores.Storm}</span> طوفان
+                        <span className="sh-dot" />
+                      </span>
+                    </div>
+
+                    {/* Nur die Punkte des GEGNERteams, und nur wenn die Option
+                        aktiv ist. Ist sie aus, erscheint die Zeile gar nicht. */}
+                    {showRoundPoints && oppTeam && (
+                      <div className={"sh-roundpts sh-roundpts--" + kind(oppTeam)}>
+                        <span className="sh-lbl">
+                          امتیاز این دست — تیم {label(oppTeam)}
                         </span>
-                      ))}
-                  </div>
-                </div>
-
-                {/* Storm – Gesamt + Hand, blau */}
-                <div style={styles.hudTR}>
-                  <div
-                    style={{
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: 4,
-                      alignItems: "flex-end",
-                    }}
-                  >
-                    {/* Gesamtpunkte Storm */}
-                    <span
-                      style={{
-                        ...styles.hudPill,
-                        background: "rgba(19, 115, 233, 0.65)", // blau-transparent
-                        borderColor: "#bfdbfe",
-                      }}
-                    >
-                      طوفان: {scores.Storm}
-                    </span>
-
-                    {/* Storm Punkte dieser Runde */}
-                    {showRoundPoints &&
-                      (judgeId &&
-                      players.find((p) => p.id === judgeId)?.team ===
-                        "Storm" ? null : (
-                        <span
-                          style={{
-                            ...styles.hudPill,
-                            background: "rgba(19, 115, 233, 0.65)",
-                            borderColor: "#bfdbfe",
-                            fontSize: 12,
-                          }}
-                        >
-                          دست: {roundPointsLive.Storm}
+                        <span className="sh-val">
+                          {faNum(roundPointsLive?.[oppTeam] ?? 0)}
                         </span>
-                      ))}
-                  </div>
-                </div>
-
-                {/* Aktuelles Gebot + Joker-Hinweis links unten */}
-
-                <div style={styles.hudBL}>
-                  <span
-                    style={{
-                      ...styles.hudPill,
-                      // dein Styling für "Aktuelles Gebot"
-                    }}
-                  >
-                    هدف : {currentBid ?? "-"}
-                  </span>
-                </div>
-                <div style={styles.hudButtonWrap}>
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 8,
-                    }}
-                  >
-                    {/* Joker-Hinweis */}
-                    {includeJokers && (
-                      <span
-                        style={{
-                          ...styles.hudPill,
-                          background: "#db700b2e",
-                          borderColor: "#facc15",
-                        }}
-                      >
-                        بازی با جوکر
-                      </span>
+                        <span className="sh-of">از ۱۶۵</span>
+                      </div>
                     )}
+                  </>
+                );
+              })()}
 
-                    {/* Trumpf / Suit vom Richter direkt daneben */}
-                    {roundVariant === VARIANTS.NORMAL && trumpf && (
-                      <span
-                        style={{
-                          ...styles.hudPill,
-                          padding: "4px 10px",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          gap: 4,
-                        }}
-                        title={`حکم: ${trumpf}`}
-                      >
-                        <SuitIcon suit={trumpf} size={25} />
-                      </span>
-                    )}
-
-                    {/* Optional: bei Flip statt Suit ein Badge zeigen */}
-                    {roundVariant === VARIANTS.FLIP && (
-                      <span
-                        style={{
-                          ...styles.hudPill,
-                          padding: "4px 10px",
-                          fontWeight: 900,
-                        }}
-                        title="نرس (Flip)"
-                      >
-                        نرس
-                      </span>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {/* Karten-Mitte */}
-              <div
-                style={{
-                  ...styles.tableCenter,
-                  position: "absolute",
-                  top: "50%",
-                  left: "50%",
-                  transform: "translate(-50%, -50%)",
-                }}
-              >
-                <div
-                  ref={trickAreaRef}
-                  style={{ position: "relative", width: "80%", height: "70%" }}
-                >
-                  {(() => {
-                    const order = currentTrick || [];
-
-                    // Sitz-Index relativ zu dir: 0=unten (du), 1=rechts, 2=oben, 3=links
-                    const id2seat = new Map(
-                      seated.filter(Boolean).map((p, i) => [p.id, i])
-                    );
-
-                    // ~1/3 Überlappung: Versatz pro Sitz (keine Rotation)
-                    const O = 0.33;
-                    const slots = [
-                      { dx: 0, dy: cardSize.h * O }, // unten (du)
-                      { dx: cardSize.w * O, dy: 0 }, // rechts
-                      { dx: 0, dy: -cardSize.h * O }, // oben
-                      { dx: -cardSize.w * O, dy: 0 }, // links
-                    ];
-
-                    return (
+              {/* --- Ovaler Tisch --- */}
+              <div className="sh-tablewrap">
+                <div className="sh-table">
+                  {/* Trumpf: vor dem Aufdecken ehrlich als "unbekannt" */}
+                  <div className="sh-hud-tl">
+                    {roundVariant === VARIANTS.NORMAL && trumpf ? (
                       <>
-                        {order.map((t, i) => {
-                          const seat = id2seat.get(t.playerId) ?? 0;
-                          const { dx, dy } = slots[seat];
-                          return (
-                            <div
-                              key={`${t.playerId}-${t.card}-${i}`}
-                              style={{
-                                position: "absolute",
-                                left: "50%",
-                                top: "50%",
-                                transform: "translate(-50%, -50%)",
-                                zIndex: 100 + i, // später gespielt liegt OBEN
-                              }}
-                              title={`#${i + 1} gespielt`}
-                            >
-                              <div
-                                style={{
-                                  transform: `translate(${dx}px, ${dy}px)`,
-                                }}
-                              >
-                                <SpriteCard
-                                  code={t.card}
-                                  // Größe direkt setzen → wirklich responsive
-                                  radius={CARD_RADIUS_PLAYED}
-                                  style={{
-                                    width: `${cardSize.w}px`,
-                                    height: "auto",
-                                    boxShadow: "0 6px 14px rgba(0,0,0,.25)",
-                                    border: "1px solid rgba(0,0,0,.15)",
-                                  }}
-                                />
-                              </div>
-                            </div>
-                          );
-                        })}
-
-                        {currentTrick.length === 0 && (
-                          <div
-                            style={{
-                              position: "absolute",
-                              top: "50%",
-                              left: "50%",
-                              transform: "translate(-50%, -50%)",
-                              opacity: 0.6,
-                              fontSize: 12,
-                            }}
-                          >
-                            در انتظار کارت ها
+                        <div className="sh-trump">
+                          <SuitIcon suit={trumpf} size={18} />
+                          حکم
+                        </div>
+                        {trumpfSetter && (
+                          <div className="sh-sub">
+                            حاکم: {trumpfSetter.username || trumpfSetter.name}
                           </div>
                         )}
                       </>
-                    );
-                  })()}
+                    ) : roundVariant === VARIANTS.FLIP ? (
+                      <div className="sh-trump">نرس</div>
+                    ) : (
+                      <div className="sh-trump sh-trump--unknown">؟ حکم</div>
+                    )}
+                    {includeJokers && (
+                      <div className="sh-sub">با جوکر</div>
+                    )}
+                  </div>
+
+                  {/* Gespielte Karten - liegen dort, wo der Spieler sitzt.
+                      Kein Name darunter: die Position sagt schon, wer gelegt hat. */}
+                  <div className="sh-center">
+                    <div className="sh-stack">
+                      {(() => {
+                        const order = currentTrick || [];
+                        const id2seat = new Map(
+                          seated.filter(Boolean).map((p, i) => [p.id, i])
+                        );
+                        // seated: 0 = unten (ich), 1 = rechts, 2 = oben, 3 = links
+                        const SIDE = ["s", "e", "n", "w"];
+                        const winnerId =
+                          lastTrick && lastTrick.winner
+                            ? lastTrick.winner.id || lastTrick.winner
+                            : null;
+
+                        if (!order.length) {
+                          return (
+                            <div className="sh-tablemsg" style={{ margin: "auto" }}>
+                              <p>در انتظار کارت‌ها</p>
+                            </div>
+                          );
+                        }
+
+                        return order.map((t, i) => {
+                          const seat = id2seat.get(t.playerId) ?? 0;
+                          const isWin = winnerId && t.playerId === winnerId;
+                          return (
+                            <div
+                              key={`${t.playerId}-${t.card}-${i}`}
+                              className={
+                                "sh-slot sh-slot--" + SIDE[seat] +
+                                (isWin ? " is-win" : "")
+                              }
+                            >
+                              <SpriteCard code={t.card} size="md" />
+                            </div>
+                          );
+                        });
+                      })()}
+                    </div>
+                  </div>
+
+                  <PlayerBox p={seated[2]} side="n" />
+                  <PlayerBox p={seated[1]} side="e" />
+                  <PlayerBox p={seated[3]} side="w" />
+                  <PlayerBox p={seated[0]} side="s" youLabel />
                 </div>
               </div>
-
-              {/* Spieler oben/unten/links/rechts mit Prozent-Abständen,
-        damit es auch auf kleinen Screens passt */}
-              <div
-                style={{
-                  position: "absolute",
-                  top: "-1%",
-                  left: "50%",
-                  transform: "translateX(-50%)",
-                  zIndex: 30,
-                }}
-              >
-                <PlayerBox p={seated[2]} />
-              </div>
-
-              <div
-                style={{
-                  position: "absolute",
-                  bottom: "-1%",
-                  left: "50%",
-                  transform: "translateX(-50%)",
-                  zIndex: 30,
-                }}
-              >
-                <PlayerBox p={seated[0]} youLabel />
-              </div>
-
-              <div
-                style={{
-                  position: "absolute",
-                  top: "50%",
-                  left: "-1%",
-                  transform: "translateY(-50%)",
-                  zIndex: 30,
-                }}
-              >
-                <PlayerBox p={seated[3]} />
-              </div>
-
-              <div
-                style={{
-                  position: "absolute",
-                  top: "50%",
-                  right: "-1%",
-                  transform: "translateY(-50%)",
-                  zIndex: 30,
-                }}
-              >
-                <PlayerBox p={seated[1]} />
-              </div>
-            </div>
+            </>
           )}
           {/* Discard-Hinweis + Bestätigen */}
           {discardPhase && (
-            <div style={styles.card}>
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: 12,
-                  flexWrap: "wrap",
-                }}
-              >
-                <div
-                  style={{
-                    fontWeight: 400,
-                    alignItems: "center",
-                    alignContent: "center",
-                    color: "white",
-                  }}
-                >
-                  برگ های انتخاب شده: {selectedDiscard.length} /{" "}
-                  {discardTargetCount}
-                </div>
+            <div className="sh-actions">
+              <div className="sh-title">
+                {faNum(discardTargetCount)} برگ برای خواباندن انتخاب کن
               </div>
-              <div style={{ marginTop: 8 }}>
+              <div className="sh-row">
+                <span className="sh-counter">
+                  انتخاب‌شده <b>{faNum(selectedDiscard.length)}</b> /{" "}
+                  {faNum(discardTargetCount)}
+                </span>
                 <button
-                  style={{
-                    ...styles.btn,
-                    background: "#22c55e",
-                    color: "white",
-                  }}
+                  className="sh-bidbtn sh-bidbtn--go"
                   onClick={confirmDiscard}
                   disabled={selectedDiscard.length !== discardTargetCount}
                 >
-                  شروع بازی
+                  تأیید خوابانده
                 </button>
               </div>
             </div>
@@ -3283,213 +3208,132 @@ function App() {
               currentPlayerIndex nach Reconnect). Ein Spieler, der gepasst hat,
               soll das Gebot-Popup nie wieder sehen. */}
           {showBidModal && (
-            <div style={styles.modalBackdrop}>
-              <div style={styles.modal}>
-                <h3
-                  style={{
-                    margin: 0,
-                    fontWeight: 800,
-                    color: "#000000",
-                    textAlign: "center",
-                  }}
-                >
-                  امتیاز پیشنهادی شما{" "}
-                </h3>
-                <p
-                  style={{
-                    color: "#000000",
-                    textAlign: "center",
-                  }}
-                >
-                  آخرین امتیاز پیشنهاد شده: {currentBid}
-                </p>
+            <div className="sh-sheet">
+              <div className="sh-sheetbox" style={{ maxWidth: 420 }}>
+                <div className="sh-sheethd">
+                  <h2>مزایده</h2>
+                </div>
 
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: 20,
-                    margin: "20px 0",
-                  }}
-                >
+                <div className="sh-title" style={{ marginBottom: 14 }}>
+                  {currentBid
+                    ? <>بالاترین پیشنهاد الان <b>{currentBid}</b> است</>
+                    : "هنوز پیشنهادی ثبت نشده"}
+                </div>
+
+                <div className="sh-row">
                   <button
-                    style={{ ...styles.btn, fontSize: 24 }}
-                    onClick={() => {
-                      setMyBid((prev) => Math.max(prev - 5, minBid));
-                    }}
-                    disabled={myBid <= minBid}
+                    className="sh-bidbtn sh-bidbtn--pass"
+                    onClick={() => makeBid(0)}
+                    disabled={mustBidNow}
+                    title={
+                      mustBidNow
+                        ? "تو آخرین بازیکن فعالی - باید پیشنهاد بدهی"
+                        : "پاس"
+                    }
                   >
-                    –
+                    پاس
                   </button>
 
-                  <div
-                    style={{
-                      fontSize: 36,
-                      fontWeight: 900,
-                      minWidth: 80,
-                      textAlign: "center",
-                      color: "black",
-                    }}
+                  <button
+                    className="sh-step"
+                    onClick={() => setMyBid((prev) => Math.max(prev - 5, minBid))}
+                    disabled={myBid <= minBid}
                   >
+                    −
+                  </button>
+
+                  <div className="sh-bidval">
                     {myBid || minBid}
+                    <small>پیشنهاد تو</small>
                   </div>
 
                   <button
-                    style={{ ...styles.btn, fontSize: 24 }}
-                    onClick={() =>
-                      setMyBid((prev) => Math.min(prev + 5, maxBid))
-                    }
+                    className="sh-step"
+                    onClick={() => setMyBid((prev) => Math.min(prev + 5, maxBid))}
                     disabled={myBid >= maxBid}
                   >
                     +
                   </button>
-                </div>
 
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-around",
-                    marginTop: 20,
-                  }}
-                >
                   <button
-                    style={{
-                      ...styles.btn,
-                      background: "#fbbf24",
-                      color: "#000",
-                      padding: "10px 30px",
-                      fontWeight: 800,
-                      fontSize: 15,
-                    }}
-                    onClick={() => makeBid(0)}
-                    disabled={mustBidNow}
-                  >
-                    پاس
-                  </button>
-                  <button
-                    style={{
-                      ...styles.btn,
-                      background: "#22c55e",
-                      color: "#000000ff",
-                      padding: "10px 30px",
-                      fontWeight: 800,
-                      fontSize: 15,
-                    }}
+                    className="sh-bidbtn sh-bidbtn--go"
                     onClick={() => makeBid(myBid)}
                   >
-                    تایید
+                    ثبت پیشنهاد
                   </button>
                 </div>
+
+                {mustBidNow && (
+                  <div className="sh-msg sh-msg--err">
+                    همه پاس کرده‌اند — تو باید پیشنهاد بدهی
+                  </div>
+                )}
               </div>
             </div>
           )}
-          {/* Hand */}
-          <div
-            style={{
-              ...styles.card,
-              marginTop: -4,
-              paddingTop: 0,
-              paddingBottom: 4,
-            }}
-          >
-            {/* leichtes Overlap-Layout für ein Kartenband */}
-            <div
-              style={{
-                display: "flex",
-                gap: 0,
-                flexWrap: "nowrap",
-                //lignItems: "flex-end",
-                padding: "0px 16px",
-                justifyContent: "center",
-                overflowY: "visible",
-                //overflowX: "auto",
-                maxWidth: "100%",
-              }}
-            >
-              {hand.map((card, idx) => {
-                const isSelected = selectedDiscard.includes(card);
-                const canSelectMore =
-                  selectedDiscard.length < discardTargetCount;
-                const inDiscard = discardPhase;
-                const showSelected = inDiscard && isSelected;
+          {/* Hand — LTR-Fächer: jede nächste Karte deckt die RECHTE Seite der
+              vorigen ab, damit die obere linke Ecke mit dem aufrechten Index
+              sichtbar bleibt. Vorher lag die kopfstehende Ecke unten frei. */}
+          <div className="sh-handzone">
+            <div className="sh-fan">
+              {(() => {
+                const list = [...hand].reverse();          // Trumpf bleibt rechts
+                const n = list.length;
+                const mid = (n - 1) / 2;
 
-                // Click-Verhalten:
-                // - in DiscardPhase: toggleDiscard
-                // - sonst (normal): playCard, wenn erlaubt
-                const clickable =
-                  inDiscard || (biddingWinner && isMyTurn && !discardPhase);
-                const onClick = () => {
-                  if (inDiscard) {
-                    if (isSelected) {
-                      toggleDiscard(card); // immer abwählbar
-                    } else if (canSelectMore) {
-                      toggleDiscard(card); // nur bis 4
+                return list.map((card, i) => {
+                  const isSelected = selectedDiscard.includes(card);
+                  const canSelectMore = selectedDiscard.length < discardTargetCount;
+                  const inDiscard = discardPhase;
+
+                  const onClick = () => {
+                    if (inDiscard) {
+                      if (isSelected || canSelectMore) toggleDiscard(card);
+                    } else if (biddingWinner && isMyTurn) {
+                      playCard(card);
                     }
-                  } else if (biddingWinner && isMyTurn) {
-                    playCard(card);
-                  }
-                };
+                  };
 
-                // Stil der Karte/Schaltfläche
-                const disabled =
-                  // im Abwurfmodus nur sperren, wenn schon 4 gewählt und diese Karte nicht gewählt ist
-                  (inDiscard && !isSelected && !canSelectMore) ||
-                  // im Spielmodus sperren, wenn nicht am Zug
-                  (!inDiscard && (!biddingWinner || !isMyTurn));
+                  const disabled =
+                    (inDiscard && !isSelected && !canSelectMore) ||
+                    (!inDiscard && (!biddingWinner || !isMyTurn));
 
-                return (
-                  <button
-                    key={card}
-                    onClick={onClick}
-                    disabled={disabled}
-                    aria-pressed={isSelected}
-                    title={
-                      inDiscard
-                        ? isSelected
-                          ? "Abwurf entfernen"
-                          : "Zum Abwurf auswählen"
-                        : card
-                    }
-                    style={{
-                      // Button-Hülle möglichst „unsichtbar“
-                      padding: 0,
-                      background: "transparent",
-                      border: "none",
-                      overflow: "visible",
-                      marginLeft: idx ? `${handOverlapPx}px` : "0px",
-                      zIndex: idx * 2 + (isSelected ? 1 : 0),
-                      cursor: disabled ? "not-allowed" : "pointer",
-                      flex: "0 0 26px",
-                    }}
-                  >
-                    <div
+                  const rot = (i - mid) * 2;
+                  const lift = Math.pow(Math.abs(i - mid), 1.85) * 0.55;
+                  const raise = inDiscard && isSelected ? -20 : 0;
+
+                  return (
+                    <button
+                      key={card}
+                      className={
+                        "sh-cardbtn" +
+                        (inDiscard && isSelected ? " is-sel" : "") +
+                        (inDiscard && !isSelected && !canSelectMore ? " is-dim" : "")
+                      }
+                      onClick={onClick}
+                      disabled={disabled}
+                      aria-pressed={isSelected}
+                      title={
+                        inDiscard
+                          ? isSelected
+                            ? "برداشتن از خوابانده"
+                            : "انتخاب برای خوابانده"
+                          : card
+                      }
                       style={{
-                        transform: showSelected
-                          ? "translateY(-8px)"
-                          : "translateY(0px)",
-                        transform: `${
-                          showSelected ? "translateY(-8px)" : "translateY(0px)"
-                        } scale(${HAND_CARD_SCALE_X},${HAND_CARD_SCALE_Y})`,
-                        transformOrigin: "bottom center",
-                        transition: "transform 140ms ease",
-                        filter: !disabled ? "brightness(1)" : "grayscale(0.2)",
+                        transform: `rotate(${rot}deg) translateY(${lift + raise}px)`,
+                        zIndex: i * 2 + (isSelected ? 1 : 0),
                       }}
                     >
                       <SpriteCard
                         code={card}
-                        size="sm"
-                        squash
-                        style={{
-                          boxShadow: showSelected
-                            ? "0 12px 24px rgba(0,0,0,.35)"
-                            : "0 6px 14px rgba(0,0,0,.25)",
-                        }}
+                        size="lg"
+                        style={{ width: "var(--card-w)", height: "var(--card-h)" }}
                       />
-                    </div>
-                  </button>
-                );
-              })}
+                    </button>
+                  );
+                });
+              })()}
             </div>
           </div>
           {showStats && (

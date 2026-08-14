@@ -148,6 +148,54 @@ app.post("/api/upload-avatar", upload.single("avatar"), (req, res) => {
   return res.json({ url });
 });
 
+// Profil ändern: Anzeigename, E-Mail, Avatar und optional das Passwort.
+// Der Benutzername (username) bleibt bewusst unveränderlich.
+app.patch("/api/me", async (req, res) => {
+  const hdr = req.headers.authorization || "";
+  const token = hdr.startsWith("Bearer ") ? hdr.slice(7) : null;
+  let payload = null;
+  try {
+    payload = token ? jwt.verify(token, JWT_SECRET) : null;
+  } catch {
+    payload = null;
+  }
+  if (!payload) return res.status(401).json({ error: "Unauthorized" });
+
+  const user = await dbUserById(payload.sub);
+  if (!user) return res.status(401).json({ error: "Unauthorized" });
+
+  const { name, email, avatarUrl, currentPassword, newPassword } = req.body || {};
+
+  try {
+    if (newPassword) {
+      if (String(newPassword).length < 8)
+        return res.status(400).json({ error: "رمز جدید حداقل ۸ نویسه" });
+      const ok = await bcrypt.compare(String(currentPassword || ""), user.passwordHash);
+      if (!ok) return res.status(400).json({ error: "رمز فعلی درست نیست" });
+      const hash = await bcrypt.hash(String(newPassword), 10);
+      await pool.query("update users set password_hash = $1 where id = $2", [hash, user.id]);
+    }
+
+    const nextName = name != null ? String(name).trim().slice(0, 40) : user.name;
+    const nextMail = email != null ? String(email).trim().toLowerCase() : user.email;
+    const nextAva = avatarUrl !== undefined ? avatarUrl : user.avatarUrl;
+
+    const r = await pool.query(
+      `update users set name = $1, email = $2, avatar_url = $3
+         where id = $4
+       returning id, name, username, email, phone, avatar_url as "avatarUrl",
+                 created_at as "createdAt"`,
+      [nextName, nextMail, nextAva, user.id]
+    );
+    return res.json({ profile: publicUser(r.rows[0]) });
+  } catch (e) {
+    console.error("patch /api/me", e);
+    if (String(e.code) === "23505")
+      return res.status(409).json({ error: "این ایمیل قبلاً ثبت شده" });
+    return res.status(500).json({ error: "Serverfehler" });
+  }
+});
+
 app.get("/api/me", async (req, res) => {
   const hdr = req.headers.authorization || "";
   const token = hdr.startsWith("Bearer ") ? hdr.slice(7) : null;
@@ -415,6 +463,7 @@ function stateSnapshot() {
       userId: p.userId,
       name: p.name,
       username: p.username,
+      avatarUrl: p.avatarUrl || null,
       team: p.team,
       passed: p.passed,
       lastBid: p.lastBid,
@@ -1144,7 +1193,7 @@ io.emit("turnUpdate", { currentPlayer: next, currentBid });
 
 }
 // JWT im Handshake auswerten (optional, aber empfohlen)
-io.use((socket, next) => {
+io.use(async (socket, next) => {
   try {
     const token = socket.handshake.auth?.token || socket.handshake.query?.token;
     if (token) {
@@ -1154,7 +1203,20 @@ io.use((socket, next) => {
         name: p.name,
         username: p.username,
         email: p.email,
+        avatarUrl: null,
       };
+      // Avatar steht nicht im Token - einmal pro Verbindung aus der DB holen,
+      // damit players[] das Bild mitliefern kann.
+      try {
+        const u = await dbUserById(p.sub);
+        if (u) {
+          socket.user.avatarUrl = u.avatarUrl || null;
+          socket.user.name = u.name || socket.user.name;
+          socket.user.username = u.username || socket.user.username;
+        }
+      } catch (_) {
+        /* DB kurz nicht erreichbar -> ohne Bild weiterspielen */
+      }
     }
   } catch (e) {
     // ungültiges Token → ohne user; Frontend darf dann nicht ins Spiel
@@ -1233,6 +1295,7 @@ io.on("connection", (socket) => {
       id: socket.id,
       name: finalName,
       username: socket.user?.username || null,
+      avatarUrl: socket.user?.avatarUrl || null,
       team: saved?.team || null,
       passed: false,
       // WICHTIG: bids{} lebt unabhängig von players[] weiter (wird erst bei
