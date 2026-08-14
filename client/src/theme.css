@@ -291,7 +291,7 @@
 }
 .sh-step:disabled{opacity:.32;cursor:not-allowed}
 .sh-bidval{
-  min-width:96px;padding:6px;border-radius:11px;place-items:center; background:#0f1720;border:1.5px solid var(--gold);
+  min-width:96px;padding:6px;border-radius:11px;background:#0f1720;border:1.5px solid var(--gold);
   font-size:24px;font-weight:900;color:var(--gold);line-height:1.15;
 }
 .sh-bidval small{display:block;font-size:10px;font-weight:600;color:#8d9cb0}
