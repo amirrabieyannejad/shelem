@@ -3233,11 +3233,14 @@ function App() {
           {showBidModal && (
             <div className="sh-sheet">
               <div className="sh-sheetbox" style={{ maxWidth: 420 }}>
-                <div className="sh-sheethd">
+                <div className="sh-sheethd" style={{ justifyContent: "center" }}>
                   <h2>مزایده</h2>
                 </div>
 
-                <div className="sh-title" style={{ marginBottom: 14 }}>
+                <div
+                  className="sh-title"
+                  style={{ marginBottom: 14, textAlign: "center" }}
+                >
                   {currentBid
                     ? <>بالاترین پیشنهاد الان <b>{currentBid}</b> است</>
                     : "هنوز پیشنهادی ثبت نشده"}
