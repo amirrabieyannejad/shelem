@@ -54,7 +54,15 @@ const allowedOrigins = process.env.CORS_ORIGIN
     ];
 app.use(cors({ origin: allowedOrigins, credentials: true }));
 
-const io = new Server(server, { cors: { origin: allowedOrigins, methods: ["GET", "POST"] } });
+const io = new Server(server, {
+  cors: { origin: allowedOrigins, methods: ["GET", "POST"] },
+  // Sicherheitsnetz: falls je ein Event versehentlich mehr Daten schickt als
+  // das Standardlimit (1MB) erlaubt, soll die Verbindung nicht sofort
+  // gekappt werden (sonst: sofortiger Reconnect -> Endlosschleife wie beim
+  // base64-Avatar-Bug). Wir schicken selbst nichts Großes mehr über Sockets,
+  // das hier ist nur ein Puffer für die Zukunft.
+  maxHttpBufferSize: 3 * 1024 * 1024,
+});
 
 // ---------- Auth Helpers (DB-basiert) ----------
 const publicUser = (u) => ({
@@ -167,6 +175,36 @@ app.post("/api/upload-avatar", (req, res) => {
     const url = `data:${req.file.mimetype};base64,${base64}`;
     return res.json({ url });
   });
+});
+
+// Liefert das Avatarbild eines Users als echtes <img> (Content-Type image/*),
+// NICHT als JSON/base64. Grund: die Sitzplätze am Tisch bekommen ihre Daten
+// per Socket.IO-Broadcast (players[]) an ALLE Clients bei JEDER Änderung
+// (Sitzwechsel, Bid, Disconnect, ...). Würde dort das base64-Bild jedes
+// Spielers mitgeschickt, könnte das bei mehreren Spielern mit Foto pro
+// Broadcast mehrere MB groß werden -> Socket.IO-Frame-Limit -> Verbindung
+// bricht ab -> Reconnect-Schleife (genau der Bug, den wir gerade hatten).
+// Lösung: players[].avatarUrl enthält nur noch die leichte Referenz-URL
+// "/api/avatar/<userId>" - der Browser lädt das eigentliche Bild separat
+// per normalem, cachebarem HTTP-GET, komplett am Socket vorbei.
+app.get("/api/avatar/:userId", async (req, res) => {
+  try {
+    const u = await dbUserById(req.params.userId);
+    const raw = u?.avatarUrl;
+    if (!raw) return res.status(404).end();
+    const m = /^data:([^;]+);base64,(.+)$/.exec(raw);
+    if (!m) {
+      // Alter, direkt gespeicherter Pfad/URL (Rückwärtskompatibilität) -
+      // einfach dorthin weiterleiten.
+      return res.redirect(raw);
+    }
+    const [, mime, base64] = m;
+    res.setHeader("Content-Type", mime);
+    res.setHeader("Cache-Control", "public, max-age=300");
+    return res.end(Buffer.from(base64, "base64"));
+  } catch (e) {
+    return res.status(500).end();
+  }
 });
 
 // Profil ändern: Anzeigename, E-Mail, Avatar und optional das Passwort.
@@ -1251,18 +1289,24 @@ io.on("connection", (socket) => {
   const userId = uid(socket);
   const payloadName = typeof payload === "string" ? payload : (payload?.name || "");
   const finalName = String(socket.user?.name || payloadName || "").trim();
-  // Bild kann sich waehrend der Session aendern (Profil-Speichern), waehrend
-  // socket.user.avatarUrl nur einmal beim Verbindungsaufbau aus der DB kommt.
-  // Der Client schickt bei jedem "register" den aktuellen Wert mit - den
-  // bevorzugen wir, damit ein neues Foto sofort am Tisch sichtbar wird.
-  const payloadAvatarUrl =
-    payload && typeof payload === "object" && payload.avatarUrl !== undefined
-      ? payload.avatarUrl
-      : undefined;
 
   if (!userId || !finalName) {
     socket.emit("invalidAction", { msg: "Bitte zuerst anmelden." });
     return;
+  }
+
+  // avatarUrl wird bewusst NICHT vom Client übernommen (kann als base64
+  // mehrere hundert KB groß sein und würde Socket.IOs maxHttpBufferSize
+  // sprengen -> Verbindungsabbruch -> Reconnect-Schleife). Stattdessen holen
+  // wir hier nur ab, OB ein Avatar existiert, und setzen players[].avatarUrl
+  // auf die leichte Referenz-URL /api/avatar/<userId> (siehe Endpunkt oben).
+  // undefined = DB-Abfrage fehlgeschlagen -> alten Wert unangetastet lassen.
+  let freshAvatarRef;
+  try {
+    const dbUser = await dbUserById(userId);
+    freshAvatarRef = dbUser?.avatarUrl ? `/api/avatar/${userId}` : null;
+  } catch (e) {
+    freshAvatarRef = undefined;
   }
 
   let existing = playerByUserId(userId);
@@ -1277,8 +1321,7 @@ io.on("connection", (socket) => {
     existing.id = socket.id;
     existing.name = finalName;
     if (socket.user?.username) existing.username = socket.user.username;
-    existing.avatarUrl =
-      payloadAvatarUrl ?? socket.user?.avatarUrl ?? existing.avatarUrl;
+    existing.avatarUrl = freshAvatarRef !== undefined ? freshAvatarRef : existing.avatarUrl;
 
     if (existing.seatPosition) seats[existing.seatPosition] = existing;
   } else {
@@ -1317,8 +1360,7 @@ io.on("connection", (socket) => {
       existing.id = socket.id;
       existing.name = finalName;
       if (socket.user?.username) existing.username = socket.user.username;
-      existing.avatarUrl =
-        payloadAvatarUrl ?? socket.user?.avatarUrl ?? existing.avatarUrl;
+      existing.avatarUrl = freshAvatarRef !== undefined ? freshAvatarRef : existing.avatarUrl;
       if (existing.seatPosition) seats[existing.seatPosition] = existing;
     } else {
 
@@ -1328,7 +1370,7 @@ io.on("connection", (socket) => {
       id: socket.id,
       name: finalName,
       username: socket.user?.username || null,
-      avatarUrl: payloadAvatarUrl ?? socket.user?.avatarUrl ?? null,
+      avatarUrl: freshAvatarRef ?? null,
       team: saved?.team || null,
       passed: false,
       // WICHTIG: bids{} lebt unabhängig von players[] weiter (wird erst bei

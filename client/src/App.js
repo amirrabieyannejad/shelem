@@ -1321,19 +1321,6 @@ function App() {
         if (data?.profile) {
           localStorage.setItem("shelem_profile", JSON.stringify(data.profile));
           setAuth((a) => ({ ...a, profile: data.profile }));
-          // Falls die Socket-Verbindung schon vor diesem Refresh stand,
-          // hat "register" (im connect-Handler) evtl. ein veraltetes/leeres
-          // avatarUrl aus dem localStorage-Snapshot mitgeschickt (Race
-          // zwischen Socket-Connect und diesem Fetch). Jetzt mit dem
-          // frischen DB-Stand nachsynchronisieren, damit das Bild am
-          // Sitzplatz sicher ankommt.
-          if (socket.connected) {
-            socket.emit("register", {
-              clientId: data.profile.id,
-              name: data.profile.name,
-              avatarUrl: data.profile.avatarUrl || null,
-            });
-          }
         }
       } catch {
         // Token ungültig → logout
@@ -1505,13 +1492,14 @@ function App() {
         return;
       }
       // stabile ID & Name kommen vom Profil (server-side verifiziert).
-      // avatarUrl explizit mitschicken: der Server kennt sonst nur den
-      // Stand von Verbindungsaufbau/JWT, das lokale Profil ist aktueller.
-      socket.emit("register", {
-        clientId: prof.id,
-        name: prof.name,
-        avatarUrl: prof.avatarUrl || null,
-      });
+      // stabile ID & Name kommen vom Profil (server-side verifiziert).
+      // avatarUrl bewusst NICHT hier mitschicken: das Bild kann als
+      // base64-Data-URL mehrere hundert KB groß sein und würde Socket.IOs
+      // maxHttpBufferSize (Standard 1MB) sprengen -> Verbindung wird
+      // gekappt -> Client reconnectet sofort wieder -> Endlosschleife.
+      // Der Server holt sich die aktuelle avatarUrl stattdessen selbst
+      // frisch aus der DB (siehe register-Handler).
+      socket.emit("register", { clientId: prof.id, name: prof.name });
       socket.emit("getRoundsHistory");
       socket.emit("requestState");
     });
@@ -2636,11 +2624,13 @@ function App() {
               onSaved={(profile) => {
                 setAuth((a) => ({ ...a, profile }));
                 localStorage.setItem("shelem_profile", JSON.stringify(profile));
-                // Name/Bild sofort auch am Tisch aktualisieren
+                // Name sofort auch am Tisch aktualisieren. avatarUrl bewusst
+                // NICHT mitschicken (kann als base64 >1MB sein und würde
+                // Socket.IOs Frame-Limit sprengen) - Server holt sich das
+                // aktuelle Bild stattdessen frisch aus der DB (register-Handler).
                 socket.emit("register", {
                   clientId: profile.id,
                   name: profile.name,
-                  avatarUrl: profile.avatarUrl,
                 });
               }}
             />
