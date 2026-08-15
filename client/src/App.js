@@ -2674,7 +2674,7 @@ function App() {
                     <SpriteCard
                       key={`${c}-${i}`}
                       code={c}
-                      size="md"
+                      size="sm"
                       style={{
                         boxShadow: "0 8px 18px rgba(0,0,0,.35)",
                         border: "1px solid rgba(0,0,0,.12)",
