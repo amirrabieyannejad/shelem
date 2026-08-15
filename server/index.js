@@ -897,6 +897,19 @@ function seatsEmpty() {
 function seatsFull() {
   return !!seats[1] && !!seats[2] && !!seats[3] && !!seats[4];
 }
+// Entfernt "Geisterbesetzungen" aus seats[]: Referenzen auf Spieler, die
+// nicht (mehr) in players[] stehen. seats[] und players[] sind zwei separate
+// Server-Arrays, die sich in Edge-Cases (hakelige Reconnects, Race-Conditions
+// beim register-Handler) desynchronisieren können - ein Platz gilt dann
+// serverseitig als belegt, obwohl das Client-UI (das rein aus players[]
+// abgeleitet wird) ihn als frei anzeigt, und niemand kann sich draufsetzen.
+function pruneGhostSeats() {
+  for (const s of [1, 2, 3, 4]) {
+    if (seats[s] && !players.some((p) => p.userId === seats[s].userId)) {
+      seats[s] = null;
+    }
+  }
+}
 // Reihenfolge aus Sitzen übernehmen (seatPosition NICHT überschreiben)
 function orderPlayersBySeats() {
   players = [seats[1], seats[2], seats[3], seats[4]].filter(Boolean);
@@ -1509,6 +1522,11 @@ io.on("connection", (socket) => {
     }
   }
 
+  // Geisterbesetzungen aufräumen (siehe pruneGhostSeats()) - läuft bei
+  // jedem Connect/Register mit, damit sich ein blockierter Platz auch ohne
+  // aktiven Klick von selbst wieder löst.
+  pruneGhostSeats();
+
   socket.emit("stateSync", stateSnapshot());
   socket.emit("roundsHistoryUpdate", { roundsHistory });
   players.forEach(p => { if (p.socketId) p.id = p.socketId; });
@@ -1531,6 +1549,9 @@ io.on("connection", (socket) => {
   }
 
   if (![1,2,3,4].includes(seat)) return;
+
+  // Selbstheilung gegen "Geisterbesetzungen" (siehe pruneGhostSeats()).
+  pruneGhostSeats();
 
   if (seats[seat] && seats[seat].userId !== userId) {
     socket.emit("invalidAction", { msg: "Dieser Platz ist bereits belegt." });
