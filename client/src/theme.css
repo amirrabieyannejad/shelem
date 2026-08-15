@@ -293,7 +293,10 @@
 .sh-slot--w{transform:translate(-50%,-50%) translateX(calc(var(--card-w)*-1.1)) rotate(-7deg)}
 .sh-slot--e{transform:translate(-50%,-50%) translateX(calc(var(--card-w)*1.1)) rotate(7deg)}
 .sh-slot.is-win img{box-shadow:0 0 0 3px var(--gold),0 8px 22px rgba(0,0,0,.55)}
-.sh-tablemsg{text-align:center;max-width:min(340px,74vw)}
+.sh-tablemsg{
+  position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+  text-align:center;max-width:min(340px,74vw);
+}
 .sh-tablemsg h3{font-size:clamp(14px,3vw,17px);font-weight:800;margin:0 0 6px;color:#fff;text-shadow:0 2px 6px rgba(0,0,0,.5)}
 .sh-tablemsg p{font-size:clamp(11px,2.4vw,13px);color:rgba(255,255,255,.72);line-height:1.85;margin:0}
 
@@ -337,13 +340,19 @@
 .sh-handzone{margin-top:16px}
 .sh-fan{
   direction:ltr;display:flex;justify-content:center;align-items:flex-end;
-  padding-top:18px;min-height:calc(var(--card-h) + 26px);
+  padding-top:22px;min-height:calc(var(--card-h) + 26px);
+  /* Bei Joker-Runden (Abwerfen: bis zu 18 Karten) soll die Hand lieber
+     breiter werden dürfen (waagerecht wischbar) statt die Karten noch
+     enger zusammenzuquetschen - besser tippbar. */
+  overflow-x:auto;-webkit-overflow-scrolling:touch;
+  scrollbar-width:none;
 }
+.sh-fan::-webkit-scrollbar{display:none}
 .sh-cardbtn{
   background:none;border:none;padding:0;cursor:pointer;flex:none;
   transition:transform .16s ease, filter .16s;transform-origin:bottom center;
 }
-.sh-cardbtn:not(:first-child){margin-left:calc(var(--card-w) * -0.42)}
+.sh-cardbtn:not(:first-child){margin-left:calc(var(--card-w) * -0.34)}
 .sh-cardbtn.is-sel img{box-shadow:0 0 0 3px var(--gold),0 10px 24px rgba(0,0,0,.5)}
 .sh-cardbtn.is-dim{filter:grayscale(.55) brightness(.62)}
 .sh-cardbtn:disabled{cursor:not-allowed}
@@ -395,7 +404,7 @@
   .sh-actions{padding:10px;margin-top:10px}
   .sh-bidval{min-width:80px;font-size:21px}
   .sh-fan{padding-top:14px}
-  .sh-cardbtn:not(:first-child){margin-left:calc(var(--card-w) * -0.40)}
+  .sh-cardbtn:not(:first-child){margin-left:calc(var(--card-w) * -0.32)}
   .sh-sheet{padding:0;align-items:flex-end}
   .sh-sheetbox{max-height:92dvh;border-radius:18px 18px 0 0;width:100%}
   /* Sitzauswahl klappt in ein 2x2-Raster; die Diagonale bleibt die Team-Achse */
@@ -407,7 +416,7 @@
   .sh-seats .sh-seatbox{width:auto}
   .sh-seats .sh-tablecore{position:static;margin-bottom:14px}
 }
-@media (max-width:400px){ .sh-cardbtn:not(:first-child){margin-left:calc(var(--card-w) * -0.46)} }
+@media (max-width:400px){ .sh-cardbtn:not(:first-child){margin-left:calc(var(--card-w) * -0.36)} }
 @media (max-height:520px) and (orientation:landscape){
   .sh-table{aspect-ratio:16/7.4}
   .sh-tablewrap{padding-block:calc(var(--ava)*0.5)}

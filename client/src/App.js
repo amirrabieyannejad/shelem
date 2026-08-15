@@ -2801,7 +2801,7 @@ function App() {
                     style={{
                       fontWeight: 900,
                       fontSize: 15,
-                      color: "#111",
+                      color: "#e9eef4",
                       textAlign: "left",
                       paddingTop: 6,
                     }}
@@ -2813,14 +2813,14 @@ function App() {
                       display: "flex",
                       gap: 0,
                       flexWrap: "wrap",
-                      background: "rgba(0,0,0,.05)",
+                      background: "rgba(255,255,255,.06)",
                       padding: 4,
                       borderRadius: 10,
                       minHeight: 70,
                     }}
                   >
                     {recap.bottomCards.length === 0 && (
-                      <div style={{ opacity: 0.5 }}>Keine Karten</div>
+                      <div style={{ opacity: 0.6 }}>Keine Karten</div>
                     )}
                     {recap.bottomCards.map((c, i) => (
                       <div key={`b-${i}`} title={`Bodenkarte ${i + 1}`}>
@@ -2834,7 +2834,7 @@ function App() {
                     style={{
                       fontWeight: 900,
                       fontSize: 15,
-                      color: "#111",
+                      color: "#e9eef4",
                       textAlign: "left",
                       paddingTop: 6,
                     }}
@@ -2846,14 +2846,14 @@ function App() {
                       display: "flex",
                       gap: 0,
                       flexWrap: "wrap",
-                      background: "rgba(0,0,0,.05)",
+                      background: "rgba(255,255,255,.06)",
                       padding: 4,
                       borderRadius: 10,
                       minHeight: 70,
                     }}
                   >
                     {recap.discarded.length === 0 && (
-                      <div style={{ opacity: 0.5 }}>Keine Karten</div>
+                      <div style={{ opacity: 0.6 }}>Keine Karten</div>
                     )}
                     {recap.discarded.map((c, i) => (
                       <div key={`d-${i}`} title={`Abwurfkarte ${i + 1}`}>
@@ -2988,9 +2988,19 @@ function App() {
                     <div className="sh-stack">
                       {(() => {
                         const order = currentTrick || [];
-                        const id2seat = new Map(
-                          seated.filter(Boolean).map((p, i) => [p.id, i])
-                        );
+                        // WICHTIG: sowohl über die (stabile) userId als auch
+                        // über die aktuelle socketId matchen. Vorher gab es
+                        // bei fehlendem Match ein "?? 0"-Fallback auf Sitz 0
+                        // (unten/ich) - dadurch konnte eine fremde Karte
+                        // exakt auf meiner eigenen Position landen und sich
+                        // mit meiner überlappen. Jetzt: kein Match = Karte
+                        // wird lieber gar nicht gezeichnet statt falsch.
+                        const id2seat = new Map();
+                        seated.forEach((p, i) => {
+                          if (!p) return;
+                          if (p.id) id2seat.set(p.id, i);
+                          if (p.userId) id2seat.set(p.userId, i);
+                        });
                         // seated: 0 = unten (ich), 1 = rechts, 2 = oben, 3 = links
                         const SIDE = ["s", "e", "n", "w"];
                         const winnerId =
@@ -3000,27 +3010,34 @@ function App() {
 
                         if (!order.length) {
                           return (
-                            <div className="sh-tablemsg" style={{ margin: "auto" }}>
+                            <div className="sh-tablemsg">
                               <p>در انتظار کارت‌ها</p>
                             </div>
                           );
                         }
 
-                        return order.map((t, i) => {
-                          const seat = id2seat.get(t.playerId) ?? 0;
-                          const isWin = winnerId && t.playerId === winnerId;
-                          return (
-                            <div
-                              key={`${t.playerId}-${t.card}-${i}`}
-                              className={
-                                "sh-slot sh-slot--" + SIDE[seat] +
-                                (isWin ? " is-win" : "")
-                              }
-                            >
-                              <SpriteCard code={t.card} size="md" />
-                            </div>
-                          );
-                        });
+                        return order
+                          .map((t, i) => {
+                            const seat = id2seat.has(t.playerId)
+                              ? id2seat.get(t.playerId)
+                              : id2seat.has(t.userId)
+                              ? id2seat.get(t.userId)
+                              : null;
+                            if (seat == null) return null;
+                            const isWin = winnerId && t.playerId === winnerId;
+                            return (
+                              <div
+                                key={`${t.playerId}-${t.card}-${i}`}
+                                className={
+                                  "sh-slot sh-slot--" + SIDE[seat] +
+                                  (isWin ? " is-win" : "")
+                                }
+                              >
+                                <SpriteCard code={t.card} size="md" />
+                              </div>
+                            );
+                          })
+                          .filter(Boolean);
                       })()}
                     </div>
                   </div>
@@ -3314,8 +3331,11 @@ function App() {
                     (inDiscard && !isSelected && !canSelectMore) ||
                     (!inDiscard && (!biddingWinner || !isMyTurn));
 
-                  const rot = (i - mid) * 2;
-                  const lift = Math.pow(Math.abs(i - mid), 1.85) * 0.55;
+                  // Bogen verstärkt (mehr Rotation + mehr Höhenversatz pro
+                  // Karte), damit Nachbarkarten deutlicher auseinanderstehen
+                  // und man beim Tippen weniger leicht danebengreift.
+                  const rot = (i - mid) * 3.1;
+                  const lift = Math.pow(Math.abs(i - mid), 1.85) * 0.78;
                   const raise = inDiscard && isSelected ? -20 : 0;
 
                   return (
