@@ -3333,23 +3333,26 @@ function App() {
                 // alle in einer Reihe Platz finden, statt einzelne Karten
                 // komplett zu verdecken.
                 // Bei vielen Karten (Joker-Runde beim Abwerfen: bis zu 18)
+                // Bei vielen Karten (Joker-Runde beim Abwerfen: bis zu 18)
                 // wird der Bogen sonst SEHR hoch (lift wächst mit der
-                // Kartenzahl^1.85) und sprengt die verfügbare Höhe. Bei
-                // großen Händen daher flacherer Bogen, bei normalen 12
-                // Karten bleibt der volle, ausgeprägte Bogen erhalten.
+                // Kartenzahl^1.85) und sprengt die verfügbare Höhe - die
+                // äußeren Karten fielen unten aus dem sichtbaren Bereich.
+                // Fester Deckel (maxLift) statt nur kleinerer Faktor, damit
+                // die Gesamthöhe des Fächers unabhängig von der Kartenzahl
+                // eine verlässliche Obergrenze hat.
                 const liftCoef = n <= 12 ? 1.35 : n <= 15 ? 0.95 : 0.68;
+                const maxLift = n <= 12 ? 34 : n <= 15 ? 26 : 18;
 
-                // Überlappung hängt ebenfalls von der Kartenzahl ab: bei
-                // wenigen Karten (normale Hand) mehr Abstand zum leichteren
-                // Tippen, bei vielen Karten automatisch etwas enger, damit
-                // noch alle in einer Reihe Platz finden.
+                // Überlappung hängt ebenfalls von der Kartenzahl ab - und
+                // insgesamt etwas enger als zuvor, damit auch 18 Karten
+                // sicher in eine Reihe passen.
                 const overlapFrac =
-                  n <= 8 ? 0.36 :
-                  n <= 10 ? 0.40 :
-                  n <= 12 ? 0.44 :
-                  n <= 14 ? 0.50 :
-                  n <= 16 ? 0.55 :
-                  0.60;
+                  n <= 8 ? 0.40 :
+                  n <= 10 ? 0.45 :
+                  n <= 12 ? 0.50 :
+                  n <= 14 ? 0.56 :
+                  n <= 16 ? 0.62 :
+                  0.68;
 
                 return list.map((card, i) => {
                   const isSelected = selectedDiscard.includes(card);
@@ -3372,7 +3375,10 @@ function App() {
                   // Karte), damit die obere linke Ecke (Rang/Farbe-Index)
                   // jeder Karte trotz Überlappung klar sichtbar bleibt.
                   const rot = (i - mid) * 4.4;
-                  const lift = Math.pow(Math.abs(i - mid), 1.85) * liftCoef;
+                  const lift = Math.min(
+                    Math.pow(Math.abs(i - mid), 1.85) * liftCoef,
+                    maxLift
+                  );
                   const raise = inDiscard && isSelected ? -20 : 0;
 
                   return (
