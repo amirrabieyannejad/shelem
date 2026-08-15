@@ -1941,6 +1941,20 @@ socket.on("takeBottomCards", () => {
   if (!hands[userId]) return;
   if (!hands[userId].includes(card)) return;
 
+  // WICHTIG: Es fehlte bisher jede Prüfung, ob dieser Spieler überhaupt am
+  // Zug ist! Jeder Spieler konnte jederzeit eine Karte spielen (solange sie
+  // in seiner Hand war und die Bedienpflicht erfüllte) - auch mehrfach
+  // hintereinander. Ergebnis: zwei Karten desselben Sitzplatzes landeten im
+  // selben Stich (sichtbar als zwei gestapelte Karten am Tisch). Auch
+  // während variantPending (Richter entscheidet Normal/Flip/Trumpf nach der
+  // ersten Karte) darf niemand spielen - der Index steht dann noch auf dem
+  // gerade gezogenen Spieler.
+  if (players[currentPlayerIndex]?.userId !== userId) {
+    socket.emit("invalidAction", { msg: "Du bist gerade nicht am Zug." });
+    return;
+  }
+  if (variantPending) return;
+
   // Bedienpflicht
   if (currentTrick.length > 0) {
     const leadSuit = getLeadSuit();
