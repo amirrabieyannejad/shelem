@@ -13,9 +13,13 @@ const socket = io(API_BASE, { autoConnect: false });
 // simple, crisp crown
 
 // crisp suits
-const SuitIcon = ({ suit = "♠", size = 32 }) => {
-  const color = suit === "♦" || suit === "♥" ? "#ef4444" : "#111111";
-  const stroke = suit === "♦" || suit === "♥" ? "#7f1d1d" : "#000000";
+const SuitIcon = ({ suit = "♠", size = 32, dark = false }) => {
+  const isRed = suit === "♦" || suit === "♥";
+  // "dark": Icon liegt auf dunklem Hintergrund (z.B. Trumpf-Anzeige oben
+  // links am Tisch). Schwarze Farben (♠/♣) waren dort fast unsichtbar
+  // (#111111 auf dunkelgrünem Badge-Hintergrund) - auf hell umschalten.
+  const color = isRed ? "#ef4444" : dark ? "#f4f6f8" : "#111111";
+  const stroke = isRed ? "#7f1d1d" : dark ? "#0d1620" : "#000000";
   const common = { fill: color, stroke, strokeWidth: 2 };
   return (
     <svg
@@ -2963,7 +2967,7 @@ function App() {
                     {roundVariant === VARIANTS.NORMAL && trumpf ? (
                       <>
                         <div className="sh-trump">
-                          <SuitIcon suit={trumpf} size={18} />
+                          <SuitIcon suit={trumpf} size={18} dark />
                           حکم
                         </div>
                         {trumpfSetter && (
@@ -3324,12 +3328,12 @@ function App() {
                 // alle in einer Reihe Platz finden, statt einzelne Karten
                 // komplett zu verdecken.
                 const overlapFrac =
-                  n <= 8 ? 0.30 :
-                  n <= 10 ? 0.34 :
-                  n <= 12 ? 0.38 :
-                  n <= 14 ? 0.44 :
-                  n <= 16 ? 0.50 :
-                  0.56;
+                  n <= 8 ? 0.36 :
+                  n <= 10 ? 0.40 :
+                  n <= 12 ? 0.44 :
+                  n <= 14 ? 0.50 :
+                  n <= 16 ? 0.55 :
+                  0.60;
 
                 return list.map((card, i) => {
                   const isSelected = selectedDiscard.includes(card);
@@ -3351,8 +3355,8 @@ function App() {
                   // Bogen verstärkt (mehr Rotation + mehr Höhenversatz pro
                   // Karte), damit die obere linke Ecke (Rang/Farbe-Index)
                   // jeder Karte trotz Überlappung klar sichtbar bleibt.
-                  const rot = (i - mid) * 3.6;
-                  const lift = Math.pow(Math.abs(i - mid), 1.85) * 1.05;
+                  const rot = (i - mid) * 4.4;
+                  const lift = Math.pow(Math.abs(i - mid), 1.85) * 1.35;
                   const raise = inDiscard && isSelected ? -20 : 0;
 
                   return (
@@ -3412,7 +3416,7 @@ function App() {
                     gap: 12,
                   }}
                 >
-                  <h3 style={{ margin: 0, fontWeight: 800 }}>Statistik</h3>
+                  <h3 style={{ margin: 0, fontWeight: 800 }}>Statistik · آمار</h3>
                   <button
                     className="close"
                     style={styles.btn}
