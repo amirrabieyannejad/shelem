@@ -306,10 +306,15 @@
    können inzwischen recht groß werden (--ava reagiert auch auf die
    Bildschirmhöhe) - der Versatz der Karten muss deutlich näher an der
    Tischmitte bleiben, sonst landen sie mitten im Avatar-Kreis. */
-.sh-slot--n{transform:translate(-50%,-50%) translateY(calc(var(--card-h)*-0.55)) rotate(2deg)}
-.sh-slot--s{transform:translate(-50%,-50%) translateY(calc(var(--card-h)*0.55)) rotate(-2deg)}
-.sh-slot--w{transform:translate(-50%,-50%) translateX(calc(var(--card-w)*-1.55)) rotate(-7deg)}
-.sh-slot--e{transform:translate(-50%,-50%) translateX(calc(var(--card-w)*1.55)) rotate(7deg)}
+/* Versatz kombiniert Kartenhöhe/-breite MIT der Avatargröße (--ava), statt
+   nur einen festen Faktor zu raten - --ava kann je nach Bildschirm
+   unterschiedlich groß werden (reagiert auch auf die Höhe), ein reiner
+   card-h/card-w-Faktor konnte daher mal zu nah an der Mitte (Karten wirken
+   gedrängt) und mal zu nah am Avatar-Kreis (Überlappung) liegen. */
+.sh-slot--n{transform:translate(-50%,-50%) translateY(calc((var(--card-h)*-0.55) - (var(--ava)*0.26))) rotate(2deg)}
+.sh-slot--s{transform:translate(-50%,-50%) translateY(calc((var(--card-h)*0.55) + (var(--ava)*0.26))) rotate(-2deg)}
+.sh-slot--w{transform:translate(-50%,-50%) translateX(calc((var(--card-w)*-1.55) - (var(--ava)*0.1))) rotate(-7deg)}
+.sh-slot--e{transform:translate(-50%,-50%) translateX(calc((var(--card-w)*1.55) + (var(--ava)*0.1))) rotate(7deg)}
 .sh-slot.is-win img{box-shadow:0 0 0 3px var(--gold),0 8px 22px rgba(0,0,0,.55)}
 .sh-tablemsg{
   position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
@@ -417,8 +422,8 @@
   .sh-hud-tl{top:auto;bottom:10%;inset-inline-end:auto;left:7%}
   .sh-hud-tl .sh-sub{display:none}
   .sh-stack{width:74vw;height:60vw}
-  .sh-slot--w{transform:translate(-50%,-50%) translateX(calc(var(--card-w)*-1.4)) rotate(-7deg)}
-  .sh-slot--e{transform:translate(-50%,-50%) translateX(calc(var(--card-w)*1.4)) rotate(7deg)}
+  .sh-slot--w{transform:translate(-50%,-50%) translateX(calc((var(--card-w)*-1.4) - (var(--ava)*0.1))) rotate(-7deg)}
+  .sh-slot--e{transform:translate(-50%,-50%) translateX(calc((var(--card-w)*1.4) + (var(--ava)*0.1))) rotate(7deg)}
   .sh-actions{padding:10px;margin-top:10px}
   .sh-bidval{min-width:80px;font-size:21px}
   .sh-fan{padding-top:14px}
