@@ -13,9 +13,16 @@
   --ink:#e9eef4; --muted:#93a3b5;
   --panel:#161e28; --line:#26313f;
 
+  /* Karten in der Hand bewusst NUR nach Breite skaliert (nicht vh) - sonst
+     würden sie auf hohen Screens so groß werden, dass die Hand (bis zu 18
+     Karten bei Joker-Runden) horizontal gescrollt werden müsste, was wir an
+     anderer Stelle extra vermeiden wollten. */
   --card-w: clamp(46px, 8.4vw, 76px);
   --card-h: calc(var(--card-w) * 1.42);
-  --ava:    clamp(52px, 9.5vw, 82px);
+  /* Avatare/Sitzkreise dürfen wachsen: betrifft nicht die Handbreite, nutzt
+     also gefahrlos zusätzliche Höhe auf hohen, schmalen Screens (siehe
+     Screenshot: viel Weißraum unterm Tisch bei genug vertikalem Platz). */
+  --ava:    clamp(52px, max(9.5vw, 7.4vh), 92px);
   --tap: 44px;
   --safe-b: env(safe-area-inset-bottom, 0px);
 }
