@@ -301,8 +301,13 @@
 .sh-hud-tl .sh-sub{font-size:11px;color:rgba(255,255,255,.5);margin-top:5px}
 .sh-stack{position:relative;width:min(300px,62vw);height:min(250px,46vw)}
 .sh-slot{position:absolute;left:50%;top:50%}
-.sh-slot--n{transform:translate(-50%,-50%) translateY(calc(var(--card-h)*-0.95)) rotate(2deg)}
-.sh-slot--s{transform:translate(-50%,-50%) translateY(calc(var(--card-h)*0.95)) rotate(-2deg)}
+/* Gespielte Karten dürfen NICHT mit dem Avatar-Kreis des jeweiligen Sitzes
+   überlappen. Die Avatare sitzen direkt am Tischrand (top:-1%/101%) und
+   können inzwischen recht groß werden (--ava reagiert auch auf die
+   Bildschirmhöhe) - der Versatz der Karten muss deutlich näher an der
+   Tischmitte bleiben, sonst landen sie mitten im Avatar-Kreis. */
+.sh-slot--n{transform:translate(-50%,-50%) translateY(calc(var(--card-h)*-0.55)) rotate(2deg)}
+.sh-slot--s{transform:translate(-50%,-50%) translateY(calc(var(--card-h)*0.55)) rotate(-2deg)}
 .sh-slot--w{transform:translate(-50%,-50%) translateX(calc(var(--card-w)*-1.55)) rotate(-7deg)}
 .sh-slot--e{transform:translate(-50%,-50%) translateX(calc(var(--card-w)*1.55)) rotate(7deg)}
 .sh-slot.is-win img{box-shadow:0 0 0 3px var(--gold),0 8px 22px rgba(0,0,0,.55)}
