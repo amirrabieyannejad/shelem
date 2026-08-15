@@ -3332,6 +3332,17 @@ function App() {
                 // Abwerfen: bis zu 18) automatisch etwas enger, damit noch
                 // alle in einer Reihe Platz finden, statt einzelne Karten
                 // komplett zu verdecken.
+                // Bei vielen Karten (Joker-Runde beim Abwerfen: bis zu 18)
+                // wird der Bogen sonst SEHR hoch (lift wächst mit der
+                // Kartenzahl^1.85) und sprengt die verfügbare Höhe. Bei
+                // großen Händen daher flacherer Bogen, bei normalen 12
+                // Karten bleibt der volle, ausgeprägte Bogen erhalten.
+                const liftCoef = n <= 12 ? 1.35 : n <= 15 ? 0.95 : 0.68;
+
+                // Überlappung hängt ebenfalls von der Kartenzahl ab: bei
+                // wenigen Karten (normale Hand) mehr Abstand zum leichteren
+                // Tippen, bei vielen Karten automatisch etwas enger, damit
+                // noch alle in einer Reihe Platz finden.
                 const overlapFrac =
                   n <= 8 ? 0.36 :
                   n <= 10 ? 0.40 :
@@ -3361,7 +3372,7 @@ function App() {
                   // Karte), damit die obere linke Ecke (Rang/Farbe-Index)
                   // jeder Karte trotz Überlappung klar sichtbar bleibt.
                   const rot = (i - mid) * 4.4;
-                  const lift = Math.pow(Math.abs(i - mid), 1.85) * 1.35;
+                  const lift = Math.pow(Math.abs(i - mid), 1.85) * liftCoef;
                   const raise = inDiscard && isSelected ? -20 : 0;
 
                   return (

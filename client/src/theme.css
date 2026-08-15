@@ -350,10 +350,10 @@
    direction:ltr sorgt dafür, dass jede nächste Karte die RECHTE Seite der
    vorigen überdeckt. Damit bleibt die obere linke Ecke mit dem aufrechten
    Index sichtbar — vorher lag die kopfstehende Ecke unten rechts frei.      */
-.sh-handzone{margin-top:16px}
+.sh-handzone{margin-top:8px}
 .sh-fan{
   direction:ltr;display:flex;justify-content:center;align-items:flex-end;
-  padding-top:34px;min-height:calc(var(--card-h) + 40px);
+  padding-top:28px;min-height:calc(var(--card-h) + 32px);
   /* Bei Joker-Runden (Abwerfen: bis zu 18 Karten) soll die Hand lieber
      breiter werden dürfen (waagerecht wischbar) statt die Karten noch
      enger zusammenzuquetschen - besser tippbar. */
@@ -435,16 +435,22 @@
   .sh-tablewrap{padding-block:calc(var(--ava)*0.5)}
 }
 
-/* ---------- Abwurfphase: Tisch schrumpft, Platz für große Hand (bis zu
-   18 Karten bei Joker-Runden) frei machen - kein Trick läuft währenddessen
-   ("در انتظار کارت‌ها"), der Tisch braucht also nicht seine volle Höhe. */
-.sh-tablewrap--compact{padding-block:calc(var(--ava)*0.28)}
-.sh-tablewrap--compact .sh-table{aspect-ratio:16/5.2}
+/* ---------- Abwurfphase: Tisch etwas kompakter, Platz für große Hand (bis
+   zu 18 Karten bei Joker-Runden) frei machen - kein Trick läuft währenddessen
+   ("در انتظار کارت‌ها"), der Tisch braucht also nicht seine volle Höhe.
+   WICHTIG: padding-block darf NICHT zu klein werden - das ist der einzige
+   Puffer zwischen Tischrand und den benachbarten Leisten (Rundeninfo oben,
+   Abwerfen-Bestätigen unten). Die Sitz-Badges (Name+Kreis) ragen bei
+   top:0%/100% zur Hälfte über den Tischrand hinaus - zu wenig Padding lässt
+   sie mit den Nachbar-Leisten überlappen. Die Haupt-Platzersparnis kommt
+   stattdessen aus dem flacheren Bogen der Handkarten (siehe liftCoef in
+   App.js) und einer moderat (nicht extrem) reduzierten Aspect-Ratio. */
+.sh-tablewrap--compact{padding-block:calc(var(--ava)*0.5)}
+.sh-tablewrap--compact .sh-table{aspect-ratio:16/6.6}
 @media (max-width:600px){
-  .sh-tablewrap--compact .sh-table{aspect-ratio:1/0.56;border-radius:42%/30%}
-  .sh-tablewrap--compact .sh-stack{width:60vw;height:40vw}
+  .sh-tablewrap--compact .sh-table{aspect-ratio:1/0.82;border-radius:44%/36%}
 }
 @media (max-height:520px) and (orientation:landscape){
-  .sh-tablewrap--compact .sh-table{aspect-ratio:16/3.6}
-  .sh-tablewrap--compact{padding-block:calc(var(--ava)*0.22)}
+  .sh-tablewrap--compact .sh-table{aspect-ratio:16/4.6}
+  .sh-tablewrap--compact{padding-block:calc(var(--ava)*0.4)}
 }
