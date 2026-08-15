@@ -2051,7 +2051,7 @@ function App() {
       if (p.passed) badge = { text: "پاس", kind: "pass" };
       else if (p.lastBid) badge = { text: String(p.lastBid), kind: "bid" };
     } else if (isJudge) {
-      badge = { text: "حاکم", kind: "judge" };
+      badge = { text: "👑", kind: "judge" };
     }
 
     return (
@@ -3155,6 +3155,7 @@ function App() {
                               style={{
                                 ...styles.btn,
                                 background: "#fde68a",
+                                color: "#3a2e05",
                                 fontWeight: 800,
                                 padding: "10px 24px",
                               }}
@@ -3162,7 +3163,7 @@ function App() {
                                 socket.emit("setVariant", { variant: "FLIP" })
                               }
                             >
-                              نرس (Flip)
+                              🔄 نرس (Flip)
                             </button>
                           </div>
                         )}
@@ -3198,6 +3199,7 @@ function App() {
                             style={{
                               ...styles.btn,
                               background: "#dbeafe",
+                              color: "#1c3a5e",
                               fontWeight: 800,
                             }}
                             onClick={() =>
@@ -3206,7 +3208,7 @@ function App() {
                               })
                             }
                           >
-                            معمولی
+                            ▶️ معمولی
                           </button>
                         )}
                         {hasFlipChoice && (
@@ -3214,13 +3216,14 @@ function App() {
                             style={{
                               ...styles.btn,
                               background: "#fde68a",
+                              color: "#3a2e05",
                               fontWeight: 800,
                             }}
                             onClick={() =>
                               socket.emit("setVariant", { variant: "FLIP" })
                             }
                           >
-                            نرس
+                            🔄 نرس
                           </button>
                         )}
                       </div>
@@ -3314,6 +3317,20 @@ function App() {
                 const n = list.length;
                 const mid = (n - 1) / 2;
 
+                // Überlappung hängt jetzt von der Kartenzahl ab statt fix zu
+                // sein: bei wenigen Karten (normale Hand) mehr Abstand zum
+                // leichteren Tippen, bei vielen Karten (Joker-Runde beim
+                // Abwerfen: bis zu 18) automatisch etwas enger, damit noch
+                // alle in einer Reihe Platz finden, statt einzelne Karten
+                // komplett zu verdecken.
+                const overlapFrac =
+                  n <= 8 ? 0.30 :
+                  n <= 10 ? 0.34 :
+                  n <= 12 ? 0.38 :
+                  n <= 14 ? 0.44 :
+                  n <= 16 ? 0.50 :
+                  0.56;
+
                 return list.map((card, i) => {
                   const isSelected = selectedDiscard.includes(card);
                   const canSelectMore = selectedDiscard.length < discardTargetCount;
@@ -3332,10 +3349,10 @@ function App() {
                     (!inDiscard && (!biddingWinner || !isMyTurn));
 
                   // Bogen verstärkt (mehr Rotation + mehr Höhenversatz pro
-                  // Karte), damit Nachbarkarten deutlicher auseinanderstehen
-                  // und man beim Tippen weniger leicht danebengreift.
-                  const rot = (i - mid) * 3.1;
-                  const lift = Math.pow(Math.abs(i - mid), 1.85) * 0.78;
+                  // Karte), damit die obere linke Ecke (Rang/Farbe-Index)
+                  // jeder Karte trotz Überlappung klar sichtbar bleibt.
+                  const rot = (i - mid) * 3.6;
+                  const lift = Math.pow(Math.abs(i - mid), 1.85) * 1.05;
                   const raise = inDiscard && isSelected ? -20 : 0;
 
                   return (
@@ -3359,6 +3376,10 @@ function App() {
                       style={{
                         transform: `rotate(${rot}deg) translateY(${lift + raise}px)`,
                         zIndex: i * 2 + (isSelected ? 1 : 0),
+                        marginLeft:
+                          i === 0
+                            ? undefined
+                            : `calc(var(--card-w) * -${overlapFrac})`,
                       }}
                     >
                       <SpriteCard

@@ -161,7 +161,17 @@
 }
 .sh-badge--pass{background:#3a2020;color:#ff9b9b}
 .sh-badge--bid{background:var(--gold);color:#1c1406}
-.sh-badge--judge{background:#2b1f06;color:var(--gold);border-color:var(--gold)}
+/* Krone statt Text-Pill für den Richter. Positioniert auf der Seite des
+   Avatar-Kreises, die WEG vom Namen zeigt - Standard (n/w/e): Name liegt
+   über dem Kreis -> Krone unten. Eigener Sitz (s): Reihenfolge ist
+   umgekehrt (Name unter dem Kreis, siehe .sh-seat--s .sh-ring{order:1}
+   weiter oben) -> Krone oben. Sonst überlappt sie sich mit dem Namen. */
+.sh-badge--judge{
+  position:absolute;bottom:-13px;top:auto;left:50%;transform:translateX(-50%);
+  background:none;border:none;padding:0;font-size:19px;line-height:1;
+  filter:drop-shadow(0 2px 3px rgba(0,0,0,.6));
+}
+.sh-seat--s .sh-badge--judge{top:-13px;bottom:auto}
 
 /* ---------- Sitzauswahl ---------- */
 .sh-seats .sh-tablewrap{padding-inline:clamp(62px,11vw,112px)}
