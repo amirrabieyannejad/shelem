@@ -164,8 +164,8 @@
 /* Krone statt Text-Pill für den Richter - liegt jetzt IMMER oben auf dem
    Kreis (wie eine Krone auf dem Kopf), unabhängig von der Namensposition. */
 .sh-badge--judge{
-  position:absolute;top:-15px;bottom:auto;left:50%;transform:translateX(-50%);
-  background:none;border:none;padding:0;font-size:20px;line-height:1;
+  position:absolute;top:-19px;bottom:auto;left:50%;transform:translateX(-50%);
+  background:none;border:none;padding:0;font-size:27px;line-height:1;
   filter:drop-shadow(0 2px 3px rgba(0,0,0,.6));
 }
 
@@ -426,4 +426,18 @@
 @media (max-height:520px) and (orientation:landscape){
   .sh-table{aspect-ratio:16/7.4}
   .sh-tablewrap{padding-block:calc(var(--ava)*0.5)}
+}
+
+/* ---------- Abwurfphase: Tisch schrumpft, Platz für große Hand (bis zu
+   18 Karten bei Joker-Runden) frei machen - kein Trick läuft währenddessen
+   ("در انتظار کارت‌ها"), der Tisch braucht also nicht seine volle Höhe. */
+.sh-tablewrap--compact{padding-block:calc(var(--ava)*0.28)}
+.sh-tablewrap--compact .sh-table{aspect-ratio:16/5.2}
+@media (max-width:600px){
+  .sh-tablewrap--compact .sh-table{aspect-ratio:1/0.56;border-radius:42%/30%}
+  .sh-tablewrap--compact .sh-stack{width:60vw;height:40vw}
+}
+@media (max-height:520px) and (orientation:landscape){
+  .sh-tablewrap--compact .sh-table{aspect-ratio:16/3.6}
+  .sh-tablewrap--compact{padding-block:calc(var(--ava)*0.22)}
 }

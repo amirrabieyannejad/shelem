@@ -2960,7 +2960,12 @@ function App() {
               })()}
 
               {/* --- Ovaler Tisch --- */}
-              <div className="sh-tablewrap">
+              {/* Während der Abwurfphase (discardPhase) ist der Tisch selbst
+                  irrelevant (kein Stich läuft, nur "در انتظار کارت‌ها") und
+                  die Hand kann bis zu 18 Karten haben - der Tisch bekommt
+                  hier bewusst weniger Höhe, damit die Hand+Bestätigen-Leiste
+                  ohne Scrollen sichtbar bleibt. */}
+              <div className={"sh-tablewrap" + (discardPhase ? " sh-tablewrap--compact" : "")}>
                 <div className="sh-table">
                   {/* Trumpf: vor dem Aufdecken ehrlich als "unbekannt" */}
                   <div className="sh-hud-tl">
