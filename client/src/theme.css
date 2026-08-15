@@ -301,10 +301,10 @@
 .sh-hud-tl .sh-sub{font-size:11px;color:rgba(255,255,255,.5);margin-top:5px}
 .sh-stack{position:relative;width:min(300px,62vw);height:min(250px,46vw)}
 .sh-slot{position:absolute;left:50%;top:50%}
-.sh-slot--n{transform:translate(-50%,-50%) translateY(calc(var(--card-h)*-0.66)) rotate(2deg)}
-.sh-slot--s{transform:translate(-50%,-50%) translateY(calc(var(--card-h)*0.66)) rotate(-2deg)}
-.sh-slot--w{transform:translate(-50%,-50%) translateX(calc(var(--card-w)*-1.1)) rotate(-7deg)}
-.sh-slot--e{transform:translate(-50%,-50%) translateX(calc(var(--card-w)*1.1)) rotate(7deg)}
+.sh-slot--n{transform:translate(-50%,-50%) translateY(calc(var(--card-h)*-0.95)) rotate(2deg)}
+.sh-slot--s{transform:translate(-50%,-50%) translateY(calc(var(--card-h)*0.95)) rotate(-2deg)}
+.sh-slot--w{transform:translate(-50%,-50%) translateX(calc(var(--card-w)*-1.55)) rotate(-7deg)}
+.sh-slot--e{transform:translate(-50%,-50%) translateX(calc(var(--card-w)*1.55)) rotate(7deg)}
 .sh-slot.is-win img{box-shadow:0 0 0 3px var(--gold),0 8px 22px rgba(0,0,0,.55)}
 .sh-tablemsg{
   position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
@@ -412,8 +412,8 @@
   .sh-hud-tl{top:auto;bottom:10%;inset-inline-end:auto;left:7%}
   .sh-hud-tl .sh-sub{display:none}
   .sh-stack{width:74vw;height:60vw}
-  .sh-slot--w{transform:translate(-50%,-50%) translateX(calc(var(--card-w)*-1.02)) rotate(-7deg)}
-  .sh-slot--e{transform:translate(-50%,-50%) translateX(calc(var(--card-w)*1.02)) rotate(7deg)}
+  .sh-slot--w{transform:translate(-50%,-50%) translateX(calc(var(--card-w)*-1.4)) rotate(-7deg)}
+  .sh-slot--e{transform:translate(-50%,-50%) translateX(calc(var(--card-w)*1.4)) rotate(7deg)}
   .sh-actions{padding:10px;margin-top:10px}
   .sh-bidval{min-width:80px;font-size:21px}
   .sh-fan{padding-top:14px}
