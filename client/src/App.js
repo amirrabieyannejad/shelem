@@ -1228,6 +1228,147 @@ function ProfileSheet({ auth, onClose, onSaved, level }) {
   );
 }
 
+function Lobby({ profile, rooms, myStats, onRefresh, onCreate, onJoin, onLogout }) {
+  const [name, setName] = React.useState("");
+  const list = Array.isArray(rooms) ? rooms : [];
+
+  const create = () => {
+    onCreate(name.trim());
+    setName("");
+  };
+
+  return (
+    <div
+      className="sh-app"
+      style={{ direction: "rtl", maxWidth: 620, margin: "0 auto", padding: 16 }}
+    >
+      {/* Kopfzeile */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          marginBottom: 18,
+        }}
+      >
+        <Avatar user={profile} size={38} />
+        <div style={{ display: "flex", flexDirection: "column" }}>
+          <strong style={{ fontSize: 16 }}>
+            {profile?.username || profile?.name || "بازیکن"}
+          </strong>
+          {myStats && (
+            <span style={{ fontSize: 12, opacity: 0.7 }}>
+              سطح {myStats.level} · {myStats.gamesWon}/{myStats.gamesPlayed} برد
+            </span>
+          )}
+        </div>
+        <span style={{ flex: 1 }} />
+        <button className="sh-btn sh-btn--red" onClick={onLogout}>
+          خروج
+        </button>
+      </div>
+
+      {/* Neuen Raum erstellen */}
+      <div
+        style={{
+          background: "rgba(255,255,255,0.05)",
+          borderRadius: 14,
+          padding: 14,
+          marginBottom: 18,
+        }}
+      >
+        <div style={{ fontWeight: 700, marginBottom: 8 }}>➕ ساخت میز جدید</div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && create()}
+            placeholder="نام میز (اختیاری)"
+            maxLength={30}
+            style={{
+              flex: 1,
+              padding: "10px 12px",
+              borderRadius: 10,
+              border: "1px solid rgba(255,255,255,0.15)",
+              background: "rgba(0,0,0,0.25)",
+              color: "inherit",
+              fontSize: 14,
+            }}
+          />
+          <button className="sh-btn" onClick={create}>
+            بساز و وارد شو
+          </button>
+        </div>
+      </div>
+
+      {/* Raumliste */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          marginBottom: 10,
+        }}
+      >
+        <div style={{ fontWeight: 700 }}>🎴 میزهای موجود</div>
+        <span style={{ flex: 1 }} />
+        <button className="sh-btn" onClick={onRefresh} title="بروزرسانی">
+          ↻ بروزرسانی
+        </button>
+      </div>
+
+      {list.length === 0 ? (
+        <div
+          style={{
+            opacity: 0.6,
+            textAlign: "center",
+            padding: "26px 0",
+            fontSize: 14,
+          }}
+        >
+          هنوز میزی ساخته نشده. اولین میز را بساز!
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {list.map((r) => {
+            const canPlay = !r.full && !r.inProgress;
+            return (
+              <div
+                key={r.id}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  background: "rgba(255,255,255,0.05)",
+                  borderRadius: 12,
+                  padding: "12px 14px",
+                }}
+              >
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 700, fontSize: 15 }}>
+                    {r.name}
+                  </div>
+                  <div style={{ fontSize: 12, opacity: 0.75, marginTop: 2 }}>
+                    👥 {r.playerCount}/4
+                    {r.inProgress ? " · ▶️ در حال بازی" : " · ⏳ در انتظار"}
+                    {r.spectatorCount > 0 ? ` · 👁 ${r.spectatorCount}` : ""}
+                  </div>
+                </div>
+                <button
+                  className="sh-btn"
+                  onClick={() => onJoin(r.id)}
+                  title={canPlay ? "پیوستن به بازی" : "تماشای بازی"}
+                >
+                  {canPlay ? "پیوستن" : "👁 تماشا"}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function App() {
   const [hand, setHand] = useState([]);
   const [players, setPlayers] = useState([]);
@@ -1296,6 +1437,18 @@ function App() {
   const [showRoundPoints, setShowRoundPoints] = useState(true);
   const [discardTargetCount, setDiscardTargetCount] = useState(4); // 4 oder 6
   const [firstClientId, setFirstClientId] = useState(null);
+
+  // --- Raum / Lobby State ---
+  const [roomState, setRoomState] = useState({
+    status: "lobby", // 'lobby' | 'player' | 'spectator'
+    roomId: null,
+    roomName: null,
+    role: null,
+  });
+  const [roomList, setRoomList] = useState([]);
+  const [leaveVote, setLeaveVote] = useState(null);
+  const roomIdRef = useRef(null);
+  const isSpectator = roomState.role === "spectator";
 
   // --- Auth State ---
   const [auth, setAuth] = useState({
@@ -1412,12 +1565,33 @@ function App() {
     // Auth-State leeren → zeigt wieder <AuthGate />
     setAuth({ token: null, profile: null });
 
+    // Raum-Zustand zurücksetzen
+    roomIdRef.current = null;
+    setRoomState({ status: "lobby", roomId: null, roomName: null, role: null });
+    setLeaveVote(null);
+
     // Socket sauber trennen
     try {
       socket.disconnect();
     } catch (e) {
       console.warn("Socket disconnect error:", e);
     }
+  };
+
+  // Miz/Raum verlassen. Läuft ein Spiel und man sitzt am Tisch, startet der
+  // Server eine Abstimmung (alle müssen zustimmen, Minuspunkte fürs Team).
+  const handleExitRoom = () => {
+    const inProgressLocal =
+      biddingActive || !!trumpf || (currentTrick && currentTrick.length > 0);
+    if (roomState.role === "player" && inProgressLocal) {
+      if (
+        !window.confirm(
+          "خروج از بازیِ در جریان؟ همه بازیکنان باید موافقت کنند و تیم شما امتیاز منفی می‌گیرد."
+        )
+      )
+        return;
+    }
+    socket.emit("exitRoom");
   };
   // Abgeleitete Flags
   const seatedCount = (players || []).filter((p) => p?.seatPosition).length;
@@ -1503,9 +1677,14 @@ function App() {
       // gekappt -> Client reconnectet sofort wieder -> Endlosschleife.
       // Der Server holt sich die aktuelle avatarUrl stattdessen selbst
       // frisch aus der DB (siehe register-Handler).
-      socket.emit("register", { clientId: prof.id, name: prof.name });
-      socket.emit("getRoundsHistory");
-      socket.emit("requestState");
+      // Neu (Multi-Raum): nach Connect nicht mehr automatisch ins Spiel,
+      // sondern in die Lobby. Waren wir bereits in einem Raum (Reconnect),
+      // dort automatisch wieder beitreten.
+      if (roomIdRef.current) {
+        socket.emit("joinRoom", { roomId: roomIdRef.current });
+      } else {
+        socket.emit("listRooms");
+      }
     });
 
     const onInvalidAction = ({ msg }) => alert(msg);
@@ -1915,6 +2094,72 @@ function App() {
         setFirstClientId(s.firstClientId);
       }
     });
+
+    // ===== Raum / Lobby Events =====
+    socket.on("roomList", (list) =>
+      setRoomList(Array.isArray(list) ? list : [])
+    );
+
+    socket.on("roomJoined", ({ roomId, roomName, role }) => {
+      roomIdRef.current = roomId;
+      setRoomState({ status: role, roomId, roomName, role });
+      setLeaveVote(null);
+      if (role === "player") {
+        const profRaw = localStorage.getItem("shelem_profile");
+        const prof = profRaw ? JSON.parse(profRaw) : null;
+        if (prof) socket.emit("register", { clientId: prof.id, name: prof.name });
+      }
+      socket.emit("requestState");
+      socket.emit("getRoundsHistory");
+    });
+
+    socket.on("spectatorMode", ({ roomId, roomName }) => {
+      roomIdRef.current = roomId;
+      setRoomState({ status: "spectator", roomId, roomName, role: "spectator" });
+    });
+
+    const backToLobby = () => {
+      roomIdRef.current = null;
+      setRoomState({ status: "lobby", roomId: null, roomName: null, role: null });
+      setLeaveVote(null);
+      // stale Spielzustand leeren
+      setPlayers([]);
+      setHand([]);
+      setMe(null);
+      setScores({ Fire: 0, Storm: 0 });
+      setCurrentTrick([]);
+      setBiddingActive(false);
+      setTrumpf(null);
+      setShowBottom(false);
+      setDiscardPhase(false);
+      setIsMyTurn(false);
+      // Frische Socket-Verbindung: entfernt serverseitig die Spiel-Handler des
+      // alten Raums, damit sie nach einem Raumwechsel nicht doppelt feuern.
+      try {
+        socket.disconnect();
+        socket.connect();
+      } catch {}
+    };
+    socket.on("leftRoom", backToLobby);
+    socket.on("roomClosed", ({ reason, leavingTeam } = {}) => {
+      if (reason === "forfeit") {
+        alert(
+          `بازی پایان یافت. تیم ${
+            leavingTeam === "Fire" ? "آتش" : "طوفان"
+          } به دلیل ترک بازی امتیاز منفی گرفت.`
+        );
+      }
+      backToLobby();
+    });
+
+    socket.on("leaveVoteStarted", ({ initiator, agreed, needed }) => {
+      const mine = initiator?.userId === auth?.profile?.id;
+      setLeaveVote({ initiator, agreed, needed, mine, responded: mine });
+    });
+    socket.on("leaveVoteUpdate", ({ agreed, needed }) => {
+      setLeaveVote((v) => (v ? { ...v, agreed, needed } : v));
+    });
+    socket.on("leaveVoteCancelled", () => setLeaveVote(null));
 
     return () => {
       socket.off();
@@ -2565,6 +2810,16 @@ function App() {
     <div className="sh-root" style={{ ...styles.page, background: "transparent" }}>
       {!auth?.token ? (
         <AuthGate onAuthed={setAuth} />
+      ) : roomState.status === "lobby" ? (
+        <Lobby
+          profile={auth?.profile}
+          rooms={roomList}
+          myStats={myStats}
+          onRefresh={() => socket.emit("listRooms")}
+          onCreate={(name) => socket.emit("createRoom", { name })}
+          onJoin={(rid) => socket.emit("joinRoom", { roomId: rid })}
+          onLogout={handleLogout}
+        />
       ) : (
         <>
           <div className="sh-app" style={{ paddingBottom: 0 }}>
@@ -2610,6 +2865,21 @@ function App() {
                 </button>
               )}
 
+              {roomState.roomName && (
+                <span className="sh-lv" title="میز فعلی">
+                  🎴 {roomState.roomName}
+                  {isSpectator ? " · تماشاگر" : ""}
+                </span>
+              )}
+
+              <button
+                className="sh-btn"
+                onClick={handleExitRoom}
+                title="خروج از میز"
+              >
+                🚪 خروج از میز
+              </button>
+
               <button
                 className="sh-btn sh-btn--red"
                 onClick={handleLogout}
@@ -2632,12 +2902,95 @@ function App() {
                 // NICHT mitschicken (kann als base64 >1MB sein und würde
                 // Socket.IOs Frame-Limit sprengen) - Server holt sich das
                 // aktuelle Bild stattdessen frisch aus der DB (register-Handler).
-                socket.emit("register", {
-                  clientId: profile.id,
-                  name: profile.name,
-                });
+                if (roomState.role === "player") {
+                  socket.emit("register", {
+                    clientId: profile.id,
+                    name: profile.name,
+                  });
+                }
               }}
             />
+          )}
+
+          {leaveVote && (
+            <div
+              style={{
+                position: "fixed",
+                inset: 0,
+                background: "rgba(0,0,0,0.6)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                zIndex: 9999,
+              }}
+            >
+              <div
+                style={{
+                  background: "#1f2937",
+                  color: "#f9fafb",
+                  borderRadius: 16,
+                  padding: "22px 20px",
+                  width: "min(90vw, 380px)",
+                  textAlign: "center",
+                  boxShadow: "0 12px 40px rgba(0,0,0,0.5)",
+                  direction: "rtl",
+                }}
+              >
+                <div style={{ fontSize: 34, marginBottom: 8 }}>🚪</div>
+                <div
+                  style={{ fontSize: 17, fontWeight: 700, marginBottom: 6 }}
+                >
+                  {leaveVote.mine
+                    ? "درخواست ترک بازی"
+                    : `${leaveVote.initiator?.name || "یک بازیکن"} می‌خواهد بازی را ترک کند`}
+                </div>
+                <div
+                  style={{ fontSize: 13, opacity: 0.85, marginBottom: 16 }}
+                >
+                  همه بازیکنان باید موافقت کنند. با پایان بازی، تیمِ ترک‌کننده امتیاز منفی می‌گیرد.
+                </div>
+                <div
+                  style={{ fontSize: 13, opacity: 0.9, marginBottom: 14 }}
+                >
+                  موافق: {leaveVote.agreed} / {leaveVote.needed}
+                </div>
+
+                {leaveVote.mine || leaveVote.responded ? (
+                  <div style={{ fontSize: 14, opacity: 0.85 }}>
+                    ⏳ در انتظار پاسخ سایر بازیکنان…
+                  </div>
+                ) : (
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: 10,
+                      justifyContent: "center",
+                    }}
+                  >
+                    <button
+                      className="sh-btn"
+                      onClick={() => {
+                        socket.emit("leaveVoteResponse", { agree: true });
+                        setLeaveVote((v) =>
+                          v ? { ...v, responded: true } : v
+                        );
+                      }}
+                    >
+                      ✅ موافقم
+                    </button>
+                    <button
+                      className="sh-btn sh-btn--red"
+                      onClick={() => {
+                        socket.emit("leaveVoteResponse", { agree: false });
+                        setLeaveVote(null);
+                      }}
+                    >
+                      ❌ مخالفم
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
           )}
 
           {/* Popup Boden-Karten */}
