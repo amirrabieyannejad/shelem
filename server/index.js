@@ -289,6 +289,18 @@ async function requireAuth(req, res, next) {
 registerStatsRoutes(app, requireAuth);
 
 // ---------- Globale Variablen (MUSS vor ensureActiveGame stehen) ----------
+
+// =====================================================================
+// Multi-Room Refactor: Der komplette Spiel-State + alle Handler leben
+// jetzt pro Raum in dieser Closure. Die Spiel-Logik selbst ist unveraendert;
+// nur "io.emit(...)" wurde zu "roomEmit(...)" (nur an diesen Raum) gemacht.
+// =====================================================================
+const rooms = new Map();          // roomId -> room
+const socketRoom = new Map();     // socketId -> roomId
+
+function createRoom(roomId, roomName = "Raum", restoreRow = null) {
+  const roomEmit = (ev, p) => io.to(roomId).emit(ev, p);
+
 let gameId = null;
 let persistQueued = false;
 
@@ -407,6 +419,8 @@ function dbSnapshot() {
     firstUserId,
     gamePaused,
     firstBidderIndex,
+    roomId,
+    roomName,
   };
 }
 
@@ -465,6 +479,7 @@ function applyLoadedState(s) {
 
   firstUserId = s.firstUserId || null;
   gamePaused = !!s.gamePaused;
+  if (s.roomName) roomName = s.roomName;
 }
 
 async function ensureActiveGame() {
@@ -915,7 +930,7 @@ function orderPlayersBySeats() {
   players = [seats[1], seats[2], seats[3], seats[4]].filter(Boolean);
 }
 function broadcastSeats() {
-  io.emit("seatsUpdate", {
+  roomEmit("seatsUpdate", {
     seats: {
       1: seats[1]?.name || null,
       2: seats[2]?.name || null,
@@ -975,7 +990,7 @@ function fillRandomTeamsNow() {
   }
 
   broadcastSeats();
-  io.emit("playersUpdate", players);
+  roomEmit("playersUpdate", players);
 }
 
 // === Karten austeilen ===
@@ -1012,7 +1027,7 @@ function deal() {
   if (p.socketId) io.to(p.socketId).emit("hand", hands[p.userId]);
 });
 
-  io.emit("roundPointsUpdate", { roundPoints });
+  roomEmit("roundPointsUpdate", { roundPoints });
 }
 
 // === Check ob Bietrunde vorbei ===
@@ -1030,7 +1045,7 @@ function maybeEndAuction() {
     winnerUserId = winnerId;
     const winnerPlayer = playerByUserId(winnerId);
 
-    io.emit("biddingResult", { winner: winnerPlayer, bid: highestBid });
+    roomEmit("biddingResult", { winner: winnerPlayer, bid: highestBid });
     emitToUser(winnerId, "showBottomCards", { bottomCards });
 
     persistGameState();
@@ -1046,7 +1061,7 @@ function maybeEndAuction() {
     winnerUserId = winnerId;
     const winnerPlayer = playerByUserId(winnerId);
 
-    io.emit("biddingResult", { winner: winnerPlayer, bid: highestBid });
+    roomEmit("biddingResult", { winner: winnerPlayer, bid: highestBid });
     emitToUser(winnerId, "showBottomCards", { bottomCards });
 
     persistGameState();
@@ -1072,7 +1087,7 @@ function maybeEndAuction() {
         currentPlayer: notPassed,
         mustBid: true,
       });
-      io.emit("turnUpdate", { currentPlayer: notPassed, currentBid });
+      roomEmit("turnUpdate", { currentPlayer: notPassed, currentBid });
 
       persistGameState();
       return true;
@@ -1248,7 +1263,7 @@ function startNewRound() {
   trumpf = null;
 
   // <-- wichtig: Reset sofort an alle Clients pushen
-  io.emit("playersUpdate", players);
+  roomEmit("playersUpdate", players);
 
   // Startspieler rotiert gegen Uhrzeigersinn
   firstBidderIndex = (firstBidderIndex + 1) % players.length;
@@ -1261,7 +1276,7 @@ function startNewRound() {
   // ersten Bieter informieren
   const next = players[currentPlayerIndex];
   emitToUser(next.userId, "yourTurn", { currentBid, currentPlayer: next });
-io.emit("turnUpdate", { currentPlayer: next, currentBid });
+roomEmit("turnUpdate", { currentPlayer: next, currentBid });
 
 }
 // JWT im Handshake auswerten (optional, aber empfohlen)
@@ -1296,7 +1311,12 @@ io.use(async (socket, next) => {
   next();
 });
 // === Socket.io Events ===
-io.on("connection", (socket) => {
+  // ===== Spieler betritt DIESEN Raum (registriert Spiel-Handler + Reconnect-Sync) =====
+  function attachPlayer(socket) {
+    socket.join(roomId);
+    socketRoom.set(socket.id, roomId);
+    socket.data.roomId = roomId;
+    socket.data.spectator = false;
   console.log("Player connected:", socket.id);
   socket.on("register", async (payload) => {
   const userId = uid(socket);
@@ -1479,7 +1499,7 @@ io.on("connection", (socket) => {
     const winnerPlayer = playerByUserId(winnerUserId);
     if (winnerPlayer) {
       if (!trumpf) {
-        io.emit("biddingResult", { winner: winnerPlayer, bid: currentBid });
+        roomEmit("biddingResult", { winner: winnerPlayer, bid: currentBid });
       } else {
         io.to(socket.id).emit("biddingResult", { winner: winnerPlayer, bid: currentBid });
       }
@@ -1493,7 +1513,7 @@ io.on("connection", (socket) => {
   if (trumpf && winnerUserId) {
     const winnerPlayer = playerByUserId(winnerUserId);
     if (winnerPlayer) {
-      io.emit("trumpChosen", { trumpf, winner: winnerPlayer });
+      roomEmit("trumpChosen", { trumpf, winner: winnerPlayer });
     }
   }
   // "yourTurn" ist ebenfalls nur ein einmaliger Event. Ist gerade wirklich er
@@ -1530,7 +1550,7 @@ io.on("connection", (socket) => {
   socket.emit("stateSync", stateSnapshot());
   socket.emit("roundsHistoryUpdate", { roundsHistory });
   players.forEach(p => { if (p.socketId) p.id = p.socketId; });
-  io.emit("playersUpdate", players);
+  roomEmit("playersUpdate", players);
   broadcastSeats();
 
   persistGameState();
@@ -1570,7 +1590,7 @@ io.on("connection", (socket) => {
 
   if (seatsFull()) orderPlayersBySeats();
   broadcastSeats();
-  io.emit("playersUpdate", players);
+  roomEmit("playersUpdate", players);
 
   persistGameState();
 });
@@ -1596,7 +1616,7 @@ io.on("connection", (socket) => {
   markGamePlayerLeft(userId);
 
   broadcastSeats();
-  io.emit("playersUpdate", players);
+  roomEmit("playersUpdate", players);
   persistGameState();
 });
 
@@ -1664,9 +1684,9 @@ io.on("connection", (socket) => {
 
     const next = players[currentPlayerIndex];
     emitToUser(next.userId, "yourTurn", { currentBid, currentPlayer: next });
-io.emit("turnUpdate", { currentPlayer: next, currentBid });
+roomEmit("turnUpdate", { currentPlayer: next, currentBid });
 
-    io.emit("playersUpdate", players);
+    roomEmit("playersUpdate", players);
   });
 
   socket.on("setIncludeJokers", ({ value }) => {
@@ -1683,7 +1703,7 @@ io.emit("turnUpdate", { currentPlayer: next, currentBid });
 
     includeJokers = !!value;
     currentBottomSize = includeJokers ? 6 : 4;
-    io.emit("stateSync", stateSnapshot());
+    roomEmit("stateSync", stateSnapshot());
   });
   socket.on("setShowRoundPoints", ({ value }) => {
     if (!isFirstPlayerSocket(socket)) {
@@ -1692,7 +1712,7 @@ io.emit("turnUpdate", { currentPlayer: next, currentBid });
 
     // hier ist es egal, ob die Runde schon läuft – es ist nur eine Anzeige-Option
     showRoundPoints = !!value;
-    io.emit("stateSync", stateSnapshot());
+    roomEmit("stateSync", stateSnapshot());
   });
 
   // Spiel hart zurücksetzen (Spieler/Seats bleiben)
@@ -1714,8 +1734,8 @@ io.emit("turnUpdate", { currentPlayer: next, currentBid });
     await startFreshGame();
 
     // allen sofort den neuen Grundzustand schicken
-    io.emit("gameReset", stateSnapshot());
-    io.emit("roundsHistoryUpdate", { roundsHistory });
+    roomEmit("gameReset", stateSnapshot());
+    roomEmit("roundsHistoryUpdate", { roundsHistory });
     broadcastSeats(); // falls UI sich darauf verlässt
 
     persistStats()
@@ -1753,7 +1773,7 @@ currentPlayerIndex = (leaderIdx + 1) % players.length;
         // Joker als erste Karte → Spieler wählt explizite Trumpf-Farbe
         trumpf = variant;
         justSetTrump = trumpf;
-        io.emit("trumpChosen", {
+        roomEmit("trumpChosen", {
           trumpf,
           winner: players.find((p) => p.userId === winnerUserId),
         });
@@ -1764,7 +1784,7 @@ currentPlayerIndex = (leaderIdx + 1) % players.length;
         if (firstCard !== "JOKER" && firstCard !== "JOKER_BW") {
           justSetTrump = firstCard.slice(-1);
           trumpf = justSetTrump;
-          io.emit("trumpChosen", {
+          roomEmit("trumpChosen", {
             trumpf,
             winner: players.find((p) => p.userId === winnerUserId),
           });
@@ -1773,7 +1793,7 @@ currentPlayerIndex = (leaderIdx + 1) % players.length;
       }
     }
 
-    io.emit("variantChosen", { variant: roundVariant, trumpf: justSetTrump });
+    roomEmit("variantChosen", { variant: roundVariant, trumpf: justSetTrump });
 
     // Falls genau 1 Karte liegt (wir hatten pausiert): jetzt weiterspielen lassen
    if (currentTrick.length === 1) {
@@ -1781,7 +1801,7 @@ currentPlayerIndex = (leaderIdx + 1) % players.length;
   currentPlayerIndex = (leaderIdx + 1 + players.length) % players.length;
   const next = players[currentPlayerIndex];
   emitToUser(next.userId, "yourTurn", { currentBid, currentPlayer: next });
-  io.emit("turnUpdate", { currentPlayer: next, currentBid });
+  roomEmit("turnUpdate", { currentPlayer: next, currentBid });
   persistGameState();
 }
 
@@ -1809,7 +1829,7 @@ currentPlayerIndex = (leaderIdx + 1) % players.length;
         currentPlayer: player,
         mustBid: forceBidUserId === userId,
       });
-      io.emit("turnUpdate", { currentPlayer: player, currentBid });
+      roomEmit("turnUpdate", { currentPlayer: player, currentBid });
       return;
     }
   }
@@ -1820,7 +1840,7 @@ currentPlayerIndex = (leaderIdx + 1) % players.length;
       currentPlayer: player,
       mustBid: true,
     });
-    io.emit("turnUpdate", { currentPlayer: player, currentBid });
+    roomEmit("turnUpdate", { currentPlayer: player, currentBid });
     return;
   }
 
@@ -1838,14 +1858,14 @@ currentPlayerIndex = (leaderIdx + 1) % players.length;
     if (currentBid >= maxBid) {
       biddingActive = false;
       winnerUserId = userId;
-      io.emit("biddingResult", { winner: player, bid: currentBid });
+      roomEmit("biddingResult", { winner: player, bid: currentBid });
       emitToUser(userId, "showBottomCards", { bottomCards });
       persistGameState();
       return;
     }
   }
 
-  io.emit("playersUpdate", players);
+  roomEmit("playersUpdate", players);
 
   if (maybeEndAuction()) return;
 
@@ -1855,7 +1875,7 @@ currentPlayerIndex = (leaderIdx + 1) % players.length;
 
   const next = players[currentPlayerIndex];
   emitToUser(next.userId, "yourTurn", { currentBid, currentPlayer: next, mustBid: false });
-  io.emit("turnUpdate", { currentPlayer: next, currentBid });
+  roomEmit("turnUpdate", { currentPlayer: next, currentBid });
 
   persistGameState();
 });
@@ -1926,7 +1946,7 @@ socket.on("takeBottomCards", () => {
   const startPlayer = players[currentPlayerIndex];
 
   emitToUser(startPlayer.userId, "yourTurn", { currentBid, currentPlayer: startPlayer });
-  io.emit("turnUpdate", { currentPlayer: startPlayer, currentBid });
+  roomEmit("turnUpdate", { currentPlayer: startPlayer, currentBid });
 
   persistGameState();
 });
@@ -1987,14 +2007,14 @@ socket.on("takeBottomCards", () => {
       } else if (roundVariant === VARIANTS.NORMAL && !trumpf) {
         if (card !== "JOKER" && card !== "JOKER_BW") {
           trumpf = card.slice(-1);
-          io.emit("trumpChosen", { trumpf, winner: player });
+          roomEmit("trumpChosen", { trumpf, winner: player });
         }
       }
     }
   }
 
   // Für UI: sende beides (compat)
-  io.emit("cardPlayed", { userId, playerId: player.socketId, card });
+  roomEmit("cardPlayed", { userId, playerId: player.socketId, card });
 
   // 4 Karten -> auswerten
   if (currentTrick.length === 4) {
@@ -2025,13 +2045,13 @@ socket.on("takeBottomCards", () => {
       card: x.card,
     }));
 
-    io.emit("trickResult", {
+    roomEmit("trickResult", {
       winner: winnerPlayer,
       cards: cardsForUi,
       points: trickPoints,
       roundPoints,
     });
-    io.emit("roundPointsUpdate", { roundPoints });
+    roomEmit("roundPointsUpdate", { roundPoints });
 
     tricksPlayed++;
 
@@ -2060,7 +2080,7 @@ socket.on("takeBottomCards", () => {
     } else {
       const next = players[currentPlayerIndex];
       emitToUser(next.userId, "yourTurn", { currentBid, currentPlayer: next });
-      io.emit("turnUpdate", { currentPlayer: next, currentBid });
+      roomEmit("turnUpdate", { currentPlayer: next, currentBid });
     }
 
     persistGameState();
@@ -2073,7 +2093,7 @@ socket.on("takeBottomCards", () => {
     const next = players[currentPlayerIndex];
 
     emitToUser(next.userId, "yourTurn", { currentBid, currentPlayer: next });
-    io.emit("turnUpdate", { currentPlayer: next, currentBid });
+    roomEmit("turnUpdate", { currentPlayer: next, currentBid });
   }
 
   persistGameState();
@@ -2211,7 +2231,7 @@ socket.on("takeBottomCards", () => {
     winnerUserId = null; // Krone/„Richter“ im HUD auch weg
 
     // Events an Clients
-    io.emit("roundEnd", {
+    roomEmit("roundEnd", {
       roundPoints,
       teamScores,
       roundWinnerTeam,
@@ -2228,10 +2248,10 @@ socket.on("takeBottomCards", () => {
       bidSuccess,
       winProb,
     });
-    io.emit("roundsHistoryUpdate", { roundsHistory });
+    roomEmit("roundsHistoryUpdate", { roundsHistory });
 
     biddingActive = true; // signalisiert „Runde aktiv/Übergang“
-    io.emit("stateSync", stateSnapshot());
+    roomEmit("stateSync", stateSnapshot());
     // ► kurze Pause, damit 'trickResult' & Recap sichtbar bleiben
     setTimeout(() => {
       // Reset erst jetzt – oder direkt in startNewRound/deal kapseln
@@ -2249,7 +2269,7 @@ socket.on("takeBottomCards", () => {
       const maxPoints = getMaxPoints();
       if (teamScores.Fire >= maxPoints || teamScores.Storm >= maxPoints) {
         const winner = teamScores.Fire >= maxPoints ? "Fire" : "Storm";
-        io.emit("gameOver", { winner, teamScores, maxPoints });
+        roomEmit("gameOver", { winner, teamScores, maxPoints });
         // Ergebnis festschreiben + lebenslange Statistik/Level neu berechnen
         finalizeGameAndStats(winner, maxPoints).catch((e) =>
           console.error("finalizeGameAndStats", e)
@@ -2324,10 +2344,10 @@ socket.on("takeBottomCards", () => {
                 currentPlayer: next,
                 mustBid: forceBidUserId === next.userId,
               });
-              io.emit("turnUpdate", { currentPlayer: next, currentBid });
+              roomEmit("turnUpdate", { currentPlayer: next, currentBid });
             } else if (next && winnerUserId) {
               emitToUser(next.userId, "yourTurn", { currentBid, currentPlayer: next });
-              io.emit("turnUpdate", { currentPlayer: next, currentBid });
+              roomEmit("turnUpdate", { currentPlayer: next, currentBid });
             }
           }
         }
@@ -2338,24 +2358,24 @@ socket.on("takeBottomCards", () => {
 
       if (players.length < 4) {
         gamePaused = true;
-        io.emit("gamePaused", { reason: "player_left" });
+        roomEmit("gamePaused", { reason: "player_left" });
       }
 
       broadcastSeats();
-      io.emit("playersUpdate", players);
+      roomEmit("playersUpdate", players);
 
       persistGameState();
     }, 15000)
   );
 
-  io.emit("playerMaybeBackSoon", { userId, timeoutSec: 15 });
+  roomEmit("playerMaybeBackSoon", { userId, timeoutSec: 15 });
 });
 
 
   function maybeResumeGame() {
     if (players.length === 4 && gamePaused) {
       gamePaused = false;
-      io.emit("gameResumed");
+      roomEmit("gameResumed");
     }
   }
 
@@ -2386,6 +2406,311 @@ socket.on("takeBottomCards", () => {
   }
 });
 
+  }
+
+  // ===== Raum-/Zuschauer-/Verlassen-Logik =====
+  const spectators = new Set();   // socketIds von Zuschauern
+  let leaveVote = null;           // { initiator, initiatorTeam, agreed:Set, needed:[] }
+
+  function inProgress() {
+    return biddingActive || !!winnerUserId || tricksPlayed > 0 || (currentTrick && currentTrick.length > 0);
+  }
+  function seatedCount() {
+    return [1, 2, 3, 4].filter((pos) => seats[pos]).length;
+  }
+  function isSeated(socket) {
+    const u = uid(socket);
+    return players.some((p) => p.userId === u && p.seatPosition);
+  }
+  function isEmpty() {
+    return players.length === 0 && spectators.size === 0;
+  }
+
+  // Darf dieser Socket als aktiver SPIELER beitreten (statt nur zuschauen)?
+  // - bereits bekannter Spieler dieses Spiels -> ja (Reconnect)
+  // - hat einen gespeicherten Sitz in game_players -> ja (Wiedereinstieg)
+  // - Spiel laeuft nicht und noch <4 Spieler -> ja (freier Platz)
+  // sonst -> nein (Zuschauer)
+  async function canJoinAsPlayer(socket) {
+    const u = uid(socket);
+    if (!u) return false;
+    if (players.some((p) => p.userId === u)) return true;
+    try {
+      const saved = await dbGamePlayerSeat(gameId, u);
+      if (saved && saved.seatPosition) return true;
+    } catch {}
+    if (!inProgress() && players.length < 4) return true;
+    return false;
+  }
+
+  function attachSpectator(socket) {
+    socket.join(roomId);
+    socketRoom.set(socket.id, roomId);
+    socket.data.roomId = roomId;
+    socket.data.spectator = true;
+    spectators.add(socket.id);
+    // Zuschauer bekommt NUR den Tisch-Zustand - niemals ein "hand"-Event,
+    // daher sieht er die Karten der Spieler grundsaetzlich nicht.
+    socket.emit("spectatorMode", { roomId, roomName });
+    socket.emit("stateSync", stateSnapshot());
+    socket.emit("roundsHistoryUpdate", { roundsHistory });
+    socket.emit("playersUpdate", players);
+    broadcastSeats();
+    socket.on("requestState", () => {
+      socket.emit("stateSync", stateSnapshot());
+      socket.emit("roundsHistoryUpdate", { roundsHistory });
+    });
+    socket.on("getRoundsHistory", () => {
+      socket.emit("roundsHistoryUpdate", { roundsHistory });
+    });
+  }
+  function detachSpectator(socket) {
+    spectators.delete(socket.id);
+    socket.leave(roomId);
+    socketRoom.delete(socket.id);
+  }
+
+  // Spieler verlaesst den Raum sofort (nur wenn KEIN Spiel laeuft).
+  function detachSocket(socket) {
+    const u = uid(socket);
+    if (disconnectTimers.has(u)) {
+      clearTimeout(disconnectTimers.get(u));
+      disconnectTimers.delete(u);
+    }
+    const idx = players.findIndex((p) => p.userId === u);
+    if (idx !== -1) {
+      const p = players[idx];
+      if (p.seatPosition && seats[p.seatPosition]?.userId === u) {
+        seats[p.seatPosition] = null;
+      }
+      players.splice(idx, 1);
+      markGamePlayerLeft(u);
+    }
+    socket.leave(roomId);
+    socketRoom.delete(socket.id);
+    broadcastSeats();
+    roomEmit("playersUpdate", players);
+    persistGameState();
+  }
+
+  function meta() {
+    return {
+      id: roomId,
+      name: roomName,
+      players: players.map((p) => ({ name: p.name, seat: p.seatPosition || null, team: p.team || null })),
+      playerCount: players.length,
+      spectatorCount: spectators.size,
+      inProgress: inProgress(),
+      full: seatedCount() >= 4,
+    };
+  }
+
+  // ---- Spiel mitten im Betrieb verlassen: alle muessen zustimmen ----
+  function requestLeave(socket) {
+    const u = uid(socket);
+    const p = players.find((x) => x.userId === u);
+    if (!p) return;
+    if (leaveVote) {
+      socket.emit("invalidAction", { msg: "Es laeuft bereits eine Abstimmung." });
+      return;
+    }
+    const seated = players.filter((x) => x.seatPosition);
+    leaveVote = {
+      initiator: u,
+      initiatorTeam: p.team || null,
+      agreed: new Set([u]),
+      needed: seated.map((x) => x.userId),
+    };
+    roomEmit("leaveVoteStarted", {
+      initiator: { userId: u, name: p.name, team: p.team || null },
+      agreed: leaveVote.agreed.size,
+      needed: leaveVote.needed.length,
+    });
+    checkLeaveVote();
+  }
+  function respondLeave(socket, agree) {
+    if (!leaveVote) return;
+    const u = uid(socket);
+    if (!leaveVote.needed.includes(u)) return;
+    if (!agree) {
+      roomEmit("leaveVoteCancelled", { by: u });
+      leaveVote = null;
+      return;
+    }
+    leaveVote.agreed.add(u);
+    roomEmit("leaveVoteUpdate", {
+      agreed: leaveVote.agreed.size,
+      needed: leaveVote.needed.length,
+    });
+    checkLeaveVote();
+  }
+  function checkLeaveVote() {
+    if (!leaveVote) return;
+    const allAgreed = leaveVote.needed.every((id) => leaveVote.agreed.has(id));
+    if (!allAgreed) return;
+    // Spiel wird beendet: MINUSPUNKTE fuer das Team, das verlaesst.
+    const leavingTeam = leaveVote.initiatorTeam || "Fire";
+    const otherTeam = leavingTeam === "Fire" ? "Storm" : "Fire";
+    const penalty = currentBid > 0 ? currentBid : getMaxBid();
+    teamScores[leavingTeam] = (teamScores[leavingTeam] || 0) - penalty;
+    const maxPoints = getMaxPoints();
+    roomEmit("gameOver", {
+      winner: otherTeam,
+      teamScores,
+      maxPoints,
+      reason: "forfeit",
+      leavingTeam,
+      penalty,
+    });
+    finalizeGameAndStats(otherTeam, maxPoints).catch((e) =>
+      console.error("forfeit finalize", e)
+    );
+    leaveVote = null;
+    roomEmit("roomClosed", { reason: "forfeit", leavingTeam });
+    destroyRoom(roomId);
+  }
+
+  async function initGame() {
+    if (restoreRow) {
+      gameId = restoreRow.id;
+      applyLoadedState(restoreRow.current_state);
+      if (restoreRow.current_state && restoreRow.current_state.roomName) {
+        roomName = restoreRow.current_state.roomName;
+      }
+      console.log("Raum wiederhergestellt:", roomId, "game:", gameId);
+      return;
+    }
+    gameId = randomUUID();
+    await pool.query(
+      `insert into games (id, status, first_user_id, include_jokers, show_round_points, current_bottom_size, current_state)
+       values ($1,'active',null,$2,$3,$4,$5::jsonb)`,
+      [gameId, includeJokers, showRoundPoints, currentBottomSize, dbSnapshot()]
+    );
+    console.log("Neuer Raum:", roomId, "game:", gameId);
+  }
+
+  return {
+    id: roomId,
+    get name() { return roomName; },
+    attachPlayer,
+    attachSpectator,
+    detachSpectator,
+    detachSocket,
+    canJoinAsPlayer,
+    initGame,
+    meta,
+    inProgress,
+    seatedCount,
+    isSeated,
+    isEmpty,
+    requestLeave,
+    respondLeave,
+  };
+}
+
+// ===== Lobby-Schicht (Raumverwaltung) =====
+function roomListPayload() {
+  return Array.from(rooms.values()).map((r) => r.meta());
+}
+function broadcastRoomList() {
+  io.to("lobby").emit("roomList", roomListPayload());
+}
+function destroyRoom(rid) {
+  rooms.delete(rid);
+  broadcastRoomList();
+}
+
+io.on("connection", (socket) => {
+  console.log("Socket verbunden:", socket.id);
+  socket.join("lobby");
+  socket.emit("roomList", roomListPayload());
+
+  socket.on("listRooms", () => socket.emit("roomList", roomListPayload()));
+
+  socket.on("createRoom", async (payload = {}) => {
+    if (!uid(socket)) {
+      socket.emit("invalidAction", { msg: "Bitte zuerst anmelden." });
+      return;
+    }
+    const rid = randomUUID();
+    const rname = String((payload && payload.name) || "").trim() || `Raum ${rooms.size + 1}`;
+    const room = createRoom(rid, rname, null);
+    try { await room.initGame(); } catch (e) { console.error("initGame", e); }
+    rooms.set(rid, room);
+    socket.leave("lobby");
+    room.attachPlayer(socket);
+    socket.emit("roomJoined", { roomId: rid, roomName: rname, role: "player" });
+    broadcastRoomList();
+  });
+
+  socket.on("joinRoom", async (payload = {}) => {
+    if (!uid(socket)) {
+      socket.emit("invalidAction", { msg: "Bitte zuerst anmelden." });
+      return;
+    }
+    const rid = payload && payload.roomId;
+    const room = rooms.get(rid);
+    if (!room) {
+      socket.emit("invalidAction", { msg: "Raum existiert nicht mehr." });
+      socket.emit("roomList", roomListPayload());
+      return;
+    }
+    socket.leave("lobby");
+    let asPlayer = false;
+    try { asPlayer = await room.canJoinAsPlayer(socket); } catch {}
+    if (asPlayer) {
+      room.attachPlayer(socket);
+      socket.emit("roomJoined", { roomId: rid, roomName: room.name, role: "player" });
+    } else {
+      room.attachSpectator(socket);
+      socket.emit("roomJoined", { roomId: rid, roomName: room.name, role: "spectator" });
+    }
+    broadcastRoomList();
+  });
+
+  socket.on("exitRoom", () => {
+    const rid = socketRoom.get(socket.id);
+    const room = rooms.get(rid);
+    if (!room) {
+      socket.join("lobby");
+      socket.emit("leftRoom");
+      socket.emit("roomList", roomListPayload());
+      return;
+    }
+    if (socket.data.spectator) {
+      room.detachSpectator(socket);
+      socket.join("lobby");
+      socket.emit("leftRoom");
+      broadcastRoomList();
+      return;
+    }
+    // Aktiver Spieler + laufendes Spiel -> Abstimmung, sonst sofort raus.
+    if (room.inProgress() && room.isSeated(socket)) {
+      room.requestLeave(socket);
+    } else {
+      room.detachSocket(socket);
+      socket.join("lobby");
+      socket.emit("leftRoom");
+      if (room.isEmpty()) destroyRoom(rid);
+      broadcastRoomList();
+    }
+  });
+
+  socket.on("leaveVoteResponse", (payload = {}) => {
+    const room = rooms.get(socketRoom.get(socket.id));
+    if (room) room.respondLeave(socket, !!(payload && payload.agree));
+  });
+
+  // Lobby-seitiges Aufraeumen bei echtem Verbindungsabbruch. Die Spiel-State-
+  // Behandlung (15s-Timer, Pause) macht der raum-eigene disconnect-Handler,
+  // der in attachPlayer registriert wurde.
+  socket.on("disconnect", () => {
+    const rid = socketRoom.get(socket.id);
+    socketRoom.delete(socket.id);
+    const room = rooms.get(rid);
+    if (room && socket.data.spectator) room.detachSpectator(socket);
+    broadcastRoomList();
+  });
 });
 
 // === Server Start ===
@@ -2405,7 +2730,23 @@ try {
   );
 }
 
-await ensureActiveGame();
+// Aktive Spiele beim Start als Raeume wiederherstellen
+try {
+  const active = await pool.query(
+    `select id, current_state from games where status='active' order by updated_at desc`
+  );
+  for (const row of active.rows) {
+    const st = row.current_state || {};
+    const rid = st.roomId || row.id;
+    const rname = st.roomName || "Raum";
+    const room = createRoom(rid, rname, row);
+    await room.initGame();
+    rooms.set(rid, room);
+  }
+  console.log("Wiederhergestellte Raeume:", rooms.size);
+} catch (e) {
+  console.error("Raum-Restore fehlgeschlagen:", e.message);
+}
 server.listen(PORT, () => {
   console.log(`Server läuft auf Port ${PORT}`);
 });
