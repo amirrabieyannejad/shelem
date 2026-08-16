@@ -1279,37 +1279,6 @@ function startNewRound() {
 roomEmit("turnUpdate", { currentPlayer: next, currentBid });
 
 }
-// JWT im Handshake auswerten (optional, aber empfohlen)
-io.use(async (socket, next) => {
-  try {
-    const token = socket.handshake.auth?.token || socket.handshake.query?.token;
-    if (token) {
-      const p = jwt.verify(token, JWT_SECRET);
-      socket.user = {
-        id: p.sub,
-        name: p.name,
-        username: p.username,
-        email: p.email,
-        avatarUrl: null,
-      };
-      // Avatar steht nicht im Token - einmal pro Verbindung aus der DB holen,
-      // damit players[] das Bild mitliefern kann.
-      try {
-        const u = await dbUserById(p.sub);
-        if (u) {
-          socket.user.avatarUrl = u.avatarUrl || null;
-          socket.user.name = u.name || socket.user.name;
-          socket.user.username = u.username || socket.user.username;
-        }
-      } catch (_) {
-        /* DB kurz nicht erreichbar -> ohne Bild weiterspielen */
-      }
-    }
-  } catch (e) {
-    // ungültiges Token → ohne user; Frontend darf dann nicht ins Spiel
-  }
-  next();
-});
 // === Socket.io Events ===
   // ===== Spieler betritt DIESEN Raum (registriert Spiel-Handler + Reconnect-Sync) =====
   function attachPlayer(socket) {
@@ -2620,6 +2589,36 @@ function destroyRoom(rid) {
   broadcastRoomList();
 }
 
+// JWT im Handshake auswerten - EINMAL global (setzt socket.user vor allen Handlern)
+io.use(async (socket, next) => {
+  try {
+    const token = socket.handshake.auth?.token || socket.handshake.query?.token;
+    if (token) {
+      const p = jwt.verify(token, JWT_SECRET);
+      socket.user = {
+        id: p.sub,
+        name: p.name,
+        username: p.username,
+        email: p.email,
+        avatarUrl: null,
+      };
+      try {
+        const u = await dbUserById(p.sub);
+        if (u) {
+          socket.user.avatarUrl = u.avatarUrl || null;
+          socket.user.name = u.name || socket.user.name;
+          socket.user.username = u.username || socket.user.username;
+        }
+      } catch (_) {
+        /* DB kurz nicht erreichbar -> ohne Bild weiterspielen */
+      }
+    }
+  } catch (e) {
+    // ungültiges Token → ohne user; Frontend darf dann nicht ins Spiel
+  }
+  next();
+});
+
 io.on("connection", (socket) => {
   console.log("Socket verbunden:", socket.id);
   socket.join("lobby");
@@ -2628,7 +2627,7 @@ io.on("connection", (socket) => {
   socket.on("listRooms", () => socket.emit("roomList", roomListPayload()));
 
   socket.on("createRoom", async (payload = {}) => {
-    if (!uid(socket)) {
+    if (!socket.user?.id) {
       socket.emit("invalidAction", { msg: "Bitte zuerst anmelden." });
       return;
     }
@@ -2644,7 +2643,7 @@ io.on("connection", (socket) => {
   });
 
   socket.on("joinRoom", async (payload = {}) => {
-    if (!uid(socket)) {
+    if (!socket.user?.id) {
       socket.emit("invalidAction", { msg: "Bitte zuerst anmelden." });
       return;
     }

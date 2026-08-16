@@ -1239,9 +1239,17 @@ function Lobby({ profile, rooms, myStats, onRefresh, onCreate, onJoin, onLogout 
 
   return (
     <div
-      className="sh-app"
-      style={{ direction: "rtl", maxWidth: 620, margin: "0 auto", padding: 16 }}
+      className="sh-root"
+      style={{
+        minHeight: "100vh",
+        direction: "rtl",
+        color: "var(--ink, #e9eef4)",
+        background:
+          "radial-gradient(circle at 50% 0%, #1a2430, #0b1016 60%)",
+        padding: "18px 12px calc(28px + env(safe-area-inset-bottom, 0px))",
+      }}
     >
+      <div style={{ maxWidth: 620, margin: "0 auto" }}>
       {/* Kopfzeile */}
       <div
         style={{
@@ -1365,6 +1373,7 @@ function Lobby({ profile, rooms, myStats, onRefresh, onCreate, onJoin, onLogout 
           })}
         </div>
       )}
+      </div>
     </div>
   );
 }
