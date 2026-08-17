@@ -2929,7 +2929,7 @@ function App() {
               )}
 
               {roomState.roomName && (
-                <span className="sh-lv" title="میز فعلی">
+                <span className="sh-roomchip" title="میز فعلی">
                   🎴 {roomState.roomName}
                   {isSpectator ? " · تماشاگر" : ""}
                 </span>
@@ -2952,6 +2952,31 @@ function App() {
               </button>
             </div>
           </div>
+
+          {players && players.length > 0 && (
+            <div className="sh-roster">
+              <span className="sh-roster-lbl">👥 در میز:</span>
+              {players.map((p) => (
+                <span
+                  key={p.userId || p.id}
+                  className={
+                    "sh-roster-chip " + (p.seatPosition ? "seated" : "waiting")
+                  }
+                  title={p.seatPosition ? "نشسته" : "هنوز ننشسته"}
+                >
+                  <Avatar user={p} size={20} className="sh-roster-ava" />
+                  <span className="sh-roster-nm">{p.name}</span>
+                  <span
+                    className={
+                      "sh-roster-tag " + (p.seatPosition ? "ok" : "wait")
+                    }
+                  >
+                    {p.seatPosition ? "نشسته" : "منتظر"}
+                  </span>
+                </span>
+              ))}
+            </div>
+          )}
 
           {showProfile && (
             <ProfileSheet
