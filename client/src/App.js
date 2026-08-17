@@ -1232,6 +1232,28 @@ function Lobby({ profile, rooms, myStats, onRefresh, onCreate, onJoin, onLogout 
   const [name, setName] = React.useState("");
   const list = Array.isArray(rooms) ? rooms : [];
 
+  // Spieler auf die 4 Tisch-Positionen verteilen. Teamkollegen sitzen
+  // gegenüber: Team آتش oben/unten, Team طوفان links/rechts. So sieht man
+  // sofort, wer mit wem im Team ist. Ohne Team -> nächster freier Platz.
+  const layoutSeats = (players) => {
+    const pos = { top: null, bottom: null, start: null, end: null };
+    const fire = players.filter((p) => p.team === "Fire");
+    const storm = players.filter((p) => p.team === "Storm");
+    const rest = players.filter(
+      (p) => p.team !== "Fire" && p.team !== "Storm"
+    );
+    if (fire[0]) pos.top = { ...fire[0], teamColor: "fire" };
+    if (fire[1]) pos.bottom = { ...fire[1], teamColor: "fire" };
+    if (storm[0]) pos.start = { ...storm[0], teamColor: "storm" };
+    if (storm[1]) pos.end = { ...storm[1], teamColor: "storm" };
+    const order = ["top", "bottom", "start", "end"];
+    for (const p of rest) {
+      const slot = order.find((s) => !pos[s]);
+      if (slot) pos[slot] = { ...p, teamColor: "none" };
+    }
+    return pos;
+  };
+
   const create = () => {
     onCreate(name.trim());
     setName("");
@@ -1336,38 +1358,65 @@ function Lobby({ profile, rooms, myStats, onRefresh, onCreate, onJoin, onLogout 
           هنوز میزی ساخته نشده. اولین میز را بساز!
         </div>
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        <div className="sh-lob-list">
           {list.map((r) => {
             const canPlay = !r.full && !r.inProgress;
+            const pos = layoutSeats(r.players || []);
             return (
               <div
                 key={r.id}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 10,
-                  background: "rgba(255,255,255,0.05)",
-                  borderRadius: 12,
-                  padding: "12px 14px",
-                }}
+                className={"sh-lob-card" + (r.inProgress ? " is-live" : "")}
               >
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontWeight: 700, fontSize: 15 }}>
-                    {r.name}
+                <div className="sh-lob-table">
+                  <div className="sh-lob-oval" />
+                  {["top", "start", "bottom", "end"].map((slot) => {
+                    const p = pos[slot];
+                    return (
+                      <div key={slot} className={"sh-lob-pos " + slot}>
+                        {p ? (
+                          <div
+                            className={"sh-lob-seat " + p.teamColor}
+                            title={p.name}
+                          >
+                            <Avatar
+                              user={{ avatarUrl: p.avatarUrl, name: p.name }}
+                              size={30}
+                            />
+                          </div>
+                        ) : (
+                          <div className="sh-lob-seat free" />
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="sh-lob-main">
+                  <div className="sh-lob-head">
+                    <span className="sh-lob-nm">{r.name}</span>
+                    {r.inProgress ? (
+                      <span className="sh-lob-badge live">
+                        <span className="sh-lob-dot" /> زنده
+                      </span>
+                    ) : (
+                      <span className="sh-lob-badge wait">⏳ در انتظار</span>
+                    )}
                   </div>
-                  <div style={{ fontSize: 12, opacity: 0.75, marginTop: 2 }}>
-                    👥 {r.playerCount}/4
-                    {r.inProgress ? " · ▶️ در حال بازی" : " · ⏳ در انتظار"}
-                    {r.spectatorCount > 0 ? ` · 👁 ${r.spectatorCount}` : ""}
+                  <div className="sh-lob-sub">
+                    {r.playerCount}/4 بازیکن
+                    {r.spectatorCount > 0
+                      ? ` · 👁 ${r.spectatorCount} تماشاگر`
+                      : ""}
+                  </div>
+                  <div className="sh-lob-actions">
+                    <button
+                      className={canPlay ? "sh-btn sh-btn--gold" : "sh-btn"}
+                      onClick={() => onJoin(r.id)}
+                    >
+                      {canPlay ? "پیوستن" : "👁 تماشا"}
+                    </button>
                   </div>
                 </div>
-                <button
-                  className="sh-btn"
-                  onClick={() => onJoin(r.id)}
-                  title={canPlay ? "پیوستن به بازی" : "تماشای بازی"}
-                >
-                  {canPlay ? "پیوستن" : "👁 تماشا"}
-                </button>
               </div>
             );
           })}

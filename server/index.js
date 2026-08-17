@@ -2466,7 +2466,7 @@ socket.on("takeBottomCards", () => {
     return {
       id: roomId,
       name: roomName,
-      players: players.map((p) => ({ name: p.name, seat: p.seatPosition || null, team: p.team || null })),
+      players: players.map((p) => ({ name: p.name, seat: p.seatPosition || null, team: p.team || null, avatarUrl: p.avatarUrl || null })),
       playerCount: players.length,
       spectatorCount: spectators.size,
       inProgress: inProgress(),
