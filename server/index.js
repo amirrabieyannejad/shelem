@@ -2446,6 +2446,7 @@ socket.on("takeBottomCards", () => {
   //                   bleibt moeglich (kurzer Netzwerkabbruch).
   function removeUser(userId, opts = {}) {
     const release = opts.release !== false;
+    const kick = opts.kick === true;
     if (!userId) return;
     if (disconnectTimers.has(userId)) {
       clearTimeout(disconnectTimers.get(userId));
@@ -2454,6 +2455,20 @@ socket.on("takeBottomCards", () => {
     const idx = players.findIndex((p) => p.userId === userId);
     if (idx !== -1) {
       const p = players[idx];
+      // Falls dieser Nutzer noch mit einem (alten) Socket in DIESEM Raum
+      // haengt: Socket sauber aus dem Raum werfen -> zurueck in die Lobby.
+      // Verhindert, dass man gleichzeitig an einem zweiten Tisch "klebt".
+      if (kick && p.socketId) {
+        const s = io.sockets.sockets.get(p.socketId);
+        if (s) {
+          try { s.leave(roomId); } catch {}
+          socketRoom.delete(p.socketId);
+          s.data.roomId = null;
+          s.data.spectator = false;
+          s.join("lobby");
+          s.emit("roomLeftForced", { roomId });
+        }
+      }
       if (p.seatPosition && seats[p.seatPosition]?.userId === userId) {
         seats[p.seatPosition] = null;
       }
@@ -2495,6 +2510,33 @@ socket.on("takeBottomCards", () => {
       inProgress: inProgress(),
       full: seatedCount() >= 4,
     };
+  }
+
+  // Sitzt dieser Nutzer hier als GETRENNTER Spieler (kein aktiver Socket)?
+  function hasDisconnectedUser(userId) {
+    return players.some((p) => p.userId === userId && !p.socketId);
+  }
+
+  // Beim Server-Start Duplikate entfernen: ist ein Nutzer bereits einem
+  // (neueren) Raum zugeordnet, wird sein verwaister Sitz hier freigegeben,
+  // damit niemand nach dem Neustart in zwei Raeumen gleichzeitig steckt.
+  function dedupPlayers(seen) {
+    let changed = false;
+    for (const p of [...players]) {
+      if (seen.has(p.userId)) {
+        if (p.seatPosition && seats[p.seatPosition]?.userId === p.userId) {
+          seats[p.seatPosition] = null;
+        }
+        const i = players.indexOf(p);
+        if (i !== -1) players.splice(i, 1);
+        markGamePlayerLeft(p.userId);
+        changed = true;
+      } else {
+        seen.add(p.userId);
+      }
+    }
+    if (changed) persistGameState();
+    return changed;
   }
 
   // ---- Spiel mitten im Betrieb verlassen: alle muessen zustimmen ----
@@ -2589,6 +2631,8 @@ socket.on("takeBottomCards", () => {
     detachSpectator,
     detachSocket,
     removeUser,
+    hasDisconnectedUser,
+    dedupPlayers,
     canJoinAsPlayer,
     initGame,
     meta,
@@ -2620,9 +2664,26 @@ function purgeUserFromAllRooms(userId, exceptRid) {
   if (!userId) return;
   for (const [rid, room] of rooms) {
     if (rid === exceptRid) continue;
-    room.removeUser(userId, { release: true });
+    room.removeUser(userId, { release: true, kick: true });
     if (room.isEmpty()) rooms.delete(rid);
   }
+  broadcastRoomList();
+}
+
+// Beim Anmelden verwaiste Sitze in NICHT laufenden Raeumen freigeben, damit
+// ein Nutzer nicht als "Geisterspieler" in alten Warteraeumen haengen bleibt.
+// Laufende Spiele bleiben unangetastet (Reconnect soll moeglich sein).
+function cleanupOrphanSeats(userId) {
+  if (!userId) return;
+  let changed = false;
+  for (const [rid, room] of rooms) {
+    if (room.hasDisconnectedUser(userId) && !room.inProgress()) {
+      room.removeUser(userId, { release: true });
+      if (room.isEmpty()) rooms.delete(rid);
+      changed = true;
+    }
+  }
+  if (changed) broadcastRoomList();
 }
 
 // JWT im Handshake auswerten - EINMAL global (setzt socket.user vor allen Handlern)
@@ -2658,6 +2719,8 @@ io.use(async (socket, next) => {
 io.on("connection", (socket) => {
   console.log("Socket verbunden:", socket.id);
   socket.join("lobby");
+  // Verwaiste Sitze dieses Nutzers in nicht laufenden Raeumen aufraeumen.
+  if (socket.user?.id) cleanupOrphanSeats(socket.user.id);
   socket.emit("roomList", roomListPayload());
 
   socket.on("listRooms", () => socket.emit("roomList", roomListPayload()));
@@ -2779,6 +2842,14 @@ try {
     const room = createRoom(rid, rname, row);
     await room.initGame();
     rooms.set(rid, room);
+  }
+  // Ein Nutzer darf nach dem Neustart nicht in mehreren Raeumen stecken:
+  // Raeume sind nach updated_at desc sortiert -> der zuletzt gespielte Raum
+  // behaelt den Spieler, aus aelteren wird sein verwaister Sitz entfernt.
+  {
+    const seen = new Set();
+    for (const room of rooms.values()) room.dedupPlayers(seen);
+    for (const [rid, room] of [...rooms]) if (room.isEmpty()) rooms.delete(rid);
   }
   console.log("Wiederhergestellte Raeume:", rooms.size);
 } catch (e) {

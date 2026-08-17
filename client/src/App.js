@@ -2199,6 +2199,11 @@ function App() {
       } catch {}
     };
     socket.on("leftRoom", backToLobby);
+    socket.on("roomLeftForced", () => {
+      // Nutzer ist (an einem anderen Tisch/Gerät) beigetreten -> dieser
+      // alte Zugang wird an die Lobby zurückgegeben.
+      backToLobby();
+    });
     socket.on("roomClosed", ({ reason, leavingTeam } = {}) => {
       if (reason === "forfeit") {
         alert(
