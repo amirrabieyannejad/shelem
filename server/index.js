@@ -2439,27 +2439,50 @@ socket.on("takeBottomCards", () => {
     socketRoom.delete(socket.id);
   }
 
-  // Spieler verlaesst den Raum sofort (nur wenn KEIN Spiel laeuft).
-  function detachSocket(socket) {
-    const u = uid(socket);
-    if (disconnectTimers.has(u)) {
-      clearTimeout(disconnectTimers.get(u));
-      disconnectTimers.delete(u);
+  // Spieler vollstaendig aus DIESEM Raum entfernen.
+  //  release=true  -> Sitz KOMPLETT freigeben (game_players-Zeile loeschen);
+  //                   beim Wiedereintritt muss neu gewaehlt werden.
+  //  release=false -> nur als "left" markieren; Reconnect auf denselben Sitz
+  //                   bleibt moeglich (kurzer Netzwerkabbruch).
+  function removeUser(userId, opts = {}) {
+    const release = opts.release !== false;
+    if (!userId) return;
+    if (disconnectTimers.has(userId)) {
+      clearTimeout(disconnectTimers.get(userId));
+      disconnectTimers.delete(userId);
     }
-    const idx = players.findIndex((p) => p.userId === u);
+    const idx = players.findIndex((p) => p.userId === userId);
     if (idx !== -1) {
       const p = players[idx];
-      if (p.seatPosition && seats[p.seatPosition]?.userId === u) {
+      if (p.seatPosition && seats[p.seatPosition]?.userId === userId) {
         seats[p.seatPosition] = null;
       }
       players.splice(idx, 1);
-      markGamePlayerLeft(u);
     }
-    socket.leave(roomId);
-    socketRoom.delete(socket.id);
+    if (release && gameId) {
+      pool
+        .query(`delete from game_players where game_id=$1 and user_id=$2`, [
+          gameId,
+          userId,
+        ])
+        .catch((e) => console.error("release seat error", e));
+    } else if (idx !== -1) {
+      markGamePlayerLeft(userId);
+    }
+    if ((biddingActive || winnerUserId || tricksPlayed > 0) && seatedCount() < 4) {
+      gamePaused = true;
+      roomEmit("gamePaused", { reason: "player_left" });
+    }
     broadcastSeats();
     roomEmit("playersUpdate", players);
     persistGameState();
+  }
+
+  // Spieler verlaesst den Raum bewusst -> Sitz freigeben.
+  function detachSocket(socket) {
+    removeUser(uid(socket), { release: true });
+    socket.leave(roomId);
+    socketRoom.delete(socket.id);
   }
 
   function meta() {
@@ -2565,6 +2588,7 @@ socket.on("takeBottomCards", () => {
     attachSpectator,
     detachSpectator,
     detachSocket,
+    removeUser,
     canJoinAsPlayer,
     initGame,
     meta,
@@ -2587,6 +2611,18 @@ function broadcastRoomList() {
 function destroyRoom(rid) {
   rooms.delete(rid);
   broadcastRoomList();
+}
+
+// Stellt sicher, dass ein Nutzer nur an EINEM Tisch sitzt: vor jedem Beitritt
+// wird er aus allen anderen Raeumen entfernt (Sitz dort wird frei). Faengt auch
+// "Geister" ab, die nach Refresh/Reconnect kurz in zwei Raeumen haengen.
+function purgeUserFromAllRooms(userId, exceptRid) {
+  if (!userId) return;
+  for (const [rid, room] of rooms) {
+    if (rid === exceptRid) continue;
+    room.removeUser(userId, { release: true });
+    if (room.isEmpty()) rooms.delete(rid);
+  }
 }
 
 // JWT im Handshake auswerten - EINMAL global (setzt socket.user vor allen Handlern)
@@ -2637,6 +2673,7 @@ io.on("connection", (socket) => {
     try { await room.initGame(); } catch (e) { console.error("initGame", e); }
     rooms.set(rid, room);
     socket.leave("lobby");
+    purgeUserFromAllRooms(socket.user.id, rid);
     room.attachPlayer(socket);
     socket.emit("roomJoined", { roomId: rid, roomName: rname, role: "player" });
     broadcastRoomList();
@@ -2655,6 +2692,7 @@ io.on("connection", (socket) => {
       return;
     }
     socket.leave("lobby");
+    purgeUserFromAllRooms(socket.user.id, rid);
     let asPlayer = false;
     try { asPlayer = await room.canJoinAsPlayer(socket); } catch {}
     if (asPlayer) {
