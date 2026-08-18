@@ -2357,6 +2357,18 @@ function App() {
     const isTurn = currentPlayer && currentPlayer.id === p.id;
     const isJudge = judgeId && p.id === judgeId;
 
+    // Rundenpunkte des GEGNERteams (nicht حاکم) sollen unter dessen
+    // Spieler-Kreisen erscheinen (spart die breite Leiste oben).
+    const jp = (players || []).find((x) => x.id === judgeId);
+    const declTeamR = jp ? jp.team : null;
+    const oppTeamR =
+      declTeamR === "Fire" ? "Storm" : declTeamR === "Storm" ? "Fire" : null;
+    const showOppPts =
+      showRoundPoints &&
+      oppTeamR &&
+      p.team === oppTeamR &&
+      !(biddingActive && !biddingWinner);
+
     // Reihenfolge der Abzeichen: Auktion zeigt پاس/Gebot, danach حاکم.
     let badge = null;
     if (biddingActive && !biddingWinner) {
@@ -2382,6 +2394,14 @@ function App() {
           {badge && (
             <span className={"sh-badge sh-badge--" + badge.kind}>
               {badge.text}
+            </span>
+          )}
+          {showOppPts && (
+            <span
+              className={"sh-seatpts sh-seatpts--" + kind}
+              title="امتیاز این دستِ این تیم"
+            >
+              {faNum(roundPointsLive?.[oppTeamR] ?? 0)}
             </span>
           )}
         </span>
@@ -3384,20 +3404,6 @@ function App() {
                         <span className="sh-dot" />
                       </span>
                     </div>
-
-                    {/* Nur die Punkte des GEGNERteams, und nur wenn die Option
-                        aktiv ist. Ist sie aus, erscheint die Zeile gar nicht. */}
-                    {showRoundPoints && oppTeam && (
-                      <div className={"sh-roundpts sh-roundpts--" + kind(oppTeam)}>
-                        <span className="sh-lbl">
-                          امتیاز این دست — تیم {label(oppTeam)}
-                        </span>
-                        <span className="sh-val">
-                          {faNum(roundPointsLive?.[oppTeam] ?? 0)}
-                        </span>
-                        <span className="sh-of">از ۱۶۵</span>
-                      </div>
-                    )}
                   </>
                 );
               })()}
