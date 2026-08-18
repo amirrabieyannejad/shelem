@@ -2953,8 +2953,10 @@ function App() {
             </div>
           </div>
 
-          {players && players.length > 0 && (
-            <div className="sh-roster">
+          {players &&
+            players.length > 0 &&
+            players.filter((p) => p.seatPosition).length < 4 && (
+              <div className="sh-roster">
               <span className="sh-roster-lbl">👥 در میز:</span>
               {players.map((p) => (
                 <span
