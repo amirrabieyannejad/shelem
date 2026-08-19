@@ -88,7 +88,16 @@ const initialsOf = (u) =>
 // Rundes Profilbild mit Initialen als Rückfallebene.
 function Avatar({ user, size = 34, className = "" }) {
   const src = avatarSrc(user);
-  const style = { width: size, height: size };
+  // Überall rund, formatfüllend und zentriert -> einheitliche Darstellung in
+  // Topbar, Lobby und am Tisch (kein Verzerren, kein rechteckiges Bild).
+  const style = {
+    width: size,
+    height: size,
+    borderRadius: "50%",
+    objectFit: "cover",
+    objectPosition: "center",
+    flex: "none",
+  };
   return src ? (
     <img className={className} src={src} alt="" style={style} />
   ) : (

@@ -46,6 +46,7 @@
   font-size:13px;padding:0 14px;min-height:var(--tap);border-radius:10px;cursor:pointer;
   background:var(--panel);border:1px solid var(--line);color:#c5d0dc;
   display:inline-flex;align-items:center;justify-content:center;gap:7px;
+  white-space:nowrap;flex:none;
 }
 .sh-btn:active{background:#1e2833}
 .sh-btn--gold{background:var(--gold);border-color:#c99e34;color:#1c1406;font-weight:800}
@@ -223,10 +224,11 @@
 .sh-lockhint{font-size:11.5px;color:#7d8c9e;text-align:center;margin-top:10px;padding-top:10px;border-top:1px solid #1e2731}
 
 /* ---------- Kopfzeile / Punktestand ---------- */
-.sh-topbar{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.sh-topbar{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px}
 .sh-mechip{
-  display:flex;align-items:center;gap:8px;padding:4px 12px 4px 4px;border-radius:999px;
+  display:flex;align-items:center;gap:8px;padding:4px 12px 4px 4px;border-radius:12px;
   background:var(--panel);border:1px solid var(--line);cursor:pointer;min-height:var(--tap);color:var(--ink);
+  flex:none;white-space:nowrap;
 }
 .sh-mechip img,.sh-mechip .sh-ph{
   width:34px;height:34px;border-radius:50%;object-fit:cover;flex:none;border:2px solid rgba(255,255,255,.6);
@@ -533,12 +535,11 @@
 
 /* ---- Raumname-Chip in der Topbar ---- */
 .sh-roomchip{
-  font-size:12.5px;font-weight:800;padding:6px 13px;border-radius:999px;
-  background:linear-gradient(180deg, rgba(233,187,85,.18), rgba(233,187,85,.05));
-  color:var(--gold);border:1px solid rgba(233,187,85,.42);
-  white-space:nowrap;display:inline-flex;align-items:center;gap:5px;
-  letter-spacing:.2px;
-  box-shadow:inset 0 1px 0 rgba(255,255,255,.06), 0 2px 8px rgba(0,0,0,.25);
+  font-size:12.5px;font-weight:800;padding:0 14px;min-height:var(--tap);
+  border-radius:10px;white-space:nowrap;display:inline-flex;align-items:center;
+  gap:5px;flex:none;letter-spacing:.2px;
+  background:linear-gradient(180deg, rgba(233,187,85,.16), rgba(233,187,85,.05));
+  color:var(--gold);border:1px solid rgba(233,187,85,.4);
 }
 
 /* ---- Rundenpunkte des Gegnerteams unter dem Spieler-Kreis ---- */
