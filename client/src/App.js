@@ -1238,7 +1238,7 @@ function ProfileSheet({ auth, onClose, onSaved, level }) {
   );
 }
 
-function Lobby({ profile, rooms, myStats, isAdmin, onAdmin, onRefresh, onCreate, onJoin, onLogout }) {
+function Lobby({ profile, rooms, myStats, isAdmin, onAdmin, onProfile, onRefresh, onCreate, onJoin, onLogout }) {
   const [name, setName] = React.useState("");
   const list = Array.isArray(rooms) ? rooms : [];
 
