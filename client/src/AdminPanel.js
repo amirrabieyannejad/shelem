@@ -223,7 +223,6 @@ export default function AdminPanel({ token, apiBase, onClose }) {
     </div>
   );
 
-  const maxTeam = Math.max(1, activity?.teams?.Fire || 0, activity?.teams?.Storm || 0);
   const maxAct = Math.max(1, ...(activity?.players || []).map((p) => p.games || 0));
 
   return (
@@ -357,31 +356,22 @@ export default function AdminPanel({ token, apiBase, onClose }) {
           />
         </div>
 
-        {/* Team-Aktivität */}
+        {/* Spiel-Kennzahlen (statt redundanter Team-Statistik) */}
         <div style={card}>
-          <div style={h3}>🔥🌀 بازی‌ها بر اساس تیم</div>
-          {["Fire", "Storm"].map((t) => {
-            const v = activity?.teams?.[t] || 0;
-            return (
-              <div key={t} style={{ marginBottom: 8 }}>
-                <div style={{ display: "flex", fontSize: 12, marginBottom: 3 }}>
-                  <span>{t === "Fire" ? "آتش" : "طوفان"}</span>
-                  <span style={{ flex: 1 }} />
-                  <span style={{ color: "#93a3b5" }}>{v}</span>
-                </div>
-                <div style={{ background: "#0e151d", borderRadius: 6, height: 12 }}>
-                  <div
-                    style={{
-                      width: `${(v / maxTeam) * 100}%`,
-                      height: "100%",
-                      borderRadius: 6,
-                      background: t === "Fire" ? "#e04b4b" : "#3a8ee0",
-                    }}
-                  />
-                </div>
-              </div>
-            );
-          })}
+          <div style={h3}>🎲 آمار بازی‌ها</div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <K label="میانگین مدت (دقیقه)" value={summary?.avgDurationMin} />
+            <K label="میانگین دست در هر بازی" value={summary?.avgRounds} />
+            <K label="بیشترین بازیِ همزمان" value={summary?.peakConcurrent} />
+            <K
+              label="نرخ تکمیل"
+              value={
+                summary && summary.gameCount
+                  ? Math.round((summary.finishedCount / summary.gameCount) * 100) + "٪"
+                  : "—"
+              }
+            />
+          </div>
         </div>
 
         {/* Aktivste Spieler */}

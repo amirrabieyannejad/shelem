@@ -12,21 +12,49 @@ export function registerAdminRoutes(app, requireAdmin, deps = {}) {
   // ---- Übersicht (Kennzahlen fürs Dashboard) ----
   app.get("/api/admin/summary", requireAdmin, async (req, res) => {
     try {
-      const [users, games, finished, active, players] = await Promise.all([
-        pool.query(`select count(*)::int c from users`),
-        pool.query(`select count(*)::int c from games`),
-        pool.query(
-          `select count(*)::int c from games where status='finished' or finished_at is not null`
-        ),
-        pool.query(`select count(*)::int c from games where status='active'`),
-        pool.query(`select count(distinct user_id)::int c from game_players`),
-      ]);
+      const [users, games, finished, active, players, avgDur, avgRnd, peak] =
+        await Promise.all([
+          pool.query(`select count(*)::int c from users`),
+          pool.query(`select count(*)::int c from games`),
+          pool.query(
+            `select count(*)::int c from games where status='finished' or finished_at is not null`
+          ),
+          pool.query(`select count(*)::int c from games where status='active'`),
+          pool.query(`select count(distinct user_id)::int c from game_players`),
+          // Ø Spieldauer (Minuten) über beendete Spiele
+          pool.query(
+            `select coalesce(round(avg(extract(epoch from (finished_at - created_at))/60))::int, 0) c
+               from games
+              where finished_at is not null and created_at is not null
+                and finished_at >= created_at`
+          ),
+          // Ø Runden pro Spiel
+          pool.query(
+            `select coalesce(round(avg(cnt)::numeric, 1), 0) c
+               from (select game_id, count(*) cnt from rounds group by game_id) x`
+          ),
+          // Höchste Zahl gleichzeitig aktiver Spiele (Sweep-Line über Start/Ende)
+          pool.query(
+            `select coalesce(max(running), 0)::int c from (
+               select sum(d) over (order by t, d desc rows unbounded preceding) running
+                 from (
+                   select created_at t, 1 d from games where created_at is not null
+                   union all
+                   select coalesce(finished_at, updated_at, now()) t, -1 d
+                     from games where created_at is not null
+                 ) e
+             ) s`
+          ),
+        ]);
       res.json({
         userCount: users.rows[0].c,
         activePlayerCount: players.rows[0].c,
         gameCount: games.rows[0].c,
         finishedCount: finished.rows[0].c,
         activeCount: active.rows[0].c,
+        avgDurationMin: avgDur.rows[0].c,
+        avgRounds: avgRnd.rows[0].c,
+        peakConcurrent: peak.rows[0].c,
         settings: getGameSettings ? getGameSettings() : null,
       });
     } catch (e) {
