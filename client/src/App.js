@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from "react";
-import AdminPanel from "./AdminPanel";
+import AdminPanel from "./AdminPanel.js";
 import { io } from "socket.io-client";
 import "./theme.css";
 // CRA liest nur process.env.REACT_APP_*
