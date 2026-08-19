@@ -2298,39 +2298,48 @@ function App() {
   };
 
   const getSeatingOrder = () => {
-    if (!me) return [null, null, null, null];
+    const bySeat = {};
+    players.forEach((p) => {
+      if (p.seatPosition) bySeat[p.seatPosition] = p;
+    });
+    const seatCycle = [1, 2, 3, 4];
 
-    // Bevorzugt: Sitzreihenfolge über seatPosition (server-fix: 1=unten,
-    // 2=rechts, 3=oben, 4=links), relativ zu meinem eigenen Sitzplatz gedreht.
-    // Das ist robust gegen die Reihenfolge im players[]-Array, die sich
-    // z.B. nach einem Reconnect verschieben kann (players.push() hängt
-    // reconnectete Spieler ans Ende an) - vorher hing die Tischanordnung
-    // rein an dieser Array-Reihenfolge, wodurch Partner nach einem
-    // Reconnect scheinbar vertauscht wirkten, obwohl seatPosition/team
-    // serverseitig unverändert korrekt waren.
-    if (me.seatPosition) {
-      const bySeat = {};
-      players.forEach((p) => {
-        if (p.seatPosition) bySeat[p.seatPosition] = p;
-      });
-      const seatCycle = [1, 2, 3, 4];
-      const myIdx = seatCycle.indexOf(me.seatPosition);
-      if (myIdx !== -1) {
-        return [0, 1, 2, 3].map(
-          (offset) => bySeat[seatCycle[(myIdx + offset) % 4]] || null
-        );
+    // Zuschauer (oder ich ohne eigenen Sitz): feste, absolute Anordnung
+    // 1=unten, 2=rechts, 3=oben, 4=links. So sieht der Zuschauer ALLE
+    // Spieler mit Namen an ihren Plätzen (und damit auch, wer was spielt).
+    if (!me || !me.seatPosition) {
+      if (Object.keys(bySeat).length > 0) {
+        return seatCycle.map((s) => bySeat[s] || null);
       }
+      if (!me) {
+        return [
+          players[0] || null,
+          players[1] || null,
+          players[2] || null,
+          players[3] || null,
+        ];
+      }
+      return [null, null, null, null];
     }
 
-    // Fallback (z.B. falls seatPosition ausnahmsweise mal fehlt): alte,
-    // rein Array-Index-basierte Logik.
+    // Ich sitze: Sitzreihenfolge relativ zu meinem eigenen Sitzplatz gedreht
+    // (server-fix: 1=unten, 2=rechts, 3=oben, 4=links). Robust gegen die
+    // Reihenfolge im players[]-Array (verschiebt sich z.B. nach Reconnect).
+    const myIdx = seatCycle.indexOf(me.seatPosition);
+    if (myIdx !== -1) {
+      return [0, 1, 2, 3].map(
+        (offset) => bySeat[seatCycle[(myIdx + offset) % 4]] || null
+      );
+    }
+
+    // Fallback (falls seatPosition ausnahmsweise fehlt): Array-Index-basiert.
     const myIndex = players.findIndex((p) => p.id === me.id);
     if (myIndex === -1) return [null, null, null, null];
     return [
-      players[myIndex], // unten (Sitz 1, falls ich dort sitze)
-      players[(myIndex + 1) % 4], // rechts
-      players[(myIndex + 2) % 4], // oben
-      players[(myIndex + 3) % 4], // links
+      players[myIndex],
+      players[(myIndex + 1) % 4],
+      players[(myIndex + 2) % 4],
+      players[(myIndex + 3) % 4],
     ];
   };
 
@@ -3518,7 +3527,7 @@ function App() {
                   <PlayerBox p={seated[2]} side="n" />
                   <PlayerBox p={seated[1]} side="e" />
                   <PlayerBox p={seated[3]} side="w" />
-                  <PlayerBox p={seated[0]} side="s" youLabel />
+                  <PlayerBox p={seated[0]} side="s" youLabel={!isSpectator} />
                 </div>
               </div>
             </>
