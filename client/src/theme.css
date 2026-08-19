@@ -566,3 +566,11 @@
 .sh-roster-tag{font-size:10px;font-weight:800;padding:1px 7px;border-radius:999px;flex:none}
 .sh-roster-tag.ok{background:rgba(29,145,102,.2);color:#7fd8b0}
 .sh-roster-tag.wait{background:rgba(233,187,85,.16);color:var(--gold)}
+
+/* ---- Zuschauer-Hinweis ---- */
+.sh-specbar{
+  text-align:center;font-size:12.5px;font-weight:700;color:var(--gold);
+  background:rgba(233,187,85,.1);border:1px solid rgba(233,187,85,.28);
+  border-radius:12px;padding:8px 14px;margin:2px auto 8px;
+  max-width:min(96vw,620px);
+}

@@ -2726,21 +2726,30 @@ function App() {
 
                 <button
                   className={"sh-sbtn" + (mine ? " sh-sbtn--leave" : "")}
-                  disabled={occupiedByOther}
-                  onClick={() =>
+                  disabled={occupiedByOther || isSpectator}
+                  onClick={() => {
+                    if (isSpectator) return;
                     mine
                       ? socket.emit("leaveSeat")
-                      : socket.emit("chooseSeat", { seat: i })
-                  }
+                      : socket.emit("chooseSeat", { seat: i });
+                  }}
                   title={
-                    occupiedByOther
+                    isSpectator
+                      ? "تماشاگر نمی‌تواند بنشیند"
+                      : occupiedByOther
                       ? "Platz ist belegt"
                       : mine
                       ? "Diesen Platz freigeben"
                       : "اینجا بنشین"
                   }
                 >
-                  {mine ? "آزاد کردن" : occupiedByOther ? "اشغال شده" : "اینجا بنشین"}
+                  {isSpectator
+                    ? "تماشاگر"
+                    : mine
+                    ? "آزاد کردن"
+                    : occupiedByOther
+                    ? "اشغال شده"
+                    : "اینجا بنشین"}
                 </button>
               </div>
             </div>
@@ -2972,6 +2981,12 @@ function App() {
               </button>
             </div>
           </div>
+
+          {isSpectator && (
+            <div className="sh-specbar">
+              👁 حالت تماشاگر — بازی را زنده می‌بینی، ولی برگ‌های بازیکنان پنهان است
+            </div>
+          )}
 
           {players &&
             players.length > 0 &&
