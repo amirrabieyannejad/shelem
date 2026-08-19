@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useRef } from "react";
+import AdminPanel from "./AdminPanel";
 import { io } from "socket.io-client";
 import "./theme.css";
 // CRA liest nur process.env.REACT_APP_*
@@ -1228,7 +1229,7 @@ function ProfileSheet({ auth, onClose, onSaved, level }) {
   );
 }
 
-function Lobby({ profile, rooms, myStats, onRefresh, onCreate, onJoin, onLogout }) {
+function Lobby({ profile, rooms, myStats, isAdmin, onAdmin, onRefresh, onCreate, onJoin, onLogout }) {
   const [name, setName] = React.useState("");
   const list = Array.isArray(rooms) ? rooms : [];
 
@@ -1293,6 +1294,16 @@ function Lobby({ profile, rooms, myStats, onRefresh, onCreate, onJoin, onLogout 
           )}
         </div>
         <span style={{ flex: 1 }} />
+        {isAdmin && (
+          <button
+            className="sh-btn"
+            onClick={onAdmin}
+            style={{ marginInlineEnd: 8 }}
+            title="بخش مدیریت"
+          >
+            🛠️ مدیریت
+          </button>
+        )}
         <button className="sh-btn sh-btn--red" onClick={onLogout}>
           خروج
         </button>
@@ -1519,6 +1530,10 @@ function App() {
       }
     })(),
   });
+
+  // Admin-Zugang nur für die angemeldete ID "admin"
+  const isAdmin = (auth?.profile?.username || "").toLowerCase() === "admin";
+  const [showAdmin, setShowAdmin] = useState(false);
 
   // Token vorhanden → Profil serverseitig verifizieren (kommt aus DB)
   useEffect(() => {
@@ -2909,6 +2924,13 @@ function App() {
   // 1.3 bestimmt, wie stark es bei vielen Karten zusammenrückt
   return (
     <div className="sh-root" style={{ ...styles.page, background: "transparent" }}>
+      {showAdmin && isAdmin && (
+        <AdminPanel
+          token={auth?.token}
+          apiBase={API_BASE}
+          onClose={() => setShowAdmin(false)}
+        />
+      )}
       {!auth?.token ? (
         <AuthGate onAuthed={setAuth} />
       ) : roomState.status === "lobby" ? (
@@ -2916,6 +2938,8 @@ function App() {
           profile={auth?.profile}
           rooms={roomList}
           myStats={myStats}
+          isAdmin={isAdmin}
+          onAdmin={() => setShowAdmin(true)}
           onRefresh={() => socket.emit("listRooms")}
           onCreate={(name) => socket.emit("createRoom", { name })}
           onJoin={(rid) => socket.emit("joinRoom", { roomId: rid })}
