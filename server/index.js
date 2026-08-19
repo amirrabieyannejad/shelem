@@ -15,6 +15,7 @@ import { fileURLToPath } from "url";
 import { runMigrations } from "./migrate.js";
 import { estimateRoundWinProbability } from "./probability.js";
 import { registerStatsRoutes, persistStats } from "./stats.js";
+import { registerAdminRoutes } from "./admin.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -285,8 +286,68 @@ async function requireAuth(req, res, next) {
   }
 }
 
+// ===== Globale Spiel-Einstellungen (Admin-Bereich, persistiert in app_settings) =====
+// Zielpunktzahl (Spielende). ENV als Startwert, DB überschreibt beim Start.
+let MAX_POINTS_NORMAL = Number(process.env.MAX_POINTS_NORMAL) || 1165;
+let MAX_POINTS_JOKERS = Number(process.env.MAX_POINTS_JOKERS) || 1600;
+
+async function loadGameSettings() {
+  try {
+    const r = await pool.query(
+      `select key, value from app_settings where key in ('maxPointsNormal','maxPointsJokers')`
+    );
+    for (const row of r.rows) {
+      const v = Number(row.value);
+      if (!Number.isFinite(v) || v <= 0) continue;
+      if (row.key === "maxPointsNormal") MAX_POINTS_NORMAL = v;
+      if (row.key === "maxPointsJokers") MAX_POINTS_JOKERS = v;
+    }
+    console.log("Spiel-Einstellungen geladen:", MAX_POINTS_NORMAL, MAX_POINTS_JOKERS);
+  } catch (e) {
+    console.error("loadGameSettings:", e.message);
+  }
+}
+function getGameSettings() {
+  return { maxPointsNormal: MAX_POINTS_NORMAL, maxPointsJokers: MAX_POINTS_JOKERS };
+}
+async function setGameSettings({ maxPointsNormal, maxPointsJokers } = {}) {
+  const rows = [];
+  if (Number.isFinite(maxPointsNormal) && maxPointsNormal > 0) {
+    MAX_POINTS_NORMAL = Math.round(maxPointsNormal);
+    rows.push(["maxPointsNormal", MAX_POINTS_NORMAL]);
+  }
+  if (Number.isFinite(maxPointsJokers) && maxPointsJokers > 0) {
+    MAX_POINTS_JOKERS = Math.round(maxPointsJokers);
+    rows.push(["maxPointsJokers", MAX_POINTS_JOKERS]);
+  }
+  for (const [k, v] of rows) {
+    await pool.query(
+      `insert into app_settings (key, value, updated_at)
+       values ($1, to_jsonb($2::int), now())
+       on conflict (key) do update set value = excluded.value, updated_at = now()`,
+      [k, v]
+    );
+  }
+  return getGameSettings();
+}
+
+// Admin = angemeldeter Nutzer mit username exakt "admin". Sauber vom
+// normalen Benutzerbereich getrennt.
+async function requireAdmin(req, res, next) {
+  requireAuth(req, res, () => {
+    const uname = (req.user?.username || "").toLowerCase();
+    if (uname !== "admin") {
+      return res.status(403).json({ error: "Nur für Admin" });
+    }
+    next();
+  });
+}
+
 // /api/stats/players, /api/stats/pairs, /api/stats/overview, /api/stats/matchup
 registerStatsRoutes(app, requireAuth);
+
+// Geschützter Admin-Bereich (nur username 'admin')
+registerAdminRoutes(app, requireAdmin, { getGameSettings, setGameSettings });
 
 // ---------- Globale Variablen (MUSS vor ensureActiveGame stehen) ----------
 
@@ -759,15 +820,11 @@ async function persistRoundAndTricks(roundEntry) {
 // ---------- Gebot-/Punkte-Obergrenzen (mit/ohne Joker) ----------
 const MAX_BID_NORMAL = 165;
 const MAX_BID_JOKERS = 200;
-// Zielpunktzahl (Spielende). Fuer Tests per Umgebungsvariable senkbar, z.B.
-// MAX_POINTS_NORMAL=120 -> ein Spiel endet nach ~1 Runde. Ohne ENV: normal.
-const MAX_POINTS_NORMAL = Number(process.env.MAX_POINTS_NORMAL) || 1165;
-const MAX_POINTS_JOKERS = Number(process.env.MAX_POINTS_JOKERS) || 1600;
-
 function getMaxBid() {
   return includeJokers ? MAX_BID_JOKERS : MAX_BID_NORMAL;
 }
 function getMaxPoints() {
+  // MAX_POINTS_* liegen auf Modul-Ebene (Admin-Bereich kann sie global ändern)
   return includeJokers ? MAX_POINTS_JOKERS : MAX_POINTS_NORMAL;
 }
 // Mindestens 80, oder die (aufgerundete) Hälfte des Maximalgebots
@@ -2831,6 +2888,9 @@ try {
     e.message
   );
 }
+
+// Persistierte Spiel-Einstellungen (Admin-Bereich) laden -> neue Spiele nutzen sie.
+await loadGameSettings();
 
 // Aktive Spiele beim Start als Raeume wiederherstellen
 try {
