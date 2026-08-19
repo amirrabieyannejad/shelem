@@ -1,53 +1,79 @@
 import React, { useEffect, useState, useCallback } from "react";
 
-// Kleiner vertikaler Balken-Chart (dependency-frei, SVG).
-function BarChart({ data, height = 150, color = "#e9bb55", fmt = (v) => v }) {
+// Vertikaler Balken-Chart – dependency-frei, verzerrungsfrei (CSS-Flexbox).
+function BarChart({ data, height = 170, color = "#e9bb55" }) {
   const rows = Array.isArray(data) ? data : [];
   const max = Math.max(1, ...rows.map((d) => d.value || 0));
-  const bw = 100 / Math.max(rows.length, 1);
+  const barMax = height - 46; // Platz für Wert oben + Label unten
+  if (rows.length === 0) {
+    return (
+      <div style={{ color: "#93a3b5", fontSize: 12, padding: "20px 0", textAlign: "center" }}>
+        داده‌ای موجود نیست.
+      </div>
+    );
+  }
   return (
-    <div style={{ overflowX: "auto" }}>
-      <svg
-        viewBox={`0 0 ${Math.max(rows.length * 34, 100)} ${height}`}
-        style={{ width: "100%", minWidth: rows.length * 34, height }}
-        preserveAspectRatio="none"
+    <div style={{ overflowX: "auto", overflowY: "hidden", paddingBottom: 4 }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "flex-end",
+          justifyContent: rows.length <= 6 ? "space-around" : "flex-start",
+          gap: 12,
+          minHeight: height,
+          padding: "6px 4px 0",
+        }}
       >
         {rows.map((d, i) => {
-          const h = ((d.value || 0) / max) * (height - 34);
-          const x = i * 34 + 6;
+          const h = Math.max(2, ((d.value || 0) / max) * barMax);
           return (
-            <g key={i}>
-              <rect
-                x={x}
-                y={height - 20 - h}
-                width={22}
-                height={Math.max(h, 1)}
-                rx={4}
-                fill={color}
-                opacity={0.9}
-              />
-              <text
-                x={x + 11}
-                y={height - 24 - h}
-                fontSize="9"
-                fill="#c9d4e0"
-                textAnchor="middle"
+            <div
+              key={i}
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                flex: "0 0 auto",
+                width: 56,
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 12.5,
+                  fontWeight: 800,
+                  color: "#c9d4e0",
+                  height: 16,
+                  marginBottom: 4,
+                }}
               >
-                {d.value ? fmt(d.value) : ""}
-              </text>
-              <text
-                x={x + 11}
-                y={height - 6}
-                fontSize="8"
-                fill="#93a3b5"
-                textAnchor="middle"
+                {d.value || ""}
+              </div>
+              <div
+                style={{
+                  width: 38,
+                  height: h,
+                  background: color,
+                  borderRadius: "6px 6px 2px 2px",
+                  opacity: 0.92,
+                }}
+              />
+              <div
+                style={{
+                  fontSize: 10.5,
+                  color: "#93a3b5",
+                  marginTop: 7,
+                  textAlign: "center",
+                  lineHeight: 1.35,
+                  wordBreak: "break-word",
+                  minHeight: 26,
+                }}
               >
                 {d.label}
-              </text>
-            </g>
+              </div>
+            </div>
           );
         })}
-      </svg>
+      </div>
     </div>
   );
 }
