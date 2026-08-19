@@ -1467,6 +1467,10 @@ function App() {
   const [bottomCards, setBottomCards] = useState([]);
   const [mustBid, setMustBid] = useState(false);
   const [scores, setScores] = useState({ Fire: 0, Storm: 0 });
+  // Gesamt-Zielpunktzahl des Spiels (Server-autoritativ: 1165/1600 bzw. der
+  // im Admin-Bereich gesetzte Wert). Wird für die Mitte-Anzeige "هدف" und den
+  // Fortschrittsbalken genutzt.
+  const [maxPoints, setMaxPoints] = useState(1165);
   const [trumpfSetter, setTrumpfSetter] = useState(null);
   const [currentTrick, setCurrentTrick] = useState([]); // {playerId, card}[]
   const trickTimer = useRef(null);
@@ -2039,6 +2043,7 @@ function App() {
 
     socket.on("stateSync", (s) => {
       if (s?.teamScores) setScores(s.teamScores);
+      if (s?.maxPoints) setMaxPoints(s.maxPoints);
       if (s?.roundPoints) setRoundPointsLive(s.roundPoints);
       // WICHTIG: stateSnapshot() liefert currentBid server-seitig immer mit,
       // aber hier wurde es bisher nie übernommen - dadurch blieb "هدف" beim
@@ -2113,8 +2118,9 @@ function App() {
       }
     });
 
-    socket.on("gameOver", ({ winner, teamScores }) => {
+    socket.on("gameOver", ({ winner, teamScores, maxPoints: mp }) => {
       setScores(teamScores);
+      if (mp) setMaxPoints(mp);
       alert(
         `Spielende! Gewinner: Team ${winner}\nFire: ${teamScores.Fire}, Storm: ${teamScores.Storm}`
       );
@@ -3422,7 +3428,10 @@ function App() {
                 const label = (t) => (t === "Fire" ? "آتش" : "طوفان");
                 const kind = (t) => (t === "Fire" ? "fire" : "storm");
                 const pctOf = (v) =>
-                  Math.max(0, Math.min(100, ((Number(v) || 0) / 1165) * 100));
+                  Math.max(
+                    0,
+                    Math.min(100, ((Number(v) || 0) / (maxPoints || 1165)) * 100)
+                  );
 
                 return (
                   <>
@@ -3436,7 +3445,12 @@ function App() {
                       </div>
 
                       <span className="sh-goal">
-                        هدف <b>{currentBid || "—"}</b>
+                        <span className="sh-goal-bid">
+                          هدف <b>{currentBid || "—"}</b>
+                        </span>
+                        <span className="sh-goal-total" title="امتیاز کل برای برد">
+                          🏁 <b>{faNum(maxPoints)}</b>
+                        </span>
                         {declTeam && (
                           <span className={"sh-decl sh-decl--" + kind(declTeam)}>
                             {label(declTeam)}

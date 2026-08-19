@@ -270,9 +270,16 @@
 .sh-track i.sh-storm{background:linear-gradient(90deg,var(--storm-d),var(--storm))}
 .sh-goal{
   grid-column:2;grid-row:1;justify-self:center;
-  display:flex;align-items:center;gap:6px;padding:5px 14px;border-radius:999px;white-space:nowrap;
-  background:#1d2634;border:1px solid #334052;font-size:12.5px;
+  display:flex;flex-direction:column;align-items:center;gap:2px;
+  padding:5px 16px;border-radius:16px;white-space:nowrap;
+  background:#1d2634;border:1px solid #334052;font-size:12.5px;line-height:1.25;
 }
+.sh-goal .sh-goal-bid{display:flex;align-items:center;gap:5px}
+.sh-goal .sh-goal-total{
+  display:flex;align-items:center;gap:4px;font-size:11px;color:var(--muted);
+  border-top:1px solid #2a3646;padding-top:2px;margin-top:1px;
+}
+.sh-goal .sh-goal-total b{font-size:13px;color:var(--gold)}
 .sh-goal b{font-size:16px;color:var(--gold)}
 .sh-decl{font-size:11px;font-weight:800;padding:2px 8px;border-radius:999px}
 .sh-decl--fire{background:rgba(224,75,75,.18);color:#ff9d9d;border:1px solid rgba(224,75,75,.45)}
