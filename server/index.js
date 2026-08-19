@@ -759,8 +759,10 @@ async function persistRoundAndTricks(roundEntry) {
 // ---------- Gebot-/Punkte-Obergrenzen (mit/ohne Joker) ----------
 const MAX_BID_NORMAL = 165;
 const MAX_BID_JOKERS = 200;
-const MAX_POINTS_NORMAL = 1165;
-const MAX_POINTS_JOKERS = 1600;
+// Zielpunktzahl (Spielende). Fuer Tests per Umgebungsvariable senkbar, z.B.
+// MAX_POINTS_NORMAL=120 -> ein Spiel endet nach ~1 Runde. Ohne ENV: normal.
+const MAX_POINTS_NORMAL = Number(process.env.MAX_POINTS_NORMAL) || 1165;
+const MAX_POINTS_JOKERS = Number(process.env.MAX_POINTS_JOKERS) || 1600;
 
 function getMaxBid() {
   return includeJokers ? MAX_BID_JOKERS : MAX_BID_NORMAL;
