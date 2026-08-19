@@ -1291,17 +1291,25 @@ function Lobby({ profile, rooms, myStats, isAdmin, onAdmin, onRefresh, onCreate,
           marginBottom: 18,
         }}
       >
-        <Avatar user={profile} size={38} />
-        <div style={{ display: "flex", flexDirection: "column" }}>
-          <strong style={{ fontSize: 16 }}>
+        <button
+          className="sh-mechip"
+          onClick={onProfile}
+          title="پروفایل"
+          style={{ border: "1px solid #26313f" }}
+        >
+          <Avatar user={profile} size={34} />
+          <span className="sh-nm">
             {profile?.username || profile?.name || "بازیکن"}
-          </strong>
+          </span>
           {myStats && (
-            <span style={{ fontSize: 12, opacity: 0.7 }}>
-              سطح {myStats.level} · {myStats.gamesWon}/{myStats.gamesPlayed} برد
+            <span
+              className="sh-lv"
+              title={`${myStats.xp} XP · ${myStats.gamesWon}/${myStats.gamesPlayed} بازی برده`}
+            >
+              <LevelBadge level={myStats.level} title={myStats.title} small />
             </span>
           )}
-        </div>
+        </button>
         <span style={{ flex: 1 }} />
         {isAdmin && (
           <button
@@ -2946,6 +2954,24 @@ function App() {
           onClose={() => setShowAdmin(false)}
         />
       )}
+      {showProfile && auth?.token && (
+        <ProfileSheet
+          auth={auth}
+          level={myStats?.level ?? null}
+          onClose={() => setShowProfile(false)}
+          onSaved={(profile) => {
+            setAuth((a) => ({ ...a, profile }));
+            localStorage.setItem("shelem_profile", JSON.stringify(profile));
+            // Name sofort auch am Tisch aktualisieren (nur als Spieler).
+            if (roomState.role === "player") {
+              socket.emit("register", {
+                clientId: profile.id,
+                name: profile.name,
+              });
+            }
+          }}
+        />
+      )}
       {!auth?.token ? (
         <AuthGate onAuthed={setAuth} />
       ) : roomState.status === "lobby" ? (
@@ -2955,6 +2981,7 @@ function App() {
           myStats={myStats}
           isAdmin={isAdmin}
           onAdmin={() => setShowAdmin(true)}
+          onProfile={() => setShowProfile(true)}
           onRefresh={() => socket.emit("listRooms")}
           onCreate={(name) => socket.emit("createRoom", { name })}
           onJoin={(rid) => socket.emit("joinRoom", { roomId: rid })}
@@ -2991,17 +3018,21 @@ function App() {
                 </span>
               )}
 
-              <button className="sh-btn" onClick={() => setShowStats(true)}>
-                📊 آمار
+              <button
+                className="sh-iconbtn"
+                onClick={() => setShowStats(true)}
+                title="آمار"
+              >
+                📊
               </button>
 
               {isFirstPlayer && (
                 <button
-                  className="sh-btn"
+                  className="sh-iconbtn"
                   onClick={() => socket.emit("resetGame")}
                   title="بازی جدید"
                 >
-                  ♻ بازی جدید
+                  ♻
                 </button>
               )}
 
@@ -3013,19 +3044,19 @@ function App() {
               )}
 
               <button
-                className="sh-btn"
+                className="sh-iconbtn"
                 onClick={handleExitRoom}
                 title="خروج از میز"
               >
-                🚪 خروج از میز
+                🚪
               </button>
 
               <button
-                className="sh-btn sh-btn--red"
+                className="sh-iconbtn sh-iconbtn--red"
                 onClick={handleLogout}
                 title="خروج از حساب"
               >
-                خروج
+                ⏻
               </button>
             </div>
           </div>
@@ -3061,28 +3092,6 @@ function App() {
                 </span>
               ))}
             </div>
-          )}
-
-          {showProfile && (
-            <ProfileSheet
-              auth={auth}
-              level={myStats?.level ?? null}
-              onClose={() => setShowProfile(false)}
-              onSaved={(profile) => {
-                setAuth((a) => ({ ...a, profile }));
-                localStorage.setItem("shelem_profile", JSON.stringify(profile));
-                // Name sofort auch am Tisch aktualisieren. avatarUrl bewusst
-                // NICHT mitschicken (kann als base64 >1MB sein und würde
-                // Socket.IOs Frame-Limit sprengen) - Server holt sich das
-                // aktuelle Bild stattdessen frisch aus der DB (register-Handler).
-                if (roomState.role === "player") {
-                  socket.emit("register", {
-                    clientId: profile.id,
-                    name: profile.name,
-                  });
-                }
-              }}
-            />
           )}
 
           {leaveVote && (
