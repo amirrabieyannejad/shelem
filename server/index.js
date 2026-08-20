@@ -2874,7 +2874,15 @@ io.on("connection", (socket) => {
 
 // === Server Start ===
 const PORT = process.env.PORT || 3001;
-await dbPing();
+try {
+  await dbPing();
+} catch (e) {
+  console.error(
+    "!!! DB-Ping beim Start fehlgeschlagen – Server startet trotzdem, " +
+      "sonst Crash-Schleife bei kurzzeitigem DB-Ausfall:",
+    e.message
+  );
+}
 
 // Migrationen dürfen den Serverstart NICHT verhindern: schlägt hier etwas fehl,
 // wäre sonst das ganze Spiel offline (Render würde in eine Crash-Schleife
