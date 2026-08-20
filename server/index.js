@@ -1309,6 +1309,20 @@ function compareCards(cardA, cardB, leadSuit, trumpSuit, isFlip = false) {
 }
 
 function startNewRound() {
+  // WICHTIG: players[] MUSS exakt der Sitzordnung (seats[1..4]) entsprechen,
+  // bevor ueber Array-Indizes (firstBidderIndex/currentPlayerIndex) irgendwer
+  // adressiert wird. startGame() stellt das fuer Runde 1 explizit per
+  // assignSeats()/orderPlayersBySeats() sicher - hier (Runde 2+) fehlte das
+  // bisher komplett. players[] wird zwar bei jedem Reconnect (register-
+  // Handler) nach seatPosition neu sortiert, aber eben nur DORT und nur im
+  // Neuanlage-Zweig - jede andere Stelle, die players[] veraendert, verlaesst
+  // sich stillschweigend auf eine bereits korrekte Reihenfolge. Ohne diese
+  // explizite Neusortierung hier koennte ein zwischenzeitlich abweichendes
+  // players[] dazu fuehren, dass currentPlayerIndex/firstBidderIndex auf den
+  // falschen Sitz zeigt und Badges (z.B. das Gebot) am falschen Spieler
+  // auftauchen.
+  orderPlayersBySeats();
+
   // Reset
   players.forEach((p) => {
     p.passed = false;
